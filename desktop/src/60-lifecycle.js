@@ -238,7 +238,7 @@ function Retired({ project }) {
   const main = frag(
     h('header', 'flex flex-col gap-4',
       h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
-      h('h2', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Retired needs')),
+      h('h2', 'text-xl font-bold tracking-tight text-fg', 'Retired needs')),
     h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'retired-list' },
       q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No retired needs') : null,
       ...rows.map(n => h(Card, { key: n.id, className: 'p-4 flex items-center justify-between', testid: 'retired-row', onClick: () => navigate('rung', { rid: n.id }) },
@@ -308,7 +308,7 @@ function ProjectSettings({ project }) {
   const main = frag(
     h('header', 'flex flex-col gap-4',
       h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
-      h('h2', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Project settings')),
+      h('h2', 'text-xl font-bold tracking-tight text-fg', 'Project settings')),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name }, h('input', { className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
@@ -338,9 +338,9 @@ function ProjectSettings({ project }) {
 
 // ------------------------------------------------------------------ archived projects
 
-function ArchivedList() {
+function ArchivedList({ qtext }) {
   const q = useApi('/projects/archived', { live: true })
-  const rows = q.data || []
+  const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   const [del, setDel] = useState(null)
   const [err, setErr] = useState('')
   const act = async (name, what) => {
@@ -350,7 +350,7 @@ function ArchivedList() {
     if (what === 'open') navigate('home')
   }
   return h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'archived-list' },
-    q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No archived projects') : null,
+    q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No archived projects') : null,
     ...rows.map(p => h(Card, { key: p.name, className: 'p-4 flex items-center justify-between', testid: 'archived-row' },
       h('div', 'flex flex-col gap-1',
         h('div', 'flex items-center gap-2', h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name), h(Badge, { status: 'archived', small: true })),

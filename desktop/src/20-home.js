@@ -214,11 +214,11 @@ function Projects({ tab }) {
       h('h1', 'text-xl font-bold tracking-tight text-fg', 'Projects'),
       h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project')),
     archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', { tab: v }) }) : null,
-    archived ? h(ArchivedList) : null,
-    archived ? null : h('div', 'flex items-center',
+    h('div', 'flex items-center',
       h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
         h('span', 'text-muted text-xs', '⌕'),
         h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
+    archived ? h(ArchivedList, { qtext }) : null,
     archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
       st && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects') : null,
       ...rows.map(p => h(Card, {

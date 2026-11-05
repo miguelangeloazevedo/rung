@@ -115,6 +115,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .max-w-\\[280px\\]{max-width:280px}
 .rung .max-w-\\[860px\\]{max-width:860px}
 .rung .max-w-md{max-width:28rem}
+.rung .mb-1{margin-bottom:4px}
 .rung .min-h-\\[180px\\]{min-height:180px}
 .rung .min-h-\\[300px\\]{min-height:300px}
 .rung .min-w-0{min-width:0}
@@ -1053,11 +1054,11 @@ function Projects({ tab }) {
       h('h1', 'text-xl font-bold tracking-tight text-fg', 'Projects'),
       h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project')),
     archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', { tab: v }) }) : null,
-    archived ? h(ArchivedList) : null,
-    archived ? null : h('div', 'flex items-center',
+    h('div', 'flex items-center',
       h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
         h('span', 'text-muted text-xs', '⌕'),
         h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
+    archived ? h(ArchivedList, { qtext }) : null,
     archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
       st && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects') : null,
       ...rows.map(p => h(Card, {
@@ -2405,10 +2406,11 @@ function RunView({ project, run }) {
             h('h2', 'text-sm font-semibold text-fg', 'Develop until green'),
             h(Badge, { status: r.status })),
           h('span', { className: 'text-xs mono text-muted', 'data-testid': 'run-time' }, `Finished in ${elapsed(r.started_at || r.created_at, r.ended_at)}`))),
-      h('div', 'grid grid-cols-3 gap-3 bg-well p-2.5 rounded-[6px] border border-line2 text-xs',
-        h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Carried by'), h('span', 'font-medium mono text-fg', r.profile)),
-        h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Attempts'), h('span', { className: 'font-medium mono text-fg', 'data-testid': 'attempt-count' }, `${atts.length} of ${r.max_attempts}`)),
-        h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Commit'), h('span', 'font-medium mono text-fg', r.commit || 'none'))),
+      h('div', 'grid grid-cols-3 gap-4',
+        ...[['Carried by', r.profile, null], ['Attempts', `${atts.length} of ${r.max_attempts}`, 'attempt-count'], ['Commit', r.commit || 'none', null]]
+          .map(([label, value, testid]) => h('div', { key: label, className: 'p-3.5 rounded-[6px] bg-well border border-line' },
+            h('div', 'text-xs text-muted mono mb-1', label),
+            h('div', { className: 'text-sm font-semibold mono text-fg', 'data-testid': testid || undefined }, value)))),
       h('div', 'flex flex-col gap-2 pt-2 border-t border-line',
         h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Attempts'),
         h('div', { className: 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]', 'data-testid': 'attempts' },
@@ -2955,7 +2957,7 @@ function Retired({ project }) {
   const main = frag(
     h('header', 'flex flex-col gap-4',
       h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
-      h('h2', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Retired needs')),
+      h('h2', 'text-xl font-bold tracking-tight text-fg', 'Retired needs')),
     h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'retired-list' },
       q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No retired needs') : null,
       ...rows.map(n => h(Card, { key: n.id, className: 'p-4 flex items-center justify-between', testid: 'retired-row', onClick: () => navigate('rung', { rid: n.id }) },
@@ -3025,7 +3027,7 @@ function ProjectSettings({ project }) {
   const main = frag(
     h('header', 'flex flex-col gap-4',
       h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
-      h('h2', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Project settings')),
+      h('h2', 'text-xl font-bold tracking-tight text-fg', 'Project settings')),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name }, h('input', { className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
@@ -3055,9 +3057,9 @@ function ProjectSettings({ project }) {
 
 // ------------------------------------------------------------------ archived projects
 
-function ArchivedList() {
+function ArchivedList({ qtext }) {
   const q = useApi('/projects/archived', { live: true })
-  const rows = q.data || []
+  const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   const [del, setDel] = useState(null)
   const [err, setErr] = useState('')
   const act = async (name, what) => {
@@ -3067,7 +3069,7 @@ function ArchivedList() {
     if (what === 'open') navigate('home')
   }
   return h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'archived-list' },
-    q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No archived projects') : null,
+    q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No archived projects') : null,
     ...rows.map(p => h(Card, { key: p.name, className: 'p-4 flex items-center justify-between', testid: 'archived-row' },
       h('div', 'flex flex-col gap-1',
         h('div', 'flex items-center gap-2', h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name), h(Badge, { status: 'archived', small: true })),
