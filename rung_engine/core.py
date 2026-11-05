@@ -93,10 +93,11 @@ class Engine:
         self._lock = threading.RLock()
 
     def close(self):
-        try:
-            self.conn.close()
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ plumbing
 

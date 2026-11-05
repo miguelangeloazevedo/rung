@@ -1,0 +1,14 @@
+name: rung
+version: 1.0.0
+manifest_version: 2
+api_version: 1
+description: "A design-control ladder for Hermes: needs, requirements, specifications and tests, where the tests decide when work is done."
+author: Miguel Azevedo
+license: MIT
+homepage: https://github.com/miguelangeloazevedo/rung
+tags: [workflow, testing, desktop, goals]
+provides_tools:
+  - rung_status
+  - rung_propose
+  - rung_check
+  - rung_run_tests

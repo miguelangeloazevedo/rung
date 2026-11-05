@@ -1,0 +1,432 @@
+"""Framework-free REST routing for Rung. `dashboard/plugin_api.py` mounts it under /api/plugins/rung/.
+
+Every request from the Desktop pane acts as the human at the keyboard. Agents never come in
+through here; they use the Rung tools, which act as agents and cannot approve.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Callable
+
+from .core import HUMAN, Actor, NotFound, RungError
+from .service import Service
+
+ROUTES: list[tuple[str, re.Pattern, Callable]] = []
+
+
+def route(method: str, pattern: str):
+    rx = re.compile("^" + re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", pattern) + "$")
+
+    def deco(fn):
+        ROUTES.append((method, rx, fn))
+        return fn
+
+    return deco
+
+
+class ApiError(Exception):
+    def __init__(self, status: int, detail: str, code: str = "error"):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+        self.code = code
+
+
+def handle(svc: Service, method: str, path: str, body: Any = None, human: Actor | None = None) -> tuple[int, Any]:
+    """Return (status, json). Never raises for expected refusals."""
+    path = "/" + path.strip("/")
+    human = human or HUMAN
+    for m, rx, fn in ROUTES:
+        if m != method.upper():
+            continue
+        mt = rx.match(path)
+        if not mt:
+            continue
+        try:
+            return 200, fn(svc, human, body or {}, **mt.groupdict())
+        except NotFound as exc:
+            return 404, {"detail": str(exc), "code": exc.code}
+        except RungError as exc:
+            return exc.status, {"detail": str(exc), "code": exc.code}
+        except ApiError as exc:
+            return exc.status, {"detail": exc.detail, "code": exc.code}
+        except (KeyError, TypeError, ValueError) as exc:
+            return 400, {"detail": f"bad request: {exc}", "code": "bad_request"}
+    return 404, {"detail": f"no route {method} {path}", "code": "not_found"}
+
+
+def _need(body, key):
+    if key not in body:
+        raise ApiError(400, f"{key} is required", "bad_request")
+    return body[key]
+
+
+# ------------------------------------------------------------------ overview
+
+
+@route("GET", "/rev")
+def _rev(svc, human, body):
+    return {"rev": svc.engine.rev()}
+
+
+@route("GET", "/state")
+def _state(svc, human, body):
+    e = svc.engine
+    cur = e.current_project()
+    out = {"rev": e.rev(), "current": cur, "projects": e.projects(), "settings": e.settings(),
+           "profiles": e.profiles(), "needs_you": 0, "running": 0}
+    if cur:
+        t = e.tiles(cur)
+        out["needs_you"] = t["needs_you"]
+        out["running"] = t["running"]
+    return out
+
+
+@route("POST", "/projects")
+def _create_project(svc, human, body):
+    return svc.engine.create_project(_need(body, "name"), _need(body, "folder"), _need(body, "test_command"),
+                                     list(body.get("profiles", [])))
+
+
+@route("POST", "/projects/{project}/open")
+def _open(svc, human, body, project):
+    return svc.engine.open_project(project)
+
+
+@route("GET", "/projects/{project}/home")
+def _home(svc, human, body, project):
+    e = svc.engine
+    h = e.home(project)
+    h["tree"] = e.tree(project)
+    h["rev"] = e.rev()
+    focus = body.get("focus") if isinstance(body, dict) else None
+    h["allocation"] = _allocation_focus(svc, project, focus)
+    return h
+
+
+def _allocation_focus(svc, project, focus=None):
+    e = svc.engine
+    spec = focus
+    if not spec:
+        for item in e.needs_you(project):
+            if item["kind"] == "specification":
+                spec = item["id"]
+                break
+    if not spec:
+        for n in e.tree(project):
+            for r in n["children"]:
+                for s in r["children"]:
+                    if s["status"] in ("approved", "stale"):
+                        spec = s["id"]
+                        break
+                if spec:
+                    break
+            if spec:
+                break
+    if not spec:
+        return None
+    try:
+        return e.suggest(project, spec)
+    except RungError:
+        return None
+
+
+@route("GET", "/projects/{project}/tree")
+def _tree(svc, human, body, project):
+    return svc.engine.tree(project)
+
+
+@route("GET", "/projects/{project}/needs-you")
+def _needs_you(svc, human, body, project):
+    return svc.engine.needs_you(project)
+
+
+# ------------------------------------------------------------------ rungs
+
+
+@route("GET", "/projects/{project}/rungs/{rid}")
+def _rung(svc, human, body, project, rid):
+    e = svc.engine
+    r = e.rung(project, rid)
+    tree_index = {}
+
+    def walk(nodes):
+        for n in nodes:
+            tree_index[n["id"]] = n
+            walk(n.get("children", []))
+
+    walk(e.tree(project))
+    node = tree_index.get(rid)
+    r["children"] = node["children"] if node else []
+    for k in ("coverage", "released", "blockers", "carried_by", "result"):
+        if node and k in node:
+            r[k] = node[k]
+    r["history"] = e.history(project, rid)
+    r["changes"] = e.changes(project, rid)
+    if r["status"] == "stale" or any(c["stale"] for c in r["changes"]):
+        r["change"] = e.change_for(project, rid)
+    path = []
+    cur = r
+    while cur.get("parent"):
+        cur = e.rung(project, cur["parent"])
+        path.insert(0, {"id": cur["id"], "text": cur["text"], "kind": cur["kind"], "status": cur["status"]})
+    r["path"] = path
+    if r["kind"] == "need":
+        r["flow"] = e.flow(project, rid)
+        r["suggestions"] = e.suggestions(project, rid, "requirement")
+    if r["kind"] == "requirement":
+        r["suggestions"] = e.suggestions(project, rid, "edit")
+    if r["kind"] == "specification":
+        r["allocation"] = e.suggest(project, rid)
+        r["runs"] = e.runs(project, rid)
+        ok, why = e.develop_available(project, rid)
+        r["develop"] = {"available": ok, "blocked_by": why or None}
+    if r["kind"] == "test":
+        r["executions"] = e.executions(project, rid)
+        r["defects"] = [d for d in e.defects(project) if d["test"] == rid]
+    return r
+
+
+@route("POST", "/projects/{project}/needs/suggest")
+def _suggest_reqs(svc, human, body, project):
+    return {"suggestions": svc.suggest_requirements(project, _need(body, "text"))}
+
+
+@route("POST", "/projects/{project}/needs")
+def _create_need(svc, human, body, project):
+    need = svc.engine.create_need(project, _need(body, "text"), human, list(body.get("requirements", [])))
+    more = body.get("more_suggestions")
+    if more is None:
+        try:
+            d = svc.drafter(project)
+            more = d.table.get("more_requirements", {}).get(need["text"], []) if hasattr(d, "table") else []
+        except Exception:
+            more = []
+    if more:
+        svc.engine.add_suggestions(project, need["id"], "requirement", more)
+    return need
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/edit")
+def _edit(svc, human, body, project, rid):
+    return svc.engine.edit(project, rid, text=body.get("text"), detail=body.get("detail"), actor=human,
+                           approve=bool(body.get("approve")), data=body.get("data"))
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/approve")
+def _approve(svc, human, body, project, rid):
+    return svc.engine.approve(project, rid, human)
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/dismiss")
+def _dismiss(svc, human, body, project, rid):
+    svc.engine.dismiss(project, rid, human)
+    return {"ok": True}
+
+
+@route("POST", "/projects/{project}/needs/{rid}/requirements")
+def _add_req(svc, human, body, project, rid):
+    return svc.engine.add_requirement(project, rid, _need(body, "text"), human, body.get("detail", ""))
+
+
+@route("POST", "/projects/{project}/needs/{rid}/approve-requirements")
+def _approve_reqs(svc, human, body, project, rid):
+    return {"approved": svc.engine.approve_requirements(project, rid, human)}
+
+
+@route("GET", "/projects/{project}/needs/{rid}/flow")
+def _flow(svc, human, body, project, rid):
+    return svc.engine.flow(project, rid)
+
+
+@route("POST", "/projects/{project}/needs/{rid}/approve-drafted")
+def _approve_drafted(svc, human, body, project, rid):
+    approved = svc.engine.approve_drafted(project, rid, human)
+    proposed = svc.propose_tests(project, rid)
+    return {"approved": approved, "proposed_tests": [t["id"] for t in proposed]}
+
+
+@route("POST", "/projects/{project}/needs/{rid}/propose-tests")
+def _propose_tests(svc, human, body, project, rid):
+    return {"proposed_tests": [t["id"] for t in svc.propose_tests(project, rid)]}
+
+
+@route("POST", "/projects/{project}/needs/{rid}/approve-tests")
+def _approve_tests(svc, human, body, project, rid):
+    svc.engine.approve_tests(project, rid, human)
+    return svc.engine.flow(project, rid)
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/authoring")
+def _authoring(svc, human, body, project, rid):
+    spec = svc.set_authoring(project, rid, _need(body, "mode"), human)
+    return {"spec": spec}
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/spec")
+def _write_spec(svc, human, body, project, rid):
+    return svc.engine.write_spec(project, rid, _need(body, "text"), body.get("detail", ""), human,
+                                 tags=body.get("tags"), required_tags=body.get("required_tags"),
+                                 suggestion=body.get("suggestion"))
+
+
+@route("GET", "/projects/{project}/rungs/{rid}/support")
+def _support(svc, human, body, project, rid):
+    return {"suggestion": svc.support(project, rid, body.get("draft", "") if isinstance(body, dict) else "")}
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/suggest-edits")
+def _suggest_edits(svc, human, body, project, rid):
+    return {"suggestions": svc.suggest_edits(project, rid)}
+
+
+@route("POST", "/projects/{project}/suggestions/{sid}")
+def _resolve_suggestion(svc, human, body, project, sid):
+    made = svc.engine.resolve_suggestion(project, int(sid), bool(_need(body, "accept")), human)
+    return {"made": made}
+
+
+@route("GET", "/projects/{project}/changes")
+def _changes(svc, human, body, project):
+    return svc.engine.changes(project)
+
+
+# ------------------------------------------------------------------ tests and executions
+
+
+@route("POST", "/projects/{project}/specs/{rid}/tests")
+def _add_test(svc, human, body, project, rid):
+    fields = dict(body.get("fields") or body)
+    return svc.engine.add_test(project, rid, fields, human, status="approved" if body.get("accept") else "draft")
+
+
+@route("POST", "/projects/{project}/tests/{rid}")
+def _edit_test(svc, human, body, project, rid):
+    fields = dict(body.get("fields") or body)
+    out = svc.engine.edit_test(project, rid, fields, human)
+    return out
+
+
+@route("POST", "/projects/{project}/tests/{rid}/run")
+def _run_test(svc, human, body, project, rid):
+    n = svc.run_test(project, rid, carried_by="engine")
+    return {"n": n}
+
+
+@route("POST", "/projects/{project}/specs/{rid}/run-tests")
+def _run_spec_tests(svc, human, body, project, rid):
+    ns = []
+    for t in svc.engine.command_tests(project, rid):
+        ns.append({"test": t["id"], "n": svc.run_test(project, t["id"], carried_by="engine")})
+    return {"started": ns}
+
+
+@route("GET", "/projects/{project}/tests/{rid}/executions")
+def _executions(svc, human, body, project, rid):
+    return svc.engine.executions(project, rid)
+
+
+@route("GET", "/projects/{project}/tests/{rid}/executions/{n}")
+def _execution(svc, human, body, project, rid, n):
+    out = svc.engine.execution(project, rid, int(n))
+    t = svc.engine.rung(project, rid)
+    out["timeout"] = t.get("timeout")
+    out["test_status"] = t["status"]
+    out["spec"] = t["parent"]
+    s = svc.engine.rung(project, t["parent"])
+    out["requirement"] = s["parent"]
+    out["coverage"] = svc.engine.coverage(project, s["parent"])
+    return out
+
+
+@route("POST", "/projects/{project}/tests/{rid}/executions/{n}/cancel")
+def _cancel_exec(svc, human, body, project, rid, n):
+    svc.engine.cancel_execution(project, rid, int(n))
+    return svc.engine.execution(project, rid, int(n))
+
+
+@route("POST", "/projects/{project}/tests/{rid}/record")
+def _record(svc, human, body, project, rid):
+    return svc.engine.record_manual(project, rid, _need(body, "result"), body.get("note", ""), human)
+
+
+@route("POST", "/projects/{project}/tests/{rid}/executions/{n}/approve")
+def _approve_result(svc, human, body, project, rid, n):
+    return svc.engine.approve_result(project, rid, int(n), human)
+
+
+@route("POST", "/projects/{project}/tests/{rid}/defects")
+def _raise_defect(svc, human, body, project, rid):
+    return svc.engine.raise_defect(project, rid, list(_need(body, "executions")), _need(body, "title"),
+                                   body.get("note", ""), human)
+
+
+@route("GET", "/projects/{project}/defects")
+def _defects(svc, human, body, project):
+    return svc.engine.defects(project)
+
+
+# ------------------------------------------------------------------ allocation and develop
+
+
+@route("GET", "/projects/{project}/specs/{rid}/suggest")
+def _suggest(svc, human, body, project, rid):
+    return svc.engine.suggest(project, rid)
+
+
+@route("POST", "/projects/{project}/specs/{rid}/pick")
+def _pick(svc, human, body, project, rid):
+    return svc.engine.pick(project, rid, _need(body, "profile"), human)
+
+
+@route("POST", "/projects/{project}/specs/{rid}/send")
+def _send(svc, human, body, project, rid):
+    return svc.send(project, rid, human, body.get("profile"))
+
+
+@route("GET", "/projects/{project}/runs")
+def _runs(svc, human, body, project):
+    return svc.engine.runs(project)
+
+
+@route("GET", "/runs/{run_id}")
+def _run(svc, human, body, run_id):
+    return svc.engine.run(int(run_id))
+
+
+@route("POST", "/runs/{run_id}/cancel")
+def _cancel_run(svc, human, body, run_id):
+    return svc.cancel(int(run_id))
+
+
+@route("GET", "/projects/{project}/check/{rid}")
+def _check(svc, human, body, project, rid):
+    return svc.engine.check(project, rid)
+
+
+@route("GET", "/projects/{project}/check")
+def _check_all(svc, human, body, project):
+    return svc.engine.check_all(project)
+
+
+# ------------------------------------------------------------------ settings
+
+
+@route("GET", "/settings")
+def _settings(svc, human, body):
+    return {"settings": svc.engine.settings(), "profiles": svc.engine.profiles()}
+
+
+@route("POST", "/settings")
+def _save_settings(svc, human, body):
+    for k, v in (body.get("settings") or {}).items():
+        svc.engine.set_setting(k, v)
+    if "profiles" in body:
+        svc.engine.save_profiles(list(body["profiles"]))
+    return {"settings": svc.engine.settings(), "profiles": svc.engine.profiles()}
+
+
+@route("GET", "/profiles")
+def _profiles(svc, human, body):
+    return svc.engine.profiles()

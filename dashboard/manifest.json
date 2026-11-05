@@ -1,0 +1,6 @@
+{
+  "name": "rung",
+  "label": "Rung",
+  "description": "Design-control ladder",
+  "api": "plugin_api.py"
+}
