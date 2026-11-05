@@ -56,7 +56,6 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .cursor-not-allowed{cursor:not-allowed}
 .rung .cursor-pointer{cursor:pointer}
 .rung .divide-line>*+*{border-color:var(--r-line)}
-.rung .fixed{position:fixed}
 .rung .flex{display:flex}
 .rung .flex-1{flex:1 1 0%}
 .rung .flex-col{flex-direction:column}
@@ -455,6 +454,10 @@ const TONE_TEXT = { pass: 'text-pass', fail: 'text-fail', stale: 'text-stale', n
 // safelist: bg-pass bg-fail bg-stale bg-needs bg-dim bg-muted bg-fg text-pass text-fail text-stale text-needs text-dim text-muted text-fg
 // safelist: bg-pass/10 bg-fail/10 bg-stale/15 bg-needs/10 border-pass/30 border-fail/30 border-stale/30 border-needs/30 border-needs border-pass border-fail border-stale
 
+function capital(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s
+}
+
 function resultWord(r) {
   return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running' }[r] || 'not run'
 }
@@ -631,9 +634,9 @@ function TreeTest({ n, sel }) {
   h('span', { className: cx('text-[10px] mono', TONE_TEXT[t]) }, `${n.id} ${n.status === 'stale' ? 'stale' : resultWord(n.result)}`))
 }
 
-function TreeSpec({ n, sel }) {
+function TreeSpec({ n, sel, hl }) {
   const t = tone(n)
-  const on = sel === n.id
+  const on = hl === n.id
   const tests = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
@@ -645,7 +648,7 @@ function TreeSpec({ n, sel }) {
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
 }
 
-function TreeReq({ n, sel }) {
+function TreeReq({ n, sel, hl }) {
   const t = tone(n)
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
@@ -654,10 +657,10 @@ function TreeReq({ n, sel }) {
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
         h('span', { className: cx('text-[11px]', t === 'dim' ? 'text-dim' : 'text-muted') }, n.text))),
-    ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel })))
+    ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel, hl })))
 }
 
-function TreeNeed({ n, sel }) {
+function TreeNeed({ n, sel, hl }) {
   const t = tone(n)
   const reqs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1.5 text-xs',
@@ -666,7 +669,7 @@ function TreeNeed({ n, sel }) {
       h('div', 'flex flex-col',
         h('span', 'font-semibold text-fg', n.id),
         h('span', 'text-[11px] text-muted leading-tight', n.text))),
-    reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel }))) : null)
+    reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)
 }
 
 function Allocation({ alloc }) {
@@ -707,7 +710,7 @@ function Rail({ tree, alloc, sel }) {
         h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Traceability Tree'),
         head ? h('span', { className: cx('text-[11px]', TONE_TEXT[tone(head)]) }, head.status) : null),
       needs.length
-        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel })))
+        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
         : h('div', 'text-[11px] text-muted', 'No needs yet')),
     h(Allocation, { alloc }))
 }
@@ -894,7 +897,7 @@ function Home({ project }) {
         h('div', 'flex items-center gap-2.5', h(Dot, { t: 'pass' }),
           h('span', 'text-xs font-medium text-fg', s.id), h('span', 'text-xs text-muted', s.text)),
         h('span', 'text-xs font-medium text-pass flex items-center gap-1',
-          s.tests.length === 1 ? `${s.tests[0].id} pass` : 'Pass')))) : null,
+          'Pass')))) : null,
     (d.draft || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'draft' },
       h(SectionTitle, { dot: 'dim' }, 'Draft'),
       ...d.draft.map(r => h(Card, { key: r.id, className: 'p-3 flex items-center justify-between text-dim', onClick: () => navigate('rung', { rid: r.id }) },
@@ -1134,7 +1137,7 @@ function useHome(project, focus) {
 }
 
 function Page({ project, focus, sel, children, noTiles }) {
-  const q = useHome(project, focus)
+  const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
     h('header', 'flex flex-col gap-4', h(Header, { project }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
@@ -1847,7 +1850,7 @@ function SpecView({ project, r, ret, need }) {
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests'),
           ...tests.map(t => h('div', { key: t.id, className: 'bg-well p-2.5 rounded-[6px] border border-line2 flex items-center justify-between text-[11px] cursor-pointer', 'data-test': t.id, onClick: () => navigate('rung', { rid: t.id }) },
             h('span', 'mono text-fg', `${t.id} · ${t.type === 'manual' ? t.text : (t.command || t.text)}`),
-            h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, resultWord(t.result))))),
+            h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, capital(resultWord(t.result)))))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Latest run'),
           h(SpecExecs, { project, tests, runId: lastRun && lastRun.id })),
@@ -2020,7 +2023,7 @@ function TestView({ project, r }) {
     return h(Page, { project, sel: r.id }, body)
   }
   const badge = r.status === 'stale' ? h(Badge, { status: 'stale' }) : h(Badge, { status: r.result === 'not_run' ? 'not_run' : (r.result || 'not_run') })
-  const failing = execs.filter(x => x.status === 'fail' && !x.invalidated)
+  const failing = execs.filter(x => x.status === 'fail')  // fails stay failed after an upstream edit
   const body = h('div', 'flex flex-col gap-6',
     h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'command-test' },
       headline(badge),
@@ -2055,7 +2058,7 @@ function ExecRow({ test, x }) {
   const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'running' || x.status === 'pending' ? 'needs' : 'dim'
   return h('div', { className: cx('flex items-center justify-between bg-well p-2.5 rounded-[6px] border font-mono text-[11px] text-fg cursor-pointer', t === 'fail' ? 'border-fail/30' : t === 'pass' ? 'border-pass/30' : 'border-line2'), 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
     h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
-    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'passed' : x.status === 'fail' ? 'failed' : x.status))
+    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
 }
 
 // ------------------------------------------------------------------ test editor
@@ -2154,7 +2157,12 @@ function TestEdit({ project, test, spec, ret, need }) {
 
 // Rung desktop pane: runs, attempts, executions, defects.
 
-function Fact({ label, value, mono, tone, big }) {
+function Fact({ label, value, mono, tone, big, tile }) {
+  if (tile) {
+    return h('div', 'bg-card border border-line rounded-[6px] p-2.5 flex flex-col gap-0.5',
+      h('span', 'text-[11px] text-muted', label),
+      h('span', { className: cx('mono text-xs font-medium', tone ? TONE_TEXT[tone] : 'text-fg'), 'data-fact': label }, value))
+  }
   if (big) {
     return h('div', 'bg-card border border-line rounded-[6px] p-3 flex flex-col justify-between',
       h('span', 'text-[11px] font-medium text-muted', label),
@@ -2336,7 +2344,8 @@ function ExecView({ project, test, n }) {
   const x = q.data
   const t = tq.data
   if (!x || !t) return h(Page, { project, sel: test }, h(Loading))
-  const crumbs = h(Crumbs, { path: [...t.path, { id: t.id }], last: `#${x.n}`, lastTone: x.status === 'fail' && !x.invalidated ? 'text-fail' : 'text-needs' })
+  const voided = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; fails stay failed
+  const crumbs = h(Crumbs, { path: [...t.path, { id: t.id }], last: `#${x.n}`, lastTone: x.status === 'fail' ? 'text-fail' : 'text-needs' })
   const again = async () => {
     const r = await post(`${P(project)}/tests/${test}/run`)
     if (!r.ok) return setErr(r.error)
@@ -2378,7 +2387,7 @@ function ExecView({ project, test, n }) {
     h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? x.status : String(x.exit_code), mono: true, tone: pass ? 'pass' : 'fail' }),
     h(Fact, { key: 'x', big, label: 'Context', value: x.context || '' })
   ]
-  if (x.invalidated) {
+  if (voided) {
     // exec-3: an old result that no longer counts
     const body = h('div', { className: 'flex flex-col gap-4', 'data-testid': 'execution', 'data-exec-status': x.status },
       h('div', 'flex flex-col gap-2', crumbs,
@@ -2391,7 +2400,7 @@ function ExecView({ project, test, n }) {
             h(Btn, { testid: 'back-to-test', onClick: back }, 'Back to test')))),
       h('div', { className: 'flex items-center gap-2 px-3 py-2 rounded-[6px] bg-stale/15 border border-stale/30 text-xs text-stale', 'data-testid': 'no-longer-counts' },
         h('span', 'w-1.5 h-1.5 rounded-full bg-stale'), `No longer counts · ${x.invalidated_by || 'an upstream rung edited'} after this run`),
-      h('div', 'grid grid-cols-3 gap-2.5', ...facts(false).map(f => h('div', { key: f.key, className: 'bg-card border border-line rounded-[6px] p-2.5 flex flex-col gap-0.5' }, f))),
+      h('div', 'grid grid-cols-3 gap-2.5', ...facts(false).map(f => h(Fact, { ...f.props, key: f.key, tile: true }))),
       h('div', 'flex flex-col gap-1.5',
         h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Output log'),
         h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 font-mono text-xs flex flex-col gap-1 leading-relaxed text-muted', 'data-testid': 'output' }, ...OutputLines({ text: x.output }))),
@@ -2464,7 +2473,7 @@ function DefectModal({ project }) {
   if (!d) return null
   const t = tq.data
   const fails = t ? (t.executions || []).filter(x => x.status === 'fail') : []
-  const sel = picked || new Set(d.preselect || fails.filter(x => !x.invalidated).map(x => x.n))
+  const sel = picked || new Set(d.preselect || fails.map(x => x.n))
   const toggle = n => { const s = new Set(sel); if (s.has(n)) s.delete(n); else s.add(n); setPicked(s) }
   const close = () => $defect.set(null)
   const raise = async () => {
@@ -2473,7 +2482,7 @@ function DefectModal({ project }) {
     setDone(x.data)
     close()
   }
-  return h('div', { className: 'fixed inset-0 bg-well/75 flex items-center justify-center z-50 p-4', 'data-testid': 'defect-modal', onClick: close },
+  return h('div', { className: 'absolute inset-0 bg-well/75 flex items-center justify-center z-50 p-4', 'data-testid': 'defect-modal', onClick: close },
     h('div', { className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col', onClick: e => e.stopPropagation() },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
         h('h3', 'text-sm font-semibold text-fg', 'Raise defect'),
@@ -2539,7 +2548,7 @@ function App() {
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
   else body = h(Home, { project })
-  return h(Root, { className: 'h-full w-full' }, h('div', { className: 'h-full w-full', 'data-rung-view': view }, body), project ? h(DefectModal, { project }) : null)
+  return h(Root, { className: 'relative h-full w-full' }, h('div', { className: 'h-full w-full', 'data-rung-view': view }, body), project ? h(DefectModal, { project }) : null)
 }
 
 function StatusChip() {

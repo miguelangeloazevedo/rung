@@ -18,7 +18,7 @@ function App() {
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
   else body = h(Home, { project })
-  return h(Root, { className: 'h-full w-full' }, h('div', { className: 'h-full w-full', 'data-rung-view': view }, body), project ? h(DefectModal, { project }) : null)
+  return h(Root, { className: 'relative h-full w-full' }, h('div', { className: 'h-full w-full', 'data-rung-view': view }, body), project ? h(DefectModal, { project }) : null)
 }
 
 function StatusChip() {

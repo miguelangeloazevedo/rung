@@ -304,7 +304,7 @@ function SpecView({ project, r, ret, need }) {
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests'),
           ...tests.map(t => h('div', { key: t.id, className: 'bg-well p-2.5 rounded-[6px] border border-line2 flex items-center justify-between text-[11px] cursor-pointer', 'data-test': t.id, onClick: () => navigate('rung', { rid: t.id }) },
             h('span', 'mono text-fg', `${t.id} · ${t.type === 'manual' ? t.text : (t.command || t.text)}`),
-            h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, resultWord(t.result))))),
+            h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, capital(resultWord(t.result)))))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Latest run'),
           h(SpecExecs, { project, tests, runId: lastRun && lastRun.id })),
@@ -477,7 +477,7 @@ function TestView({ project, r }) {
     return h(Page, { project, sel: r.id }, body)
   }
   const badge = r.status === 'stale' ? h(Badge, { status: 'stale' }) : h(Badge, { status: r.result === 'not_run' ? 'not_run' : (r.result || 'not_run') })
-  const failing = execs.filter(x => x.status === 'fail' && !x.invalidated)
+  const failing = execs.filter(x => x.status === 'fail')  // fails stay failed after an upstream edit
   const body = h('div', 'flex flex-col gap-6',
     h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'command-test' },
       headline(badge),
@@ -512,7 +512,7 @@ function ExecRow({ test, x }) {
   const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'running' || x.status === 'pending' ? 'needs' : 'dim'
   return h('div', { className: cx('flex items-center justify-between bg-well p-2.5 rounded-[6px] border font-mono text-[11px] text-fg cursor-pointer', t === 'fail' ? 'border-fail/30' : t === 'pass' ? 'border-pass/30' : 'border-line2'), 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
     h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
-    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'passed' : x.status === 'fail' ? 'failed' : x.status))
+    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
 }
 
 // ------------------------------------------------------------------ test editor

@@ -163,7 +163,7 @@ function Home({ project }) {
         h('div', 'flex items-center gap-2.5', h(Dot, { t: 'pass' }),
           h('span', 'text-xs font-medium text-fg', s.id), h('span', 'text-xs text-muted', s.text)),
         h('span', 'text-xs font-medium text-pass flex items-center gap-1',
-          s.tests.length === 1 ? `${s.tests[0].id} pass` : 'Pass')))) : null,
+          'Pass')))) : null,
     (d.draft || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'draft' },
       h(SectionTitle, { dot: 'dim' }, 'Draft'),
       ...d.draft.map(r => h(Card, { key: r.id, className: 'p-3 flex items-center justify-between text-dim', onClick: () => navigate('rung', { rid: r.id }) },

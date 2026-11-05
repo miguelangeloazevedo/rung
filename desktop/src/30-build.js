@@ -13,7 +13,7 @@ function useHome(project, focus) {
 }
 
 function Page({ project, focus, sel, children, noTiles }) {
-  const q = useHome(project, focus)
+  const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
     h('header', 'flex flex-col gap-4', h(Header, { project }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),

@@ -170,9 +170,9 @@ function TreeTest({ n, sel }) {
   h('span', { className: cx('text-[10px] mono', TONE_TEXT[t]) }, `${n.id} ${n.status === 'stale' ? 'stale' : resultWord(n.result)}`))
 }
 
-function TreeSpec({ n, sel }) {
+function TreeSpec({ n, sel, hl }) {
   const t = tone(n)
-  const on = sel === n.id
+  const on = hl === n.id
   const tests = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
@@ -184,7 +184,7 @@ function TreeSpec({ n, sel }) {
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
 }
 
-function TreeReq({ n, sel }) {
+function TreeReq({ n, sel, hl }) {
   const t = tone(n)
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
@@ -193,10 +193,10 @@ function TreeReq({ n, sel }) {
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
         h('span', { className: cx('text-[11px]', t === 'dim' ? 'text-dim' : 'text-muted') }, n.text))),
-    ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel })))
+    ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel, hl })))
 }
 
-function TreeNeed({ n, sel }) {
+function TreeNeed({ n, sel, hl }) {
   const t = tone(n)
   const reqs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1.5 text-xs',
@@ -205,7 +205,7 @@ function TreeNeed({ n, sel }) {
       h('div', 'flex flex-col',
         h('span', 'font-semibold text-fg', n.id),
         h('span', 'text-[11px] text-muted leading-tight', n.text))),
-    reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel }))) : null)
+    reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)
 }
 
 function Allocation({ alloc }) {
@@ -246,7 +246,7 @@ function Rail({ tree, alloc, sel }) {
         h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Traceability Tree'),
         head ? h('span', { className: cx('text-[11px]', TONE_TEXT[tone(head)]) }, head.status) : null),
       needs.length
-        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel })))
+        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
         : h('div', 'text-[11px] text-muted', 'No needs yet')),
     h(Allocation, { alloc }))
 }

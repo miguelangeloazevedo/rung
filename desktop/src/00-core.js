@@ -227,6 +227,10 @@ const TONE_TEXT = { pass: 'text-pass', fail: 'text-fail', stale: 'text-stale', n
 // safelist: bg-pass bg-fail bg-stale bg-needs bg-dim bg-muted bg-fg text-pass text-fail text-stale text-needs text-dim text-muted text-fg
 // safelist: bg-pass/10 bg-fail/10 bg-stale/15 bg-needs/10 border-pass/30 border-fail/30 border-stale/30 border-needs/30 border-needs border-pass border-fail border-stale
 
+function capital(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s
+}
+
 function resultWord(r) {
   return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running' }[r] || 'not run'
 }

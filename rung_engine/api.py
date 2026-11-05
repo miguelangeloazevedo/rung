@@ -107,7 +107,7 @@ def _home(svc, human, body, project):
 
 def _allocation_focus(svc, project, focus=None):
     e = svc.engine
-    spec = focus
+    spec = _spec_for(e.tree(project), focus) if focus else None
     if not spec:
         for item in e.needs_you(project):
             if item["kind"] == "specification":
@@ -130,6 +130,32 @@ def _allocation_focus(svc, project, focus=None):
         return e.suggest(project, spec)
     except RungError:
         return None
+
+
+def _spec_for(tree, rid):
+    """The specification a rung's view is about: itself, its parent for a test, the first one below otherwise."""
+    def first_spec(n):
+        if n.get("kind") == "specification":
+            return n["id"]
+        for c in n.get("children", []):
+            if c.get("status") in ("dismissed", "proposed"):
+                continue
+            s = first_spec(c)
+            if s:
+                return s
+        return None
+
+    def walk(nodes, parent_spec=None):
+        for n in nodes:
+            spec = n["id"] if n.get("kind") == "specification" else parent_spec
+            if n["id"] == rid:
+                return spec if n.get("kind") == "test" else first_spec(n)
+            hit = walk(n.get("children", []), spec)
+            if hit:
+                return hit
+        return None
+
+    return walk(tree)
 
 
 @route("GET", "/projects/{project}/tree")
