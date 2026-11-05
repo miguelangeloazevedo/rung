@@ -7,7 +7,7 @@
 #   scripts/e2e-up.sh down     stop the dev build and the stub model
 set -u
 R="$(cd "$(dirname "$0")/.." && pwd)"
-E2E="${RUNG_E2E_DIR:-$R/.e2e}"
+E2E="${RUNG_E2E_DIR:-$HOME/.cache/rung-e2e}"
 HOME_DIR="$E2E/home"
 UDATA="$E2E/userdata"
 LOGS="$E2E/logs"

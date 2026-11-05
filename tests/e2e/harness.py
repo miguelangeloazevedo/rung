@@ -1,6 +1,6 @@
 """Drive the Rung pane in the Hermes Desktop dev build over CDP (127.0.0.1:9222).
 
-The dev build runs against the isolated Hermes home in `.e2e/home` (scripts/e2e-up.sh). Each test
+The dev build runs against the isolated Hermes home in `~/.cache/rung-e2e/home` (outside the repo) (scripts/e2e-up.sh). Each test
 points Rung at its own fresh store through Rung's store setting (`plugin-data/rung/store`), so no
 test ever reads or writes the Rung data of a real profile.
 """
@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-E2E = Path(os.environ.get("RUNG_E2E_DIR", ROOT / ".e2e"))
+E2E = Path(os.environ.get("RUNG_E2E_DIR", Path.home() / ".cache" / "rung-e2e"))
 HOME = E2E / "home"
 EVIDENCE = ROOT / "evidence"
 CDP = "http://127.0.0.1:9222"
