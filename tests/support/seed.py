@@ -151,3 +151,30 @@ def seed_merge(engine: Engine, folder: Path, upto: str = "develop") -> None:
     for t in made:
         engine.approve("csvtidy", t["id"], HUMAN)
     engine.approve_tests("csvtidy", "N-2", HUMAN)
+
+
+def seed_large(engine: Engine, folder: Path, name: str = "bigladder", needs: int = 20, reqs: int = 8,
+               executions: int = 2000, text=None) -> dict:
+    """A project of needs x (1 + 3 x reqs) rungs (500 by default) and `executions` recorded results, built through
+    the same engine calls as the demo. `text(kind, i)` overrides the wording (the worst-case fixture uses it)."""
+    say = text or (lambda kind, i: f"{kind} {i}")
+    seed_profiles(engine)
+    engine.create_project(name, str(folder), "true", [p["name"] for p in PROFILES])
+    engine.set_setting("drafting", {"kind": "stub", "delay": 0.0})
+    tests = []
+    for n in range(1, needs + 1):
+        need = engine.create_need(name, say("Need", n), HUMAN)["id"]
+        rids = [engine.add_requirement(name, need, say("Requirement", f"{n}.{r}"), HUMAN)["id"]
+                for r in range(1, reqs + 1)]
+        engine.approve_requirements(name, need, HUMAN)
+        specs = [engine.write_spec(name, rid, say("Specification", rid), tags=["python"])["id"] for rid in rids]
+        engine.approve_drafted(name, need, HUMAN)
+        for spec in specs:
+            tests.append(engine.add_test(name, spec, {"type": "manual", "text": say("Test", spec),
+                                                      "steps": ["Open the output", "Compare with the sample"]},
+                                         HUMAN, status="approved")["id"])
+        engine.approve_tests(name, need, HUMAN)
+    for i in range(executions):
+        t = tests[i % len(tests)]
+        engine.record_manual(name, t, "fail" if i % 7 == 3 else "pass", f"round {i // len(tests) + 1}")
+    return {"rungs": needs * (1 + 3 * reqs), "executions": executions, "tests": tests}

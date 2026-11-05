@@ -41,6 +41,14 @@ def ensure_env() -> None:
         raise RuntimeError("could not start the e2e environment:\n" + r.stdout + r.stderr)
 
 
+def restart_all() -> None:
+    """Stop the Desktop, its backend and every Rung runner, then start them again: a full restart."""
+    for args in ([str(ROOT / "scripts" / "e2e-up.sh"), "down"], [str(ROOT / "scripts" / "e2e-up.sh")]):
+        r = subprocess.run(args, capture_output=True, text=True, timeout=400)
+        if r.returncode != 0:
+            raise RuntimeError(" ".join(args) + " failed:\n" + r.stdout + r.stderr)
+
+
 def pointer_file() -> Path:
     d = HOME / "plugin-data" / "rung"
     d.mkdir(parents=True, exist_ok=True)

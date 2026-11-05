@@ -48,14 +48,15 @@ function NeedView({ project, r }) {
   const [err, setErr] = useState('')
   const [conflict, setConflict] = useState(null)
   const [retiring, setRetiring] = useState(false)
+  const [base, setBase] = useState(null)
   const ro = !!r.read_only
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
   const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : 'approved'
   const save = async approve => {
-    const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve, version: r.version })
+    const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve, version: base == null ? r.version : base })
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
-    setEditing(false); setErr(''); setConflict(null)
+    setEditing(false); setErr(''); setConflict(null); setBase(null)
   }
   const head = h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between',
@@ -68,7 +69,7 @@ function NeedView({ project, r }) {
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
       : ro ? h('h2', { className: 'text-base font-semibold text-fg', 'data-testid': 'need-title' }, r.text)
-        : h('h2', { className: 'text-base font-semibold text-fg cursor-pointer', 'data-testid': 'need-title', title: 'Edit', 'aria-label': `Edit ${r.id}: ${r.text}`, onClick: () => setEditing(true) }, r.text),
+        : h('h2', { className: 'text-base font-semibold text-fg cursor-pointer', 'data-testid': 'need-title', title: 'Edit', 'aria-label': `Edit ${r.id}: ${r.text}`, onClick: () => { setBase(r.version); setText(r.text); setEditing(true) } }, r.text),
     h(Conflict, { res: conflict, path: `${P(project)}/rungs/${r.id}` }),
     !editing ? h('div', 'flex items-center gap-2 pt-1',
       r.status === 'draft' && !ro ? h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/approve`); setErr(x.ok ? '' : x.error) } }, 'Approve') : null,
@@ -111,6 +112,7 @@ function ReqEditor({ project, r, need, ret }) {
   const [sugs, setSugs] = useState(null)
   const [marks, setMarks] = useState({})
   const [conflict, setConflict] = useState(null)
+  const base = useBase(r && r.version)
   const needId = r ? r.parent : need
   useEffect(() => {
     if (isNew) return
@@ -125,7 +127,7 @@ function ReqEditor({ project, r, need, ret }) {
       res = await post(`${P(project)}/needs/${needId}/requirements`, { text, detail })
       if (res.ok && approve) res = await post(`${P(project)}/rungs/${res.data.id}/approve`)
     } else {
-      res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: r.version })
+      res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: base })
     }
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
     done()
@@ -379,6 +381,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const rq = useRung(project, req || (sq.data && sq.data.parent))
   const s = sq.data
   const r = rq.data
+  const base = useBase(s && s.version)
   const [text, setText] = useState(null)
   const [detail, setDetail] = useState(null)
   const [sug, setSug] = useState(null)
@@ -399,7 +402,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const done = () => (ret ? navigate('build', { need: need || needId, step: ret }) : navigate('rung', { rid: s ? s.id : reqId }))
   const save = async () => {
     let x
-    if (s) x = await post(`${P(project)}/rungs/${s.id}/edit`, { text: t, detail: d, approve: true, version: s.version })
+    if (s) x = await post(`${P(project)}/rungs/${s.id}/edit`, { text: t, detail: d, approve: true, version: base })
     else {
       x = await post(`${P(project)}/rungs/${reqId}/spec`, { text: t, detail: d, suggestion: mark === 'accepted' ? sug : null })
       if (x.ok) x = await post(`${P(project)}/rungs/${x.data.id}/approve`)
@@ -536,6 +539,7 @@ function ExecRow({ test, x }) {
 function TestEdit({ project, test, spec, ret, need }) {
   const tq = useRung(project, test)
   const t = tq.data
+  const base = useBase(t && t.version)
   const specId = spec || (t && t.parent)
   const sq = useRung(project, specId)
   const st = useApi('/settings').data
@@ -563,7 +567,7 @@ function TestEdit({ project, test, spec, ret, need }) {
   }
   const done = () => (ret ? navigate('build', { need: need || (s.path[0] && s.path[0].id), step: ret }) : navigate('rung', { rid: t ? t.id : s.id }))
   const save = async () => {
-    const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: { ...fields(), version: t.version } }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
+    const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: { ...fields(), version: base } }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
     done()
   }

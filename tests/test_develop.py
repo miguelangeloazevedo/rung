@@ -81,3 +81,22 @@ def test_reconcile_marks_dead_runner(seeded):
     e.set_run(run["id"], status="running", pid=999999)
     assert e.reconcile_runs(lambda pid: False) == [run["id"]]
     assert e.run(run["id"])["status"] == "unknown"
+
+
+def test_res02_runner_stopped_from_outside_is_unknown_not_cancelled(seeded, tmp_path):
+    import os
+    import signal
+    e = seeded
+    e.add_test("csvtidy", "S-1.1", {"type": "command", "command": "sleep 20", "timeout": 60}, status="approved")
+    svc = Service(e, log_dir=tmp_path / "logs")
+    run = svc.send("csvtidy", "S-1.1")
+    deadline = time.time() + 20
+    while time.time() < deadline and not any(
+            x["status"] == "running" for x in e.executions("csvtidy", "T-1.1b")):
+        time.sleep(0.2)
+    os.kill(run["pid"], signal.SIGTERM)  # the backend stopping, nobody pressed Stop
+    while time.time() < deadline and e.run(run["id"])["status"] == "running":
+        time.sleep(0.2)
+    r = e.run(run["id"])
+    assert r["status"] == "unknown" and r["reason"] == "the runner was stopped before the run ended"
+    assert {a["status"] for a in r["attempts"]} == {"unknown"}

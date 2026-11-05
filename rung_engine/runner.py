@@ -173,8 +173,13 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     engine = Engine(a.db)
 
+    stopped = []
+
     def on_term(signum, frame):
+        # Stopped from outside (the backend or the machine shutting down), not cancelled by a person:
+        # stop the worker the same way a cancel does, then record the run as Unknown.
         try:
+            stopped.append(engine.run_cancelled(a.run))  # True when a person had already pressed Stop
             engine.set_run(a.run, cancel=1)
         except Exception:
             pass
@@ -185,6 +190,9 @@ def main(argv=None) -> int:
     except Exception as exc:
         engine.set_run(a.run, status="unknown", ended_at=time.time(), reason=f"runner error: {exc}", pid=None)
         raise
+    if stopped and not stopped[0]:
+        engine.interrupt_run(a.run, "the runner was stopped before the run ended", attempts=("running", "cancelled"))
+        r = engine.run(a.run)
     print(f"run {a.run}: {r['status']}")
     return 0
 

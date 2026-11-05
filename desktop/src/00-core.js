@@ -103,6 +103,14 @@ async function post(path, body) {
   }
 }
 
+// The version the person started editing from. Refetches never move it, so a write made meanwhile elsewhere
+// is refused as a conflict instead of being silently overwritten.
+function useBase(v) {
+  const ref = useRef(null)
+  if (ref.current == null && v != null) ref.current = v
+  return ref.current
+}
+
 function refresh() {
   queryClient.invalidateQueries({ queryKey: ['rung'] })
 }

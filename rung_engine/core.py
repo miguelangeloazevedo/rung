@@ -1669,17 +1669,23 @@ class Engine(LifecycleMixin):
         with self._tx() as c:
             c.execute(f"UPDATE attempts SET {cols} WHERE run_pk=? AND n=?", (*vals.values(), int(run_id), n))
 
+    def interrupt_run(self, run_id: int, reason: str, attempts=("running",)) -> None:
+        """End a run nobody cancelled and nobody finished: Unknown, never Pass, Fail or Cancelled."""
+        now = self.clock()
+        self.set_run(run_id, status="unknown", ended_at=now, reason=reason, cancel=0)
+        marks = ",".join("?" * len(attempts))
+        with self._tx() as c:
+            c.execute(f"UPDATE attempts SET status='unknown', reason=?, ended_at=? WHERE run_pk=? AND status IN ({marks})",
+                      (reason, now, int(run_id), *attempts))
+            c.execute("UPDATE executions SET status='error', ended_at=? WHERE run_pk=? AND status='running'",
+                      (now, int(run_id)))
+
     def reconcile_runs(self, alive) -> list[int]:
         """Mark runs whose runner process is gone as interrupted. `alive(pid)` checks a pid."""
         out = []
         for r in self._q("SELECT * FROM runs WHERE status='running'"):
             if not r["pid"] or not alive(r["pid"]):
-                self.set_run(r["pk"], status="unknown", ended_at=self.clock(), reason="the runner process ended")
-                with self._tx() as c:
-                    c.execute("UPDATE attempts SET status='unknown', reason='the runner process ended', ended_at=? "
-                              "WHERE run_pk=? AND status='running'", (self.clock(), r["pk"]))
-                    c.execute("UPDATE executions SET status='error', ended_at=? WHERE run_pk=? AND status='running'",
-                              (self.clock(), r["pk"]))
+                self.interrupt_run(r["pk"], "the runner process ended")
                 out.append(r["pk"])
         return out
 
