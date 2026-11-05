@@ -24,6 +24,7 @@ PROFILES = [
 N1 = "Clean a messy CSV export without opening a spreadsheet"
 R1 = "Detect the delimiter automatically"
 R2 = "Normalise every date to ISO 8601"
+R2_OLD = "Normalise every date to YYYY-MM-DD"
 R3 = "Never drop a row without reporting it"
 S11 = "Sniff the delimiter from the first 20 lines"
 S21 = "Parse day-first and month-first dates with a --locale flag"
@@ -44,14 +45,14 @@ def seed_profiles(engine: Engine):
     engine.save_profiles(PROFILES)
 
 
-def seed_csvtidy(engine: Engine, folder: Path, with_history: bool = True) -> None:
+def seed_csvtidy(engine: Engine, folder: Path, with_history: bool = True, r2: str = R2, r2_detail: str = "") -> None:
     seed_profiles(engine)
     engine.create_project("csvtidy", str(folder), "pytest", [p["name"] for p in PROFILES])
     engine.set_setting("drafting", {"kind": "stub", "delay": 0.0})
     engine.set_setting("worker", {"kind": "stub", "delay": 0.2})
     engine.create_need("csvtidy", N1, HUMAN)
-    for text in (R1, R2):
-        engine.add_requirement("csvtidy", "N-1", text, HUMAN)
+    engine.add_requirement("csvtidy", "N-1", R1, HUMAN)
+    engine.add_requirement("csvtidy", "N-1", r2, HUMAN, r2_detail)
     engine.approve_requirements("csvtidy", "N-1", HUMAN)
     engine.write_spec("csvtidy", "R-1", S11, tags=["python", "cli", "tests"])
     engine.write_spec("csvtidy", "R-2", S21, tags=["python", "cli", "tests"],
@@ -98,3 +99,25 @@ def seed_notes_sync(engine: Engine, folder: Path) -> None:
 
 
 AGENT = Actor("agent", "coder")
+
+
+def seed_demo(engine: Engine, folder: Path) -> None:
+    """The state the approved prototype shows on Home: R-2 edited, S-2.1 stale, one proposal waiting."""
+    seed_csvtidy(engine, folder, r2=R2_OLD, r2_detail="Month-first input")
+    engine.open_project("csvtidy")
+    engine.edit("csvtidy", "R-2", text=R2, detail="Day-first and month-first input", approve=True)
+    engine.propose("csvtidy", "N-1", "requirement", "Accept a two-digit year only with --century", "coder",
+                   source_chat="Fix date parsing in csvtidy")
+
+
+def seed_built(engine: Engine, folder: Path) -> None:
+    """Every step of N-1 approved, R-3 included: the state the Develop step shows."""
+    seed_csvtidy(engine, folder)
+    engine.open_project("csvtidy")
+    engine.approve("csvtidy", "R-3", HUMAN)
+    engine.write_spec("csvtidy", "R-3", S31, tags=["python", "cli", "tests"],
+                      detail="Track each skipped row while parsing\nPrint dropped=N to stderr at exit\nExit code 2 when N is above 0")
+    engine.approve_drafted("csvtidy", "N-1", HUMAN)
+    engine.add_test("csvtidy", "S-3.1", {"type": "command", "command": "pytest tests/test_dropped.py"}, HUMAN,
+                    status="approved")
+    engine.approve_tests("csvtidy", "N-1", HUMAN)

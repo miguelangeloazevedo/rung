@@ -264,6 +264,11 @@ def _authoring(svc, human, body, project, rid):
     return {"spec": spec}
 
 
+@route("POST", "/projects/{project}/rungs/{rid}/regenerate")
+def _regenerate(svc, human, body, project, rid):
+    return svc.regenerate(project, rid, human)
+
+
 @route("POST", "/projects/{project}/rungs/{rid}/spec")
 def _write_spec(svc, human, body, project, rid):
     return svc.engine.write_spec(project, rid, _need(body, "text"), body.get("detail", ""), human,
@@ -285,6 +290,11 @@ def _suggest_edits(svc, human, body, project, rid):
 def _resolve_suggestion(svc, human, body, project, sid):
     made = svc.engine.resolve_suggestion(project, int(sid), bool(_need(body, "accept")), human)
     return {"made": made}
+
+
+@route("POST", "/projects/{project}/changes/{cid}/revert")
+def _revert(svc, human, body, project, cid):
+    return svc.engine.revert_change(project, int(cid), human)
 
 
 @route("GET", "/projects/{project}/changes")
@@ -359,7 +369,7 @@ def _approve_result(svc, human, body, project, rid, n):
 @route("POST", "/projects/{project}/tests/{rid}/defects")
 def _raise_defect(svc, human, body, project, rid):
     return svc.engine.raise_defect(project, rid, list(_need(body, "executions")), _need(body, "title"),
-                                   body.get("note", ""), human)
+                                   body.get("note", ""), human, category=body.get("category") or "Implementation")
 
 
 @route("GET", "/projects/{project}/defects")

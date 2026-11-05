@@ -22,6 +22,7 @@ KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
 PARENT_KIND = {v: k for k, v in CHILD_KIND.items()}
 TEST_TYPES = ("command", "manual", "ai_judged")
+DEFECT_CATEGORIES = ("Implementation", "Specification", "Requirement", "Test")
 GATING_TYPES = ("command", "manual")
 FINAL_EXEC = ("pass", "fail")
 LIVE_RUN = ("queued", "running")
@@ -620,6 +621,18 @@ class Engine:
                 "from_version": x["from_version"], "to_version": x["to_version"], "stale": stale,
                 "at": x["at"], "by": x["by_name"]}
 
+    def revert_change(self, project: str, change_id: int, actor: Actor = HUMAN) -> dict:
+        """Put a rung's text back to what it was before a change. This is a new change of its own:
+        whatever went stale stays stale until a person looks at it again."""
+        if not actor.is_human:
+            raise RungError("agents cannot revert changes", code="forbidden", status=403)
+        p = self._project_row(project)
+        x = self._q1("SELECT * FROM changes WHERE pk=? AND project_pk=?", (int(change_id), p["pk"]))
+        if not x:
+            raise NotFound(f"no change {change_id}")
+        rid = self._rid_of(x["rung_pk"])
+        return self.edit(project, rid, text=x["before_text"], detail=x["before_detail"], actor=actor, approve=True)
+
     def change_for(self, project: str, rid: str) -> dict | None:
         """The upstream change that made this rung stale (the latest change above it)."""
         r = self._rung_row(project, rid)
@@ -670,6 +683,20 @@ class Engine:
                         c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(sd), s["pk"]))
                         spec_pk = s["pk"]
         return self._rung_dict(self._rung_by_pk(spec_pk)) if spec_pk else None
+
+    def mark_drafting(self, project: str, spec_rid: str, actor: Actor = HUMAN) -> dict:
+        """Ask the drafting provider for a new draft of an unapproved AI-derived specification."""
+        if not actor.is_human:
+            raise RungError("only a human asks for a new draft", code="forbidden", status=403)
+        r = self._rung_row(project, spec_rid)
+        if r["kind"] != "specification" or r["status"] not in ("draft", "stale"):
+            raise RungError(f"{spec_rid} is not an open draft", code="refused")
+        data = _l(r["data"], {})
+        data["draft_state"] = "drafting"
+        with self._tx() as c:
+            c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(data), r["pk"]))
+            self._touch_project(c, r["project_pk"])
+        return self.rung(project, spec_rid)
 
     def finish_draft(self, project: str, spec_rid: str, text: str, detail: str = "", tags=None,
                      required_tags=None, drafted_by: str = "drafting") -> dict:
@@ -1180,7 +1207,12 @@ class Engine:
         if r:
             return r["profile"]
         pick = self._q1("SELECT profile FROM picks WHERE spec_pk=? ORDER BY pk DESC LIMIT 1", (spec["pk"],))
-        return pick["profile"] if pick else None
+        if pick:
+            return pick["profile"]
+        ex = self._q1("SELECT e.carried_by FROM executions e JOIN rungs t ON t.pk=e.test_pk WHERE t.parent_pk=? "
+                      "AND e.status IN ('pass','fail') AND e.carried_by NOT IN ('engine','') ORDER BY e.pk DESC LIMIT 1",
+                      (spec["pk"],))
+        return ex["carried_by"] if ex else None
 
     # ------------------------------------------------------------------ tiles, needs you, home
 
@@ -1475,7 +1507,7 @@ class Engine:
     # ------------------------------------------------------------------ defects
 
     def raise_defect(self, project: str, test_rid: str, executions: list[int], title: str, note: str = "",
-                     actor: Actor = HUMAN) -> dict:
+                     actor: Actor = HUMAN, category: str = "Implementation") -> dict:
         """Only ever called by a human press. Links the test, its specification and the chosen runs."""
         if not actor.is_human:
             raise RungError("defects are raised by a human", code="forbidden", status=403)
@@ -1494,9 +1526,12 @@ class Engine:
         with self._tx() as c:
             k = c.execute("SELECT COUNT(*)+1 FROM defects WHERE project_pk=?", (t["project_pk"],)).fetchone()[0]
             did = f"D-{k}"
-            c.execute("INSERT INTO defects(project_pk, did, title, note, test_pk, spec_pk, executions, created_by, at) "
-                      "VALUES (?,?,?,?,?,?,?,?,?)", (t["project_pk"], did, title, (note or "").strip(), t["pk"],
-                                                     t["parent_pk"], _j(ns), actor.name, self.clock()))
+            if category not in DEFECT_CATEGORIES:
+                raise RungError(f"category {category} unknown", code="bad_request", status=400)
+            c.execute("INSERT INTO defects(project_pk, did, title, note, category, test_pk, spec_pk, executions, "
+                      "created_by, at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (t["project_pk"], did, title, (note or "").strip(), category, t["pk"], t["parent_pk"], _j(ns),
+                       actor.name, self.clock()))
             self._touch_project(c, t["project_pk"])
         return self.defect(project, did)
 
@@ -1505,7 +1540,8 @@ class Engine:
         d = self._q1("SELECT * FROM defects WHERE project_pk=? AND did=?", (p["pk"], did))
         if not d:
             raise NotFound(f"no defect {did}")
-        return {"id": d["did"], "title": d["title"], "note": d["note"], "test": self._rid_of(d["test_pk"]),
+        return {"id": d["did"], "title": d["title"], "note": d["note"], "category": d["category"],
+                "test": self._rid_of(d["test_pk"]),
                 "spec": self._rid_of(d["spec_pk"]), "executions": _l(d["executions"], []),
                 "created_by": d["created_by"], "at": d["at"]}
 

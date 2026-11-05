@@ -80,6 +80,13 @@ class Service:
                 t.join()
         return spec
 
+    def regenerate(self, project: str, spec_rid: str, actor: Actor = HUMAN, wait: bool = False) -> dict:
+        spec = self.engine.mark_drafting(project, spec_rid, actor)
+        t = self._bg(self._draft_spec, project, spec["parent"], spec_rid)
+        if wait:
+            t.join()
+        return spec
+
     def _draft_spec(self, project: str, req_rid: str, spec_rid: str):
         try:
             req = self.engine.rung(project, req_rid)

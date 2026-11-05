@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS defects (
     did         TEXT NOT NULL,
     title       TEXT NOT NULL,
     note        TEXT NOT NULL DEFAULT '',
+    category    TEXT NOT NULL DEFAULT 'Implementation',
     test_pk     INTEGER NOT NULL REFERENCES rungs(pk) ON DELETE CASCADE,
     spec_pk     INTEGER NOT NULL REFERENCES rungs(pk) ON DELETE CASCADE,
     executions  TEXT NOT NULL DEFAULT '[]',

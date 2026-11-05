@@ -1,0 +1,269 @@
+// Rung desktop pane: layout shell, header, tiles, build strip, traceability rail.
+
+function Btn({ kind, onClick, disabled, children, title, testid, className }) {
+  const base = {
+    primary: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs',
+    primaryLg: 'px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs text-xs font-semibold',
+    secondary: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium hover:bg-btnh',
+    quiet: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-muted text-xs font-medium hover:bg-btnh',
+    outline: 'px-3.5 py-1.5 rounded-[6px] border border-needs text-needs text-xs font-medium',
+    accept: 'px-3 py-1 rounded bg-btn border border-needs text-needs text-xs font-medium',
+    acceptSolid: 'px-3 py-1 rounded bg-needs text-on-needs text-xs font-semibold',
+    ghost: 'px-2.5 py-1 rounded text-xs text-muted hover:text-fg',
+    ghostLine: 'px-2.5 py-1 rounded text-xs text-muted border border-line',
+    small: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium hover:bg-btnh'
+  }[kind || 'secondary']
+  return h('button', {
+    type: 'button',
+    className: cx(base, disabled && 'opacity-40 cursor-not-allowed', className),
+    'aria-disabled': disabled ? 'true' : undefined,
+    'data-locked': disabled ? '1' : undefined,
+    'data-testid': testid,
+    title,
+    onClick: e => { e.stopPropagation(); if (!disabled && onClick) onClick(e) }
+  }, children)
+}
+
+const BADGE = {
+  approved: ['Approved', 'bg-pass/10 text-pass border border-pass/30'],
+  stale: ['Stale', 'bg-stale/15 text-stale border border-stale/30'],
+  draft: ['Draft', 'bg-dim/15 text-dim border border-dim/30'],
+  proposed: ['Proposed', 'text-needs border border-needs'],
+  dismissed: ['Dismissed', 'bg-btn text-dim border border-line'],
+  pass: ['Pass', 'bg-pass/10 text-pass border border-pass/30'],
+  fail: ['Fail', 'bg-fail/10 text-fail border border-fail/30'],
+  pending: ['Pending approval', 'bg-needs/10 text-needs border border-needs/30'],
+  not_run: ['Not run', 'bg-btn text-dim border border-line'],
+  running: ['Running', 'text-needs border border-needs'],
+  drafting: ['Drafting', 'bg-needs/10 text-needs border border-needs/30'],
+  drafted: ['Drafted', 'bg-pass/10 text-pass border border-pass/30'],
+  covered: ['Covered', 'bg-pass/10 text-pass border border-pass/30'],
+  failing: ['Failing', 'bg-fail/10 text-fail border border-fail/30'],
+  open: ['Open', 'bg-btn text-muted border border-line'],
+  released: ['Released', 'bg-pass/10 text-pass border border-pass/30'],
+  cancelled: ['Cancelled', 'bg-btn text-muted border border-line'],
+  failed: ['Failed', 'bg-fail/10 text-fail border border-fail/30'],
+  passed: ['Passed', 'bg-pass/10 text-pass border border-pass/30'],
+  queued: ['Queued', 'text-needs border border-needs']
+}
+
+function Badge({ status, label, small, onClick }) {
+  const [word, cls] = BADGE[status] || [status, 'bg-btn text-muted border border-line']
+  return h('span', {
+    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer'),
+    'data-status': status,
+    onClick: onClick ? e => { e.stopPropagation(); onClick() } : undefined
+  }, label || word)
+}
+
+function Dot({ t, size }) {
+  return h('span', { className: cx(size === 'lg' ? 'w-2 h-2' : 'w-1.5 h-1.5', 'rounded-full shrink-0', TONE_BG[t] || 'bg-dim') })
+}
+
+function SectionTitle({ children, tone: t, right, dot }) {
+  return h('div', 'flex items-center justify-between',
+    h('h2', { className: cx('text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5', t ? TONE_TEXT[t] : 'text-muted') },
+      dot ? h('span', { className: cx('w-1.5 h-1.5 rounded-full', TONE_BG[dot] || 'bg-dim', dot === 'needs' && t !== 'needs' && 'animate-pulse') }) : null,
+      children),
+    right != null ? h('span', 'text-[11px] text-muted', right) : null)
+}
+
+function Card({ children, className, onClick, testid, style }) {
+  return h('div', {
+    className: cx('bg-card border border-line rounded-[6px]', onClick && 'cursor-pointer', className),
+    onClick, 'data-testid': testid, style
+  }, children)
+}
+
+// ------------------------------------------------------------------ header and tiles
+
+function Header({ project, right }) {
+  return h('div', 'flex items-center justify-between',
+    h('div', 'flex items-center gap-3',
+      h('span', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
+      h('span', 'text-line', '/'),
+      h('h1', {
+        className: 'text-xl font-bold tracking-tight text-fg cursor-pointer',
+        'data-testid': 'project-name',
+        onClick: () => navigate('projects')
+      }, project)),
+    h('div', 'flex items-center gap-2',
+      right === undefined
+        ? h('button', {
+          type: 'button',
+          className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
+          onClick: () => navigate('need-new')
+        }, 'New need')
+        : right))
+}
+
+function Tile({ label, value, of, t, hot, testid }) {
+  return h('div', {
+    className: cx('rounded-[6px] p-3 flex flex-col justify-between', hot ? 'border-2 border-needs bg-needs/10' : 'bg-card border border-line'),
+    'data-testid': testid
+  },
+  h('span', { className: cx('text-[11px]', hot ? 'font-semibold text-needs' : 'font-medium text-muted') }, label),
+  h('div', 'flex items-baseline gap-1.5 mt-1',
+    h('span', { className: cx('text-2xl font-bold', TONE_TEXT[t] || 'text-fg'), 'data-testid': testid && testid + '-value' }, String(value)),
+    of != null ? h('span', 'text-xs text-muted', `of ${of}`) : null))
+}
+
+function Tiles({ tiles }) {
+  const t = tiles || { covered: 0, requirements: 0, stale: 0, failing: 0, needs_you: 0 }
+  const all = t.requirements > 0 && t.covered === t.requirements
+  return h('div', 'grid grid-cols-4 gap-3',
+    all
+      ? h('div', { className: 'bg-card border-2 border-pass rounded-[6px] p-3 flex flex-col justify-between', 'data-testid': 'tile-covered' },
+        h('span', 'text-[11px] font-semibold text-pass', 'Covered'),
+        h('div', 'flex items-baseline gap-1.5 mt-1',
+          h('span', { className: 'text-2xl font-bold text-pass', 'data-testid': 'tile-covered-value' }, String(t.covered)),
+          h('span', 'text-xs text-muted', `of ${t.requirements}`)))
+      : h(Tile, { label: 'Requirements covered', value: t.covered, of: t.requirements, testid: 'tile-covered' }),
+    h(Tile, { label: 'Stale', value: t.stale, t: t.stale ? 'stale' : null, testid: 'tile-stale' }),
+    h(Tile, { label: 'Failing', value: t.failing, t: t.failing ? 'fail' : null, testid: 'tile-failing' }),
+    h(Tile, { label: 'Needs you', value: t.needs_you, t: t.needs_you ? 'needs' : null, hot: t.needs_you > 0, testid: 'tile-needs-you' }))
+}
+
+// ------------------------------------------------------------------ build strip
+
+const STEPS = ['Need', 'Requirements', 'Specifications', 'Tests', 'Develop']
+const STEP_VIEWS = ['need', 'reqs', 'specs', 'tests', 'develop']
+
+function Strip({ current, reached, need, done: doneList }) {
+  // current: 0..4, reached: highest unlocked index, done: per-step completion from the engine
+  const kids = []
+  STEPS.forEach((name, i) => {
+    const done = doneList ? !!doneList[i] && i !== current : i < current && i <= reached
+    const on = i === current
+    const locked = i > reached
+    if (i > 0) kids.push(h('div', { key: 'l' + i, className: cx('flex-1 h-[1px] mx-3', i <= Math.min(current, reached) ? 'bg-pass' : 'bg-line') }))
+    kids.push(h('div', {
+      key: 's' + i,
+      className: cx('flex items-center gap-2', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
+      'data-step': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
+      onClick: () => {
+        if (locked) return
+        if (i === 0) navigate(need ? 'rung' : 'need-new', need ? { rid: need } : null)
+        else navigate('build', { need, step: STEP_VIEWS[i] })
+      }
+    },
+    done
+      ? h('span', 'w-5 h-5 rounded-full bg-pass text-on-pass flex items-center justify-center text-[11px] font-bold', '✓')
+      : on
+        ? h('span', 'w-5 h-5 rounded-full border-2 border-needs bg-needs/10 text-needs flex items-center justify-center text-[10px] font-bold', String(i + 1))
+        : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
+    h('span', { className: cx('text-xs', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
+  })
+  return h('div', { className: 'flex items-center justify-between bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
+}
+
+// ------------------------------------------------------------------ traceability rail
+
+function TreeTest({ n, sel }) {
+  const t = tone(n)
+  return h('div', {
+    className: 'pl-3 ml-0.5 border-l border-line flex items-center gap-1.5 cursor-pointer',
+    'data-rung': n.id,
+    onClick: () => navigate('rung', { rid: n.id })
+  },
+  h(Dot, { t }),
+  h('span', { className: cx('text-[10px] mono', TONE_TEXT[t]) }, `${n.id} ${n.status === 'stale' ? 'stale' : resultWord(n.result)}`))
+}
+
+function TreeSpec({ n, sel }) {
+  const t = tone(n)
+  const on = sel === n.id
+  const tests = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
+  const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
+  return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
+    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('div', 'flex flex-col min-w-0',
+        h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted') }, sub))),
+    ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
+}
+
+function TreeReq({ n, sel }) {
+  const t = tone(n)
+  const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
+  return h('div', 'flex flex-col gap-1',
+    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('div', 'flex flex-col min-w-0',
+        h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', { className: cx('text-[11px]', t === 'dim' ? 'text-dim' : 'text-muted') }, n.text))),
+    ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel })))
+}
+
+function TreeNeed({ n, sel }) {
+  const t = tone(n)
+  const reqs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
+  return h('div', 'flex flex-col gap-1.5 text-xs',
+    h('div', { className: 'flex items-start gap-2 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+      h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('div', 'flex flex-col',
+        h('span', 'font-semibold text-fg', n.id),
+        h('span', 'text-[11px] text-muted leading-tight', n.text))),
+    reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel }))) : null)
+}
+
+function Allocation({ alloc }) {
+  if (!alloc) return null
+  const rows = alloc.suggestions || []
+  const picked = alloc.pick && alloc.pick.profile
+  const lead = picked || (rows[0] && rows[0].profile) || ''
+  return h('div', 'flex flex-col gap-3 pt-3 border-t border-line',
+    h('div', { className: 'flex items-center justify-between pb-1 cursor-pointer', onClick: () => navigate('settings') },
+      h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', `Allocation: ${alloc.spec}`),
+      h('span', 'text-[11px] mono text-needs', lead)),
+    alloc.human_only
+      ? h('div', 'text-[11px] text-muted', 'Manual tests only: a person carries this')
+      : h('div', 'flex flex-col gap-2.5',
+        ...rows.map((r, i) => i === 0
+          ? h('div', { key: r.profile, className: 'flex flex-col gap-1 bg-btn p-2.5 rounded-[6px] border border-line', 'data-alloc': r.profile },
+            h('div', 'flex items-center justify-between text-xs',
+              h('span', 'font-semibold text-fg', r.profile),
+              h('span', 'font-bold text-needs mono', String(r.score))),
+            h('div', 'text-[10px] mono text-muted leading-tight',
+              `tags ${r.parts.tags} · load ${r.parts.load} · reliability ${r.parts.reliability} · cost ${r.parts.cost}`),
+            h('div', 'w-full h-1 bg-well rounded-full overflow-hidden mt-0.5',
+              h('div', { className: 'h-full bg-needs rounded-full', style: { width: `${Math.min(100, r.score)}%` } })))
+          : h('div', { key: r.profile, className: 'flex flex-col gap-1 bg-card p-2 rounded-[6px] border border-line2', 'data-alloc': r.profile },
+            h('div', 'flex items-center justify-between text-xs',
+              h('span', 'text-muted', r.profile),
+              h('span', 'text-muted mono', String(r.score))),
+            h('div', 'w-full h-1 bg-well rounded-full overflow-hidden mt-0.5',
+              h('div', { className: 'h-full bg-dim rounded-full', style: { width: `${Math.min(100, r.score)}%` } }))))))
+}
+
+function Rail({ tree, alloc, sel }) {
+  const needs = (tree || []).filter(n => n.status !== 'dismissed')
+  const head = needs[0]
+  return h('aside', { className: 'w-[280px] min-w-[280px] max-w-[280px] h-full border-l border-line2 bg-card overflow-y-auto px-4 py-6 flex flex-col gap-6', 'data-testid': 'rail' },
+    h('div', 'flex flex-col gap-3',
+      h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+        h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Traceability Tree'),
+        head ? h('span', { className: cx('text-[11px]', TONE_TEXT[tone(head)]) }, head.status) : null),
+      needs.length
+        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel })))
+        : h('div', 'text-[11px] text-muted', 'No needs yet')),
+    h(Allocation, { alloc }))
+}
+
+// ------------------------------------------------------------------ page frame
+
+function Frame({ main, rail, wide }) {
+  return h('div', 'flex flex-row h-full w-full overflow-hidden',
+    h('section', { className: cx('flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
+    rail || null)
+}
+
+function Loading() {
+  return h('div', 'p-8 text-xs text-muted', 'Loading')
+}
+
+function ErrorLine({ text }) {
+  if (!text) return null
+  return h('div', { className: 'text-xs text-fail', 'data-testid': 'error' }, text)
+}

@@ -28,9 +28,20 @@ def hermes_home() -> Path:
 
 
 def store_path() -> Path:
+    """RUNG_STORE, else the path written in `<plugin-data>/rung/store` (one line), else the default."""
     env = os.environ.get("RUNG_STORE")
     if env:
         return Path(env).expanduser()
+    default = _default_store()
+    pointer = default.parent / "store"
+    try:
+        target = pointer.read_text().strip()
+    except OSError:
+        target = ""
+    return Path(target).expanduser() if target else default
+
+
+def _default_store() -> Path:
     try:
         from plugins.plugin_storage import plugin_data_dir
         return plugin_data_dir("rung") / "rung.db"
