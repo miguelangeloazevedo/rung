@@ -12,3 +12,7 @@ provides_tools:
   - rung_propose
   - rung_check
   - rung_run_tests
+  - rung_claim
+  - rung_report
+provides_hooks:
+  - pre_tool_call

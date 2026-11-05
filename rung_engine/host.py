@@ -72,12 +72,44 @@ def hermes_profiles() -> list[str]:
     return names
 
 
+def _profile_home(name: str) -> Path:
+    root = hermes_home()
+    if root.parent.name == "profiles":
+        root = root.parent.parent
+    return root if name == "default" else root / "profiles" / name
+
+
+def hermes_profile_tools(name: str) -> list[str] | None:
+    """The toolsets a Hermes profile has on the CLI (`platform_toolsets.cli` in its config), resolved
+    the way Hermes resolves them. Read only; None when the profile's config cannot be read."""
+    home = _profile_home(name)
+    if not home.is_dir():
+        return None
+    cfg_path = home / "config.yaml"
+    try:
+        import yaml
+        cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.is_file() else {}
+    except Exception:
+        return None
+    cfg = cfg if isinstance(cfg, dict) else {}
+    try:
+        from hermes_cli.tools_config import _get_platform_tools
+        return sorted(_get_platform_tools(cfg, "cli", include_default_mcp_servers=False))
+    except Exception:
+        pass
+    raw = (cfg.get("platform_toolsets") or {}).get("cli") if isinstance(cfg.get("platform_toolsets"), dict) else None
+    if isinstance(raw, list):
+        return sorted(str(x) for x in raw if isinstance(x, str) and not x.startswith("hermes-"))
+    return None
+
+
 def service() -> Service:
     path = str(store_path())
     with _LOCK:
         svc = _SERVICES.get(path)
         if svc is None:
             engine = Engine(path)
+            engine.tool_source = hermes_profile_tools
             if not engine.profiles():
                 engine.sync_profiles(hermes_profiles())
             svc = Service(engine, hermes_bin=hermes_bin(), log_dir=Path(path).parent / "logs")
@@ -86,4 +118,4 @@ def service() -> Service:
         return svc
 
 
-__all__ = ["service", "store_path", "hermes_profiles", "hermes_bin", "pid_alive"]
+__all__ = ["service", "store_path", "hermes_profiles", "hermes_bin", "pid_alive", "hermes_profile_tools"]

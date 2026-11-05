@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Columns added after schema 1, applied to older stores by `migrate`. New stores get them from SCHEMA.
 MIGRATIONS = {
@@ -15,6 +15,10 @@ MIGRATIONS = {
         ("rungs", "retired_reason", "TEXT"),
         ("rungs", "retired_by", "TEXT"),
         ("attempts", "reason", "TEXT NOT NULL DEFAULT ''"),
+    ],
+    3: [
+        ("profiles", "tools", "TEXT NOT NULL DEFAULT '[]'"),
+        ("profiles", "at_once", "INTEGER NOT NULL DEFAULT 2"),
     ],
 }
 
@@ -205,6 +209,22 @@ CREATE TABLE IF NOT EXISTS events (
     at          REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS claims (
+    pk          INTEGER PRIMARY KEY,
+    project_pk  INTEGER NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
+    spec_pk     INTEGER NOT NULL REFERENCES rungs(pk) ON DELETE CASCADE,
+    session_id  TEXT NOT NULL,
+    chat        TEXT NOT NULL DEFAULT '',
+    profile     TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    opened_at   REAL NOT NULL,
+    closed_at   REAL,
+    closed_by   TEXT,
+    proof       TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS claims_session ON claims(session_id, status);
+CREATE INDEX IF NOT EXISTS claims_spec ON claims(spec_pk, status);
 CREATE INDEX IF NOT EXISTS rungs_parent ON rungs(parent_pk);
 CREATE INDEX IF NOT EXISTS executions_run ON executions(run_pk, attempt);
 CREATE INDEX IF NOT EXISTS rungs_status ON rungs(project_pk, status);
@@ -239,6 +259,20 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('seq', '0')")
     conn.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('rev', '0')")
     migrate(conn)
+    return conn
+
+
+def connect_readonly(path: str | Path) -> sqlite3.Connection:
+    """Open an existing store for reading only: no schema, no migration, no journal change. Used by the
+    done hook, which must never write. Raises when the file is missing or unreadable."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5, isolation_level=None,
+                           check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA query_only = ON")
     return conn
 
 

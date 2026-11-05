@@ -98,6 +98,7 @@ def _state(svc, human, body):
         out["needs_you"] = t["needs_you"]
         out["running"] = t["running"]
         out["current_archived"] = t["archived"]
+        out["claims"] = len(e.claims(cur))
     return out
 
 
@@ -318,6 +319,7 @@ def _rung(svc, human, body, project, rid):
     if r["kind"] == "specification":
         r["allocation"] = e.suggest(project, rid)
         r["runs"] = e.runs(project, rid)
+        r["claims"] = e.claims(project, rid, open_only=False)
         ok, why = e.develop_available(project, rid)
         r["develop"] = {"available": ok, "blocked_by": why or None}
     if r["kind"] == "test":
@@ -534,6 +536,32 @@ def _pick(svc, human, body, project, rid):
 @route("POST", "/projects/{project}/specs/{rid}/send")
 def _send(svc, human, body, project, rid):
     return svc.send(project, rid, human, body.get("agent"))
+
+
+@route("POST", "/projects/{project}/specs/{rid}/allocation")
+def _set_allocation(svc, human, body, project, rid):
+    allowed = {"required_tools", "independent", "human_only"}
+    unknown = sorted(set(body) - allowed)
+    if unknown:
+        raise ApiError(400, "unknown field " + ", ".join(unknown), "bad_request")
+    return svc.engine.set_allocation(project, rid, required_tools=body.get("required_tools"),
+                                     independent=body.get("independent"), human_only=body.get("human_only"),
+                                     actor=human)
+
+
+@route("GET", "/projects/{project}/exclusions")
+def _exclusions(svc, human, body, project):
+    return svc.engine.exclusions(project)
+
+
+@route("GET", "/projects/{project}/claims")
+def _claims(svc, human, body, project):
+    return svc.engine.claims(project, open_only=False)
+
+
+@route("POST", "/projects/{project}/specs/{rid}/claims/release")
+def _release_claim(svc, human, body, project, rid):
+    return svc.engine.release_claim(project, rid, human)
 
 
 @route("GET", "/projects/{project}/runs")

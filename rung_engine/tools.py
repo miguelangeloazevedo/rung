@@ -58,7 +58,34 @@ RUN_TESTS = {
     }, "required": ["spec"]},
 }
 
-SCHEMAS = [STATUS, PROPOSE, CHECK, RUN_TESTS]
+CLAIM = {
+    "name": "rung_claim",
+    "description": (
+        "Take an approved Rung specification for this chat before working on it. Rung refuses one that is "
+        "not approved, is human only, is held by another chat, or that this profile may not carry, and says why. "
+        "While you hold it, Rung blocks declaring it done (rung_report, kanban_complete, a todo marked "
+        "completed that names it) until its tests pass."
+    ),
+    "parameters": {"type": "object", "properties": {
+        "spec": {"type": "string", "description": "Specification id, for example S-2.1."},
+        "project": {"type": "string"},
+    }, "required": ["spec"]},
+}
+
+REPORT = {
+    "name": "rung_report",
+    "description": (
+        "Declare a specification you claimed done. Rung refuses while its check fails and names the blocking "
+        "rung; the claim then stays open. Once the check passes the claim closes as reported with the passing "
+        "executions. A report is never an approval."
+    ),
+    "parameters": {"type": "object", "properties": {
+        "spec": {"type": "string", "description": "Specification id, for example S-2.1."},
+        "project": {"type": "string"},
+    }, "required": ["spec"]},
+}
+
+SCHEMAS = [STATUS, PROPOSE, CHECK, RUN_TESTS, CLAIM, REPORT]
 
 
 def _svc():
@@ -187,8 +214,28 @@ def run_tests(args, **kw):
     return {"spec": spec, "executions": out, "check": svc.engine.check(p, spec)}
 
 
+def claim(args, session_id="", user_task="", **kw):
+    svc = _svc()
+    p = _project(svc, args)
+    spec = _arg(args, "spec")
+    if not session_id:
+        raise RungError("rung_claim needs a chat session", code="bad_request", status=400)
+    c = svc.engine.claim(p, spec, session_id, _source_chat(session_id, user_task), _proposer())
+    return {"claimed": c["spec"], "project": c["project"], "profile": c["profile"], "chat": c["chat"],
+            "check": svc.engine.check(p, spec)}
+
+
+def report(args, session_id="", **kw):
+    svc = _svc()
+    p = _project(svc, args)
+    spec = _arg(args, "spec")
+    c = svc.engine.report(p, spec, session_id)
+    return {"reported": c["spec"], "project": c["project"], "proof": c["proof"],
+            "note": "Reported done. This is not an approval."}
+
+
 HANDLERS = {"rung_status": _wrap(status), "rung_propose": _wrap(propose), "rung_check": _wrap(check),
-            "rung_run_tests": _wrap(run_tests)}
+            "rung_run_tests": _wrap(run_tests), "rung_claim": _wrap(claim), "rung_report": _wrap(report)}
 
 
 def slash(raw_args: str = "", **kwargs) -> str:

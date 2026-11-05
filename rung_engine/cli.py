@@ -46,6 +46,10 @@ def setup(parser: argparse.ArgumentParser) -> None:
     ro = subs.add_parser("readout", help="print a need's read-out as markdown")
     ro.add_argument("need")
     ro.add_argument("--export", action="store_true", help="also write it to Rung's exports folder")
+    cl = subs.add_parser("claims", help="list open claims; claims release <SPEC> lets go of one")
+    cl.add_argument("action", nargs="?", choices=["release"], help="release: close the open claim on a specification")
+    cl.add_argument("spec", nargs="?", help="specification id, for example S-2.1")
+    cl.add_argument("--all", action="store_true", help="also list reported and released claims")
     parser.set_defaults(func=main)
 
 
@@ -145,6 +149,20 @@ def main(args) -> int:
             project = _project(svc, args)
             run = svc.send(project, args.spec, profile=args.profile)
             _say(args, run, f"run {run['id']} started for {args.spec} with {run['profile']}")
+            return 0
+        if cmd == "claims":
+            project = _project(svc, args)
+            if args.action == "release":
+                if not args.spec:
+                    print("usage: hermes rung claims release <SPEC>", file=sys.stderr)
+                    return 2
+                rows = e.release_claim(project, args.spec)
+                _say(args, rows, f"{args.spec}: released " + ", ".join(f"{r['chat']} ({r['profile']})" for r in rows))
+                return 0
+            rows = e.claims(project, open_only=not args.all)
+            lines = [f"{c['spec']:8} {c['status']:9} {c['profile']:12} {c['chat']}"
+                     + (f"  proof {', '.join(c['proof'])}" if c["proof"] else "") for c in rows]
+            _say(args, rows, "\n".join(lines) if lines else f"{project}: no {'claims' if args.all else 'open claims'}")
             return 0
         if cmd == "demo":
             p = e.reset_sample()

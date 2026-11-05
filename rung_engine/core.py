@@ -11,15 +11,18 @@ import functools
 import json
 import os
 import posixpath
+import re
 import string
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Callable
 from pathlib import Path
 
 from . import allocation, db
 from .execute import context_line, git_commit, run_command
+from .claims import ClaimsMixin
 from .lifecycle import LifecycleMixin
 
 KINDS = ("need", "requirement", "specification", "test")
@@ -129,15 +132,39 @@ def _l(s, default=None):
     return json.loads(s)
 
 
+NAME_RX = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+def _clean_names(values, what: str) -> list[str]:
+    """Toolset names: text, trimmed, no duplicates, letters digits and _ . : - only."""
+    out = []
+    for v in values:
+        if not isinstance(v, str):
+            raise RungError(f"a {what} name is text", code="bad_request", status=400, field=what + "s")
+        v = v.strip()
+        if not v:
+            continue
+        if not NAME_RX.match(v):
+            raise RungError(f"{v[:40]!r} is not a {what} name", code="bad_request", status=400, field=what + "s")
+        if v not in out:
+            out.append(v)
+    return out
+
+
 def _letter(k: int) -> str:
     letters = string.ascii_lowercase
     return letters[k - 1] if 1 <= k <= 26 else f"z{k}"
 
 
-class Engine(LifecycleMixin):
-    def __init__(self, path: str | Path, clock=time.time):
+class Engine(LifecycleMixin, ClaimsMixin):
+    # A callable profile name -> list of Hermes toolset names, or None. Set by the host so a profile's
+    # tools are pre-filled from its Hermes configuration the first time Rung lists it.
+    tool_source: "Callable[[str], list[str] | None] | None" = None
+
+    def __init__(self, path: str | Path, clock=time.time, readonly: bool = False):
         self.path = str(path)
-        self.conn = db.connect(path)
+        self.readonly = readonly
+        self.conn = db.connect_readonly(path) if readonly else db.connect(path)
         self.clock = clock
         self._lock = threading.RLock()
 
@@ -209,10 +236,23 @@ class Engine(LifecycleMixin):
     # ------------------------------------------------------------------ profiles
 
     def sync_profiles(self, names) -> None:
-        """Make sure every Hermes profile has a Rung row. Existing rows are left alone."""
+        """Make sure every Hermes profile has a Rung row. Existing rows are left alone; a new row's tools
+        are pre-filled from the profile's Hermes toolsets."""
+        new = [n for n in names if not self._q1("SELECT 1 FROM profiles WHERE name=?", (n,))]
+        tools = {n: self._source_tools(n) for n in new}
         with self._tx() as c:
-            for n in names:
-                c.execute("INSERT OR IGNORE INTO profiles(name) VALUES (?)", (n,))
+            for n in new:
+                c.execute("INSERT OR IGNORE INTO profiles(name, tools) VALUES (?, ?)", (n, _j(tools[n])))
+
+    def _source_tools(self, name: str) -> list[str]:
+        src = self.tool_source
+        if src is None:
+            return []
+        try:
+            got = src(name)
+        except Exception:
+            return []
+        return _clean_names(got or [], "tool") if isinstance(got, (list, tuple, set)) else []
 
     def profiles(self) -> list[dict]:
         return [self._profile_dict(r) for r in self._q("SELECT * FROM profiles ORDER BY name")]
@@ -226,7 +266,8 @@ class Engine(LifecycleMixin):
     @staticmethod
     def _profile_dict(r) -> dict:
         return {"name": r["name"], "labels": _l(r["labels"], []), "cost": r["cost"],
-                "max_runs": r["max_runs"], "enabled": bool(r["enabled"])}
+                "max_runs": r["max_runs"], "enabled": bool(r["enabled"]), "tools": _l(r["tools"], []),
+                "at_once": r["at_once"]}
 
     def save_profiles(self, rows: list[dict]) -> None:
         """Save several profiles at once (the settings Save button)."""
@@ -243,14 +284,25 @@ class Engine(LifecycleMixin):
                 raise RungError("cost must be 0 to 10", code="bad_request", status=400)
             if not 1 <= max_runs <= 50:
                 raise RungError("max runs must be 1 to 50", code="bad_request", status=400)
-            clean.append((name, _j(labels), cost, max_runs, 1 if row.get("enabled", True) else 0))
+            old = self._q1("SELECT * FROM profiles WHERE name=?", (name,))
+            if "tools" in row and row["tools"] is not None:
+                if not isinstance(row["tools"], list):
+                    raise RungError("tools is a list of toolset names", code="bad_request", status=400, field="tools")
+                tools = _clean_names(row["tools"], "tool")
+            else:  # not sent: keep what the profile has, or pre-fill a new one from Hermes
+                tools = _l(old["tools"], []) if old else self._source_tools(name)
+            at_once = row.get("at_once", old["at_once"] if old else 2)
+            if isinstance(at_once, bool) or not isinstance(at_once, int) or not 1 <= at_once <= 10:
+                raise RungError("at once must be 1 to 10", code="bad_request", status=400, field="at_once")
+            clean.append((name, _j(labels), cost, max_runs, 1 if row.get("enabled", True) else 0, _j(tools), at_once))
         with self._tx() as c:
-            for name, labels, cost, max_runs, enabled in clean:
+            for name, labels, cost, max_runs, enabled, tools, at_once in clean:
                 c.execute(
-                    "INSERT INTO profiles(name, labels, cost, max_runs, enabled) VALUES (?,?,?,?,?) "
+                    "INSERT INTO profiles(name, labels, cost, max_runs, enabled, tools, at_once) VALUES (?,?,?,?,?,?,?) "
                     "ON CONFLICT(name) DO UPDATE SET labels=excluded.labels, cost=excluded.cost, "
-                    "max_runs=excluded.max_runs, enabled=excluded.enabled",
-                    (name, labels, cost, max_runs, enabled),
+                    "max_runs=excluded.max_runs, enabled=excluded.enabled, tools=excluded.tools, "
+                    "at_once=excluded.at_once",
+                    (name, labels, cost, max_runs, enabled, tools, at_once),
                 )
 
     # ------------------------------------------------------------------ projects
@@ -1508,7 +1560,8 @@ class Engine(LifecycleMixin):
         needs = [{"id": n["rid"], "text": n["text"], "status": n["status"]} for n in self._q(
             "SELECT * FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NULL ORDER BY num", (p["pk"],))]
         return {"project": self.project(project), "tiles": self.tiles(project), "needs_you": self.needs_you(project),
-                "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs}
+                "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs,
+                "claims": self.claims(project)}
 
     # ------------------------------------------------------------------ allocation and picks
 
@@ -1519,8 +1572,110 @@ class Engine(LifecycleMixin):
                          "('pass','fail','error')", (name,))[0]
         completed = self._q1("SELECT COUNT(*) FROM executions WHERE carried_by=? AND kind='command' AND status IN "
                              "('pass','fail')", (name,))[0]
+        claims = self._q1("SELECT COUNT(*) FROM claims WHERE profile=? AND status='open'", (name,))[0]
         return allocation.ProfileFacts(name=name, labels=tuple(prof["labels"]), cost=prof["cost"],
-                                       enabled=prof["enabled"], running=running, completed=completed, total=total)
+                                       enabled=prof["enabled"], running=running, completed=completed, total=total,
+                                       tools=tuple(prof["tools"]), at_once=int(prof["at_once"]), claims=claims)
+
+    def _authors(self, s) -> set[str]:
+        """Every profile that wrote this specification or one of its tests: the agent author of any
+        version, the drafting profile, the proposer."""
+        names = set()
+        rows = [s] + [t for t in self._children_rows(s["pk"]) if t["status"] != "dismissed"]
+        for r in rows:
+            if r["author_kind"] == "agent" and r["author_name"]:
+                names.add(r["author_name"])
+            if r["proposer"]:
+                names.add(r["proposer"])
+            d = _l(r["data"], {})
+            if d.get("drafted_by"):
+                names.add(d["drafted_by"])
+            for v in self._q("SELECT by_name, by_kind, data FROM rung_versions WHERE rung_pk=?", (r["pk"],)):
+                if v["by_kind"] == "agent" and v["by_name"]:
+                    names.add(v["by_name"])
+                vd = _l(v["data"], {})
+                if vd.get("drafted_by"):
+                    names.add(vd["drafted_by"])
+        return names
+
+    def _needs_of(self, s) -> tuple[allocation.Needs, str]:
+        """What a specification asks of its carrier, and why it is human only ('' when it is not)."""
+        data = _l(s["data"], {})
+        tests = [t for t in self._children_rows(s["pk"]) if t["status"] in ("approved", "stale", "draft")]
+        why_human = ""
+        if data.get("human_only"):
+            why_human = "marked"
+        elif tests and all(_l(t["data"], {}).get("type") == "manual" for t in tests):
+            why_human = "all tests manual"
+        independent = bool(data.get("independent"))
+        needs = allocation.Needs(
+            spec=s["rid"], required_tags=tuple(data.get("required_tags", []) or ()),
+            required_tools=tuple(data.get("required_tools", []) or ()), independent=independent,
+            authors=frozenset(self._authors(s)) if independent else frozenset(), human_only=bool(why_human))
+        return needs, why_human
+
+    def _project_facts(self, p) -> list[allocation.ProfileFacts]:
+        names = [n for n in _l(p["profiles"], []) if self._q1("SELECT 1 FROM profiles WHERE name=?", (n,))]
+        return [self._profile_facts(n) for n in names]
+
+    def exclusion(self, project: str, spec_rid: str, profile: str) -> str:
+        """Why a profile may not carry a specification ('' when it may). The one check behind pick, Send,
+        start run, the API, the CLI and rung_claim."""
+        s = self._rung_row(project, spec_rid)
+        p = self._project_row(s["project_pk"])
+        if profile not in _l(p["profiles"], []) or not self._q1("SELECT 1 FROM profiles WHERE name=?", (profile,)):
+            return f"not a profile of {p['name']}"
+        needs, _ = self._needs_of(s)
+        return "; ".join(allocation.reasons(self._profile_facts(profile), needs))
+
+    def exclusions(self, project: str) -> dict:
+        """Per profile of the project, the specifications it is excluded from, each with its reason."""
+        p = self._project_row(project)
+        facts = self._project_facts(p)
+        gone = self._retired_pks(p["pk"])
+        out = {f.name: [] for f in facts}
+        for s in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='specification' AND status IN "
+                         "('draft','approved','stale') ORDER BY num, rid", (p["pk"],)):
+            if s["pk"] in gone:
+                continue
+            needs, _ = self._needs_of(s)
+            for f in facts:
+                why = allocation.reasons(f, needs)
+                if why:
+                    out[f.name].append({"spec": s["rid"], "text": s["text"], "reason": "; ".join(why)})
+        return {"project": p["name"], "profiles": out}
+
+    @writes()
+    def set_allocation(self, project: str, spec_rid: str, required_tools=None, independent=None, human_only=None,
+                       actor: Actor = HUMAN) -> dict:
+        """What a specification asks of its carrier: required tools, an independent carrier, human only.
+        A person's setting; it changes no text, makes no new version and stales nothing."""
+        if not actor.is_human:
+            raise RungError("only a human sets what a specification requires", code="forbidden", status=403)
+        s = self._rung_row(project, spec_rid)
+        if s["kind"] != "specification":
+            raise RungError(f"{spec_rid} is not a specification", code="bad_request", status=400)
+        if s["status"] in ("dismissed", "proposed"):
+            raise RungError(f"{spec_rid} is {s['status']}", code="refused")
+        data = _l(s["data"], {})
+        before = {k: data.get(k) for k in ("required_tools", "independent", "human_only")}
+        if required_tools is not None:
+            if not isinstance(required_tools, list):
+                raise RungError("required tools is a list", code="bad_request", status=400, field="required_tools")
+            data["required_tools"] = _clean_names(required_tools, "tool")
+        for key, v in (("independent", independent), ("human_only", human_only)):
+            if v is not None:
+                if not isinstance(v, bool):
+                    raise RungError(f"{key} is true or false", code="bad_request", status=400, field=key)
+                data[key] = v
+        after = {k: data.get(k) for k in ("required_tools", "independent", "human_only")}
+        with self._tx() as c:
+            c.execute("UPDATE rungs SET data=?, updated_at=? WHERE pk=?", (_j(data), self.clock(), s["pk"]))
+            if before != after:
+                self._log(c, s["project_pk"], "allocation", {"spec": spec_rid, "before": before, "after": after},
+                          actor.name)
+            self._touch_project(c, s["project_pk"])
+        return self.suggest(project, spec_rid)
 
     def suggest(self, project: str, spec_rid: str) -> dict:
         s = self._rung_row(project, spec_rid)
@@ -1529,18 +1684,19 @@ class Engine(LifecycleMixin):
         p = self._project_row(s["project_pk"])
         data = _l(s["data"], {})
         tests = [t for t in self._children_rows(s["pk"]) if t["status"] in ("approved", "stale", "draft")]
-        human_only = bool(tests) and all(_l(t["data"], {}).get("type") == "manual" for t in tests)
-        names = [n for n in _l(p["profiles"], []) if self._q1("SELECT 1 FROM profiles WHERE name=?", (n,))]
-        facts = [self._profile_facts(n) for n in names]
-        ranked = [] if human_only else allocation.rank(facts, data.get("tags", []), data.get("required_tags", []))
+        needs, why_human = self._needs_of(s)
+        facts = self._project_facts(p)
+        ranked = allocation.rank(facts, data.get("tags", []), needs=needs)
         pick = self._q1("SELECT * FROM picks WHERE spec_pk=? ORDER BY pk DESC LIMIT 1", (s["pk"],))
         excluded = []
         for f in facts:
-            ok, why = allocation.eligible(f, data.get("required_tags", []))
-            if not ok:
-                excluded.append({"profile": f.name, "reason": why})
-        return {"spec": spec_rid, "human_only": human_only, "suggestions": [x.as_dict() for x in ranked],
-                "excluded": excluded,
+            why = allocation.reasons(f, needs)
+            if why:
+                excluded.append({"profile": f.name, "reason": "; ".join(why)})
+        return {"spec": spec_rid, "human_only": bool(why_human), "human_only_reason": why_human,
+                "required_tools": list(needs.required_tools), "independent": needs.independent,
+                "marked_human_only": bool(data.get("human_only")),
+                "suggestions": [x.as_dict() for x in ranked], "excluded": excluded,
                 "pick": {"profile": pick["profile"], "picked_by": pick["picked_by"], "at": pick["at"]} if pick else None,
                 "tests": {"command": sum(1 for t in tests if _l(t["data"], {}).get("type") == "command"),
                           "manual": sum(1 for t in tests if _l(t["data"], {}).get("type") == "manual"),
@@ -1551,9 +1707,9 @@ class Engine(LifecycleMixin):
         if not actor.is_human:
             raise RungError("only a human picks a carrier", code="forbidden", status=403)
         s = self._rung_row(project, spec_rid)
-        sug = self.suggest(project, spec_rid)
-        if profile not in [x["profile"] for x in sug["suggestions"]]:
-            raise RungError(f"{profile} is not eligible for {spec_rid}")
+        why = self.exclusion(project, spec_rid, profile)
+        if why:
+            raise RungError(f"{profile} is not eligible for {spec_rid}: {why}", code="excluded")
         with self._tx() as c:
             c.execute("INSERT INTO picks(spec_pk, profile, picked_by, at) VALUES (?,?,?,?)",
                       (s["pk"], profile, actor.name, self.clock()))
@@ -1579,8 +1735,9 @@ class Engine(LifecycleMixin):
         sug = self.suggest(project, spec_rid)
         picked_by = "suggestion"
         if profile:
-            if profile not in [x["profile"] for x in sug["suggestions"]]:
-                raise RungError(f"{profile} is not eligible for {spec_rid}")
+            why = self.exclusion(project, spec_rid, profile)
+            if why:
+                raise RungError(f"{profile} is not eligible for {spec_rid}: {why}", code="excluded")
             if actor.is_human and (not sug["pick"] or sug["pick"]["profile"] != profile):
                 self.pick(project, spec_rid, profile, actor)
             picked_by = actor.name
@@ -1590,7 +1747,8 @@ class Engine(LifecycleMixin):
         elif sug["suggestions"]:
             profile = sug["suggestions"][0]["profile"]
         else:
-            raise RungError(f"no eligible profile for {spec_rid}", code="locked")
+            why = "; ".join(f"{x['profile']} {x['reason']}" for x in sug["excluded"])
+            raise RungError(f"no eligible profile for {spec_rid}" + (f" ({why})" if why else ""), code="locked")
         prof = self.profile(profile)
         worker = self.get_setting("worker")
         timeout_s = int(self.get_setting("run_timeout_min")) * 60

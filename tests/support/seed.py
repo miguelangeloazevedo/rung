@@ -79,6 +79,24 @@ def seed_csvtidy(engine: Engine, folder: Path, with_history: bool = True, r2: st
         engine.run_test("csvtidy", "T-1.1a", carried_by="coder")
 
 
+def break_dates(folder: Path):
+    """Swap day and month in the fixture's date parser; returns the function that puts it back."""
+    dates = Path(folder) / "csvtidy" / "dates.py"
+    good = dates.read_text()
+    dates.write_text(good.replace("day, month = a, b", "month, day = a, b  # swapped"))
+    return lambda: dates.write_text(good)
+
+
+def seed_failing(engine: Engine, folder: Path):
+    """csvtidy with S-2.1 approved and its command test failing now. Returns the restore function; once
+    called, the next run of T-2.1a passes."""
+    seed_csvtidy(engine, folder)
+    engine.open_project("csvtidy")
+    restore = break_dates(folder)
+    engine.run_test("csvtidy", "T-2.1a", carried_by="coder")
+    return restore
+
+
 def seed_notes_sync(engine: Engine, folder: Path) -> None:
     seed_profiles(engine)
     engine.create_project("notes-sync", str(folder), "pytest", ["coder", "reviewer"])
