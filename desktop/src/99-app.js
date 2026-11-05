@@ -7,13 +7,18 @@ function App() {
   if (error && !state) return h(Root, { className: 'h-full' }, h('div', 'p-8', h(ErrorLine, { text: 'Rung backend unavailable: ' + errText(error) })))
   if (state && state.settings && $colours.get() == null) $colours.set(state.settings.colours || {})
   let view = nav.view
-  const noProjects = state && !(state.projects || []).length
-  if (noProjects && view !== 'project-new') view = 'project-new'
+  const noProjects = state && !(state.projects || []).length && !state.current
+  if (noProjects) {
+    // No project to open: the start screen until it is dismissed, then the new project form.
+    const start = state.onboarding && state.onboarding.start
+    if (!['project-new', 'projects'].includes(view) && !(view === 'start' && start)) view = start ? 'start' : state.archived ? 'projects' : 'project-new'
+  }
   if (!project && !noProjects && !['projects', 'project-new', 'settings'].includes(view)) view = 'projects'
   const props = { ...nav, project, state }
   let body
   if (view === 'home') body = h(Home, { key: 'home:' + project, project })
-  else if (view === 'projects') body = h(Projects)
+  else if (view === 'start') body = h(StartScreen)
+  else if (view === 'projects') body = h(Projects, { key: 'projects:' + (nav.tab || ''), tab: nav.tab })
   else if (view === 'project-new') body = h(NewProject)
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
@@ -44,7 +49,10 @@ export default {
     style.textContent = RUNG_CSS + '\n@keyframes rung-pulse{50%{opacity:.5}}@keyframes rung-spin{to{transform:rotate(360deg)}}' +
       '\n.rung{color:var(--r-fg);font-family:var(--dt-font-sans, system-ui, sans-serif)}.rung *,.rung *::before,.rung *::after{box-sizing:border-box;border-color:var(--r-line)}' +
       '\n.rung button{font:inherit;background:none;border-style:solid;border-width:0;cursor:pointer;color:inherit}.rung input,.rung textarea,.rung select{font:inherit;color:inherit}' +
-      '\n.rung h1,.rung h2,.rung h3,.rung p{margin:0}.rung table{border-spacing:0}.rung [data-locked="1"]{cursor:not-allowed}'
+      '\n.rung h1,.rung h2,.rung h3,.rung p{margin:0}.rung table{border-spacing:0}.rung [data-locked="1"]{cursor:not-allowed}' +
+      '\n.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
+      '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
+      '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)
     window.__rungNavigate = navigate
     ctx.onDispose(() => { delete window.__rungNavigate })

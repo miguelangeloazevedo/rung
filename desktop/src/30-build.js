@@ -16,9 +16,9 @@ function Page({ project, focus, sel, children, noTiles }) {
   const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
-    h('header', 'flex flex-col gap-4', h(Header, { project }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
+    h('header', 'flex flex-col gap-4', h(Header, { project, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
     children)
-  return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus }) })
+  return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
 }
 
 function Crumbs({ path, last, lastTone }) {
@@ -221,7 +221,7 @@ function draftBadge(spec) {
   if (spec.draft_state === 'drafting') return 'drafting'
   if (spec.status === 'approved') return 'approved'
   if (spec.status === 'stale') return 'stale'
-  if (spec.draft_state === 'failed') return 'failed'
+  if (spec.draft_state === 'failed') return 'draft_failed'
   return spec.text ? 'drafted' : null
 }
 
@@ -253,12 +253,18 @@ function StepSpecs({ project, need, flow }) {
               h('span', 'text-xs font-semibold mono text-fg', r.id),
               h('span', 'text-xs text-fg', r.text)),
             h(Seg, { options: [['ai', 'AI derives'], ['human', 'I write, AI supports']], value: mode, testid: 'authoring', onChange: v => setMode(r, v) })),
-          specs.length && specs.some(s => s.text || s.draft_state === 'drafting')
+          specs.length && specs.some(s => s.text || s.draft_state === 'drafting' || s.draft_state === 'failed')
             ? frag(...specs.map(s => h('div', { key: s.id, className: 'flex items-center justify-between pt-2 border-t border-line2', 'data-spec': s.id },
-              h('div', 'flex items-center gap-2 text-xs',
+              h('div', 'flex items-center gap-2 text-xs min-w-0',
                 h('span', 'mono text-muted', s.text ? `${s.id} ${s.text}` : s.id),
-                draftBadge(s) ? h(Badge, { status: draftBadge(s), small: true }) : null),
-              s.draft_state === 'drafting' ? null : h(Btn, { kind: 'small', onClick: () => navigate('rung', { rid: s.id, ret: 'specs', need }) }, 'Open'))))
+                draftBadge(s) ? h(Badge, { status: draftBadge(s), small: true }) : null,
+                s.draft_state === 'failed' && s.draft_error ? h('span', { className: 'text-[11px] text-muted truncate', 'data-testid': 'draft-error' }, s.draft_error) : null),
+              s.draft_state === 'drafting' ? null
+                : s.draft_state === 'failed' && !s.text
+                  ? h('div', 'flex items-center gap-2 shrink-0',
+                    h(Btn, { kind: 'small', testid: 'retry-draft', onClick: async () => { const x = await post(`${P(project)}/rungs/${s.id}/regenerate`); setErr(x.ok ? '' : x.error) } }, 'Retry'),
+                    h(Btn, { kind: 'small', testid: 'i-write', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/authoring`, { mode: 'human' }); if (!x.ok) return setErr(x.error); navigate('spec-edit', { req: r.id, ret: 'specs', need }) } }, 'I write'))
+                  : h(Btn, { kind: 'small', onClick: () => navigate('rung', { rid: s.id, ret: 'specs', need }) }, 'Open'))))
             : mode === 'human'
               ? h('div', 'flex items-center justify-end pt-2 border-t border-line2',
                 h(Btn, { kind: 'small', testid: 'write', onClick: () => navigate('spec-edit', { req: r.id, ret: 'specs', need }) }, 'Write'))

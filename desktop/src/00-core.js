@@ -12,8 +12,37 @@ const VIEWS = {}
 
 // ------------------------------------------------------------------ element helpers
 
+// Accessible names for form fields, by their name attribute (fields carry no visible <label for>).
+const FIELD_NAMES = {
+  name: 'Name', folder: 'Folder', test_command: 'Test command', profile: 'Profile', 'need-text': 'Need',
+  'req-text': 'Requirement', 'req-detail': 'Acceptance', 'spec-text': 'Specification', 'spec-detail': 'Approach',
+  steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
+  limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
+  cost: 'Cost', max_runs: 'Max runs', test_timeout: 'Default timeout', output_limit: 'Output limit',
+  reason: 'Reason', confirm: 'Project name', search: 'Search projects'
+}
+const NATIVE = { button: 1, a: 1, input: 1, select: 1, textarea: 1, label: 1, option: 1 }
+
+function activate(fn) {
+  return e => {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(e) }
+  }
+}
+
 function h(tag, props, ...kids) {
-  const p = props == null ? {} : typeof props === 'string' ? { className: props } : props
+  let p = props == null ? {} : typeof props === 'string' ? { className: props } : props
+  if (typeof tag === 'string') {
+    // Anything clickable is reachable and operable from the keyboard, with the same handler.
+    if (p.onClick && !NATIVE[tag] && !p.role) {
+      p = { ...p, role: 'button', tabIndex: p.tabIndex != null ? p.tabIndex : 0, onKeyDown: p.onKeyDown || activate(p.onClick) }
+    }
+    // checkboxes and radios are named by the label that wraps them
+    if ((tag === 'input' || tag === 'textarea' || tag === 'select') && !p['aria-label'] && !p.id && p.type !== 'checkbox' && p.type !== 'radio') {
+      const named = FIELD_NAMES[p.name] || p.placeholder || p.name
+      if (named) p = { ...p, 'aria-label': named }
+    }
+  }
   return React.createElement(tag, p, ...kids)
 }
 
@@ -56,6 +85,13 @@ function errText(e) {
   return String(raw).replace(/^Error:\s*/, '').replace(/^\d{3}[^:]*:\s*/, '')
 }
 
+function errInfo(e) {
+  const raw = (e && (e.body || e.data || e.detail || e.message)) || String(e)
+  let j = typeof raw === 'object' ? raw : null
+  if (!j) { try { j = JSON.parse(String(raw).replace(/^[^{]*/, '')) } catch (_) { j = null } }
+  return { field: (j && j.field) || null, code: (j && j.code) || null }
+}
+
 async function post(path, body) {
   try {
     const data = await rest(path, { method: 'POST', body: body || {} })
@@ -63,7 +99,7 @@ async function post(path, body) {
     return { ok: true, data }
   } catch (e) {
     refresh()
-    return { ok: false, error: errText(e) }
+    return { ok: false, error: errText(e), ...errInfo(e) }
   }
 }
 
@@ -125,18 +161,50 @@ function relLum(hex) {
   return cr == null ? 0 : cr * 0.05 - 0.05
 }
 
+function mixHex(a, b, t) {
+  // b over a at fraction t, in sRGB, as color-mix(in srgb) and the bg-x/10 tints render it
+  const p = x => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16))
+  const [x, y] = [p(a), p(b)]
+  return '#' + x.map((v, i) => Math.round(v * (1 - t) + y[i] * t).toString(16).padStart(2, '0')).join('')
+}
+
+// Every surface status text sits on: page, card, well, button, hover, and the status's own 15% tint.
+function surfaces(bg) {
+  const dark = relLum(bg) < 0.2
+  return dark
+    ? [bg, mixHex(bg, '#000000', 0.12), mixHex(bg, '#000000', 0.30), mixHex(bg, '#ffffff', 0.03), mixHex(bg, '#ffffff', 0.09)]
+    : [bg, mixHex(bg, '#000000', 0.02), mixHex(bg, '#000000', 0.04), mixHex(bg, '#000000', 0.04), mixHex(bg, '#000000', 0.08)]
+}
+
+function readsOn(hex, bg) {
+  const all = surfaces(bg)
+  const tint = mixHex(all[1], hex, 0.15)
+  return [...all, tint].every(s => (contrastRatio(hex, s) || 0) >= 4.5)
+}
+
 function fit(H, C, bg) {
   const dark = relLum(bg) < 0.2
   const Ls = []
-  if (dark) for (let L = 55; L <= 95; L++) Ls.push(L / 100)
-  else for (let L = 70; L >= 20; L--) Ls.push(L / 100)
+  if (dark) for (let L = 55; L <= 98; L++) Ls.push(L / 100)
+  else for (let L = 70; L >= 10; L--) Ls.push(L / 100)
   let hex = '#888888'
   for (const L of Ls) {
     const c = Math.min(C, Math.max(0, maxChroma(L, H) - 0.001))
     hex = oklchToHex({ l: L, c, h: H })
-    if ((contrastRatio(hex, bg) || 0) >= 4.5) return hex
+    if (readsOn(hex, bg)) return hex
   }
   return hex
+}
+
+function rendered(cssVar) {
+  // The theme's colour as the browser resolves it, whatever notation the theme uses.
+  const el = document.createElement('span')
+  el.style.color = `var(${cssVar})`
+  document.body.appendChild(el)
+  const m = getComputedStyle(el).color.match(/\d+(\.\d+)?/g)
+  el.remove()
+  if (!m || m.length < 3) return null
+  return '#' + m.slice(0, 3).map(v => Math.round(+v).toString(16).padStart(2, '0')).join('')
 }
 
 function cssHex(name) {
@@ -158,6 +226,9 @@ function computePalette(overrides) {
     const o = overrides && overrides[k === 'needs' ? 'needs_you' : k]
     if (o && o !== 'theme' && /^#[0-9a-f]{6}$/i.test(o)) pal[k] = o
   }
+  // Secondary text keeps the theme's colour where it reads on every surface, else the nearest neutral that does.
+  const muted = rendered('--ui-text-tertiary')
+  pal.muted = muted && readsOn(muted, bg) ? null : fit(0, 0, bg)
   const dark = relLum(bg) < 0.2
   pal.dark = dark
   pal.bg = bg
@@ -171,7 +242,7 @@ function paletteVars(pal) {
     '--r-needs': pal.needs, '--r-pass': pal.pass, '--r-fail': pal.fail, '--r-stale': pal.stale,
     '--r-draft': pal.draft, '--r-on-needs': readableOn(pal.needs), '--r-on-pass': readableOn(pal.pass),
     '--r-fg': 'var(--ui-text-primary)', '--r-fg2': 'var(--ui-text-secondary)',
-    '--r-muted': 'var(--ui-text-tertiary)', '--r-dim': pal.draft,
+    '--r-muted': pal.muted || 'var(--ui-text-tertiary)', '--r-dim': pal.draft,
     '--r-line': pal.dark ? mix(14, '#ffffff') : mix(12, '#000000'),
     '--r-line2': pal.dark ? mix(10, '#ffffff') : mix(8, '#000000'),
     '--r-card': pal.dark ? mix(12, '#000000') : mix(2, '#000000'),
@@ -209,7 +280,7 @@ function tone(node) {
   if (st === 'stale') return 'stale'
   if (st === 'draft' || st === 'proposed' || st === 'dismissed') return 'dim'
   if (node.kind === 'test') {
-    return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'needs', running: 'needs' }[node.result] || 'dim'
+    return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'needs', running: 'needs', error: 'needs' }[node.result] || 'dim'
   }
   if (node.kind === 'specification') {
     if (node.released) return 'pass'
@@ -232,5 +303,5 @@ function capital(s) {
 }
 
 function resultWord(r) {
-  return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running' }[r] || 'not run'
+  return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running', error: 'error' }[r] || 'not run'
 }

@@ -44,7 +44,25 @@ const BADGE = {
   cancelled: ['Cancelled', 'bg-btn text-muted border border-line'],
   failed: ['Failed', 'bg-fail/10 text-fail border border-fail/30'],
   passed: ['Passed', 'bg-pass/10 text-pass border border-pass/30'],
-  queued: ['Queued', 'text-needs border border-needs']
+  queued: ['Queued', 'text-needs border border-needs'],
+  error: ['Error', 'bg-needs/10 text-needs border border-needs/30'],
+  unknown: ['Unknown', 'bg-btn text-fg border border-line'],
+  needs_input: ['Needs input', 'bg-needs/10 text-needs border border-needs/30'],
+  no_change: ['No change', 'bg-btn text-muted border border-line'],
+  partial: ['Partial', 'bg-needs/10 text-needs border border-needs/30'],
+  draft_failed: ['Draft failed', 'bg-needs/10 text-needs border border-needs/30'],
+  seen_failing: ['Seen failing', 'bg-btn text-fg border border-line'],
+  not_seen_failing: ['Not seen failing', 'bg-btn text-muted border border-line'],
+  archived: ['Archived', 'bg-btn text-muted border border-line'],
+  retired: ['Retired', 'bg-btn text-muted border border-line'],
+  read_only: ['Read only', 'bg-btn text-muted border border-line'],
+  proven: ['Proven', 'bg-pass/10 text-pass border border-pass/30'],
+  not_proven: ['Not proven', 'bg-btn text-muted border border-line']
+}
+
+function SeenFailing({ value, small }) {
+  if (value == null) return null
+  return h(Badge, { status: value ? 'seen_failing' : 'not_seen_failing', small, testid: 'seen-failing' })
 }
 
 function Badge({ status, label, small, onClick, struck, testid }) {
@@ -78,7 +96,7 @@ function Card({ children, className, onClick, testid, style }) {
 
 // ------------------------------------------------------------------ header and tiles
 
-function Header({ project, right }) {
+function Header({ project, right, ro }) {
   return h('div', 'flex items-center justify-between',
     h('div', 'flex items-center gap-3',
       h('span', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
@@ -89,13 +107,14 @@ function Header({ project, right }) {
         onClick: () => navigate('projects')
       }, project)),
     h('div', 'flex items-center gap-2',
-      right === undefined
+      ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
+      right === undefined && !ro
         ? h('button', {
           type: 'button',
           className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
           onClick: () => navigate('need-new')
         }, 'New need')
-        : right))
+        : ro ? null : right))
 }
 
 function Tile({ label, value, of, t, hot, testid }) {
@@ -238,7 +257,7 @@ function Allocation({ alloc }) {
               h('div', { className: 'h-full bg-dim rounded-full', style: { width: `${Math.min(100, r.score)}%` } }))))))
 }
 
-function Rail({ tree, alloc, sel }) {
+function Rail({ tree, alloc, sel, retired }) {
   const needs = (tree || []).filter(n => n.status !== 'dismissed')
   const head = needs[0]
   return h('aside', { className: 'w-[280px] min-w-[280px] max-w-[280px] h-full border-l border-line2 bg-card overflow-y-auto px-4 py-6 flex flex-col gap-6', 'data-testid': 'rail' },
@@ -248,7 +267,8 @@ function Rail({ tree, alloc, sel }) {
         head ? h('span', { className: cx('text-[11px]', TONE_TEXT[tone(head)]) }, head.status) : null),
       needs.length
         ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
-        : h('div', 'text-[11px] text-muted', 'No needs yet')),
+        : h('div', 'text-[11px] text-muted', 'No needs yet'),
+      retired ? h('button', { type: 'button', className: 'self-start text-[11px] text-muted hover:text-fg', 'data-testid': 'retired-link', onClick: () => navigate('retired') }, `Retired ${retired}`) : null),
     h(Allocation, { alloc }))
 }
 

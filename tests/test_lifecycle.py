@@ -228,10 +228,14 @@ def test_spc06_failed_draft_counts_as_missing_and_can_be_retried(engine, csv_fol
     e.set_setting("drafting", {"kind": "stub", "delay": 0.0})
     svc.regenerate("csvtidy", sa, wait=True)
     assert e.rung("csvtidy", sa)["draft_state"] == "drafted" and "draft_error" not in e.rung("csvtidy", sa)
-    # I write instead: the other requirement is written by hand
+    # I write instead: a failed draft becomes the person's to write, on the same specification
+    e.set_setting("drafting", {"kind": "stub", "delay": 0.0, "fail": "no model"})
+    sb = svc.set_authoring("csvtidy", rb, "ai", wait=True)["id"]
+    assert e.rung("csvtidy", sb)["draft_state"] == "failed"
     e.set_authoring("csvtidy", rb, "human")
-    sb = e.write_spec("csvtidy", rb, "Written by hand")
-    assert sb["text"] == "Written by hand"
+    assert "draft_error" not in e.rung("csvtidy", sb) and e.rung("csvtidy", sb)["author_role"] == "human"
+    assert e.write_spec("csvtidy", rb, "Written by hand")["id"] == sb
+    assert e.rung("csvtidy", sb)["text"] == "Written by hand"
 
 
 def test_exe04_command_that_cannot_start_records_error(seeded, csv_folder):

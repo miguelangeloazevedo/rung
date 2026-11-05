@@ -151,6 +151,8 @@ class Service:
                                      "--run", str(run["id"]), "--hermes", self.hermes_bin],
                                     cwd=str(PLUGIN_ROOT), stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                     env=env, start_new_session=True)
+        # Reap the runner when it ends, so a finished run never lingers as a zombie of this process.
+        threading.Thread(target=proc.wait, name=f"rung-reap-{run['id']}", daemon=True).start()
         self.engine.set_run(run["id"], pid=proc.pid, log_path=str(log))
         return self.engine.run(run["id"])
 

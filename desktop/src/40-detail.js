@@ -46,13 +46,16 @@ function NeedView({ project, r }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(r.text)
   const [err, setErr] = useState('')
+  const [conflict, setConflict] = useState(null)
+  const [retiring, setRetiring] = useState(false)
+  const ro = !!r.read_only
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
   const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : 'approved'
   const save = async approve => {
-    const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve })
-    if (!res.ok) return setErr(res.error)
-    setEditing(false); setErr('')
+    const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve, version: r.version })
+    if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
+    setEditing(false); setErr(''); setConflict(null)
   }
   const head = h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between',
@@ -64,10 +67,15 @@ function NeedView({ project, r }) {
         h('div', 'flex items-center gap-2',
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
-      : h('h2', { className: 'text-base font-semibold text-fg cursor-pointer', 'data-testid': 'need-title', title: 'Edit', onClick: () => setEditing(true) }, r.text),
-    r.status === 'draft' && !editing ? h('div', 'flex items-center gap-2 pt-1',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/approve`); setErr(x.ok ? '' : x.error) } }, 'Approve')) : null)
+      : ro ? h('h2', { className: 'text-base font-semibold text-fg', 'data-testid': 'need-title' }, r.text)
+        : h('h2', { className: 'text-base font-semibold text-fg cursor-pointer', 'data-testid': 'need-title', title: 'Edit', 'aria-label': `Edit ${r.id}: ${r.text}`, onClick: () => setEditing(true) }, r.text),
+    h(Conflict, { res: conflict, path: `${P(project)}/rungs/${r.id}` }),
+    !editing ? h('div', 'flex items-center gap-2 pt-1',
+      r.status === 'draft' && !ro ? h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/approve`); setErr(x.ok ? '' : x.error) } }, 'Approve') : null,
+      h(Btn, { kind: 'small', testid: 'open-readout', onClick: () => navigate('readout', { need: r.id }) }, 'Read-out'),
+      ro ? null : h(Btn, { kind: 'quiet', testid: 'retire', onClick: () => setRetiring(true) }, 'Retire')) : null)
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'need' },
+    r.retired ? h(RetiredBar, { project, r }) : null,
     head,
     r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
@@ -75,7 +83,8 @@ function NeedView({ project, r }) {
     h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
       h('div', 'flex items-center justify-between pb-1',
         h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Requirements'),
-        h('button', { type: 'button', className: 'px-2.5 py-1 rounded text-xs font-medium text-needs border border-needs', 'data-testid': 'new-requirement', onClick: () => navigate('req-new', { need: r.id }) }, 'New requirement')),
+        ro ? null : h('button', { type: 'button', className: 'px-2.5 py-1 rounded text-xs font-medium text-needs border border-needs', 'data-testid': 'new-requirement', onClick: () => navigate('req-new', { need: r.id }) }, 'New requirement')),
+      reqs.length ? null : h(Well, { className: 'text-xs text-dim' }, 'No requirements'),
       ...reqs.map(x => h('div', { key: x.id, className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2 cursor-pointer', 'data-req': x.id, onClick: () => navigate('rung', { rid: x.id }) },
         h('div', 'flex items-center gap-2.5',
           h('span', { className: cx('text-xs font-medium mono', reqTone(x)) }, x.id),
@@ -89,7 +98,7 @@ function NeedView({ project, r }) {
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-needs text-on-needs', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: true }); setErr(x.ok ? '' : x.error) } }, 'Accept'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-btn border border-line text-muted', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: false }); setErr(x.ok ? '' : x.error) } }, 'Dismiss'))))) : null,
     h(ErrorLine, { text: err }))
-  return h(Page, { project, sel: r.id }, body)
+  return h(Page, { project, sel: r.id }, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
 }
 
 // ------------------------------------------------------------------ requirement editor (also New requirement)
@@ -101,6 +110,7 @@ function ReqEditor({ project, r, need, ret }) {
   const [err, setErr] = useState('')
   const [sugs, setSugs] = useState(null)
   const [marks, setMarks] = useState({})
+  const [conflict, setConflict] = useState(null)
   const needId = r ? r.parent : need
   useEffect(() => {
     if (isNew) return
@@ -115,9 +125,9 @@ function ReqEditor({ project, r, need, ret }) {
       res = await post(`${P(project)}/needs/${needId}/requirements`, { text, detail })
       if (res.ok && approve) res = await post(`${P(project)}/rungs/${res.data.id}/approve`)
     } else {
-      res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve })
+      res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: r.version })
     }
-    if (!res.ok) return setErr(res.error)
+    if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
     done()
   }
   const specs = r ? (r.children || []).filter(s => s.status !== 'dismissed' && s.status !== 'proposed') : []
@@ -147,6 +157,7 @@ function ReqEditor({ project, r, need, ret }) {
           h('span', 'text-xs text-muted', s.text)),
         h(Badge, { status: (s.children || []).length ? s.status : 'draft', label: (s.children || []).length ? undefined : 'No tests', small: true })))) : null,
     h(ErrorLine, { text: err }),
+    h(Conflict, { res: conflict, path: r ? `${P(project)}/rungs/${r.id}` : null }),
     h('div', 'flex items-center gap-2.5 pt-3 border-t border-line',
       h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'approve', onClick: () => save(true) }, 'Approve'),
       h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'save-draft', onClick: () => save(false) }, 'Save draft')))
@@ -373,6 +384,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const [sug, setSug] = useState(null)
   const [mark, setMark] = useState('')
   const [err, setErr] = useState('')
+  const [conflict, setConflict] = useState(null)
   const reqId = req || (s && s.parent)
   useEffect(() => {
     if (!reqId) return
@@ -387,12 +399,12 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const done = () => (ret ? navigate('build', { need: need || needId, step: ret }) : navigate('rung', { rid: s ? s.id : reqId }))
   const save = async () => {
     let x
-    if (s) x = await post(`${P(project)}/rungs/${s.id}/edit`, { text: t, detail: d, approve: true })
+    if (s) x = await post(`${P(project)}/rungs/${s.id}/edit`, { text: t, detail: d, approve: true, version: s.version })
     else {
       x = await post(`${P(project)}/rungs/${reqId}/spec`, { text: t, detail: d, suggestion: mark === 'accepted' ? sug : null })
       if (x.ok) x = await post(`${P(project)}/rungs/${x.data.id}/approve`)
     }
-    if (!x.ok) return setErr(x.error)
+    if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
     done()
   }
   const path = s ? s.path : [...r.path, { id: r.id }]
@@ -413,6 +425,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
         h('button', { type: 'button', className: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'accept-support', disabled: !!mark, onClick: () => { setMark('accepted'); setDetail((d ? d + '\n' : '') + sug) } }, mark === 'accepted' ? 'Accepted' : 'Accept'),
         h('button', { type: 'button', className: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-muted text-xs font-medium', disabled: !!mark, onClick: () => setMark('dismissed') }, 'Dismiss'))) : null,
     h(ErrorLine, { text: err }),
+    h(Conflict, { res: conflict, path: s ? `/projects/${encodeURIComponent(project)}/rungs/${encodeURIComponent(s.id)}` : null }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
       h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'save-approve', onClick: save }, 'Save and approve'),
       h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', onClick: done }, 'Cancel')))
@@ -477,7 +490,8 @@ function TestView({ project, r }) {
               h(Btn, { onClick: () => navigate('rung', { rid: r.parent }) }, 'Cancel')))))
     return h(Page, { project, sel: r.id }, body)
   }
-  const badge = r.status === 'stale' ? h(Badge, { status: 'stale' }) : h(Badge, { status: r.result === 'not_run' ? 'not_run' : (r.result || 'not_run') })
+  const badge = h('span', 'flex items-center gap-1.5', h(SeenFailing, { value: r.seen_failing }),
+    r.status === 'stale' ? h(Badge, { status: 'stale' }) : h(Badge, { status: r.result === 'not_run' ? 'not_run' : (r.result || 'not_run') }))
   const failing = execs.filter(x => x.status === 'fail')  // fails stay failed after an upstream edit
   const body = h('div', 'flex flex-col gap-6',
     h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'command-test' },
@@ -487,15 +501,16 @@ function TestView({ project, r }) {
         h('div', { className: 'text-xs mono text-fg', 'data-testid': 'pass-rule' }, passRule(r))),
       r.type === 'ai_judged' ? h('div', { className: 'text-[11px] text-dim', 'data-testid': 'no-gate' }, 'Cannot release a gate') : null,
       h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
-        h(Label, null, 'Executions'),
+        h('div', 'flex items-center justify-between', h(Label, null, 'Executions'), h(SeenFailing, { value: r.seen_failing, small: true })),
         h('div', { className: 'flex flex-col gap-2', 'data-testid': 'executions' },
           ...(execs.length ? execs : []).map(x => h(ExecRow, { key: x.n, test: r.id, x })),
           execs.length ? null : h(Well, { className: 'font-mono text-[11px] text-dim' }, 'No executions yet'))),
-      (r.defects || []).length ? h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'defects' },
+      h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': (r.defects || []).length ? 'defects' : 'no-defects' },
         h(Label, null, 'Defects'),
-        ...r.defects.map(dx => h(Well, { key: dx.id, className: 'flex items-center justify-between text-xs' },
+        (r.defects || []).length ? null : h(Well, { className: 'text-xs text-dim' }, 'No defects'),
+        ...(r.defects || []).map(dx => h(Well, { key: dx.id, className: 'flex items-center justify-between text-xs' },
           h('span', 'text-fg', `${dx.id} · ${dx.title}`),
-          h('span', 'mono text-[11px] text-muted', `${dx.category} · ${dx.executions.map(n => '#' + n).join(' ')}`)))) : null,
+          h('span', 'mono text-[11px] text-muted', `${dx.category} · ${dx.executions.map(n => '#' + n).join(' ')}`)))),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'run-tests', onClick: () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n })) }, 'Run tests'),
@@ -510,7 +525,7 @@ function ExecRow({ test, x }) {
       h('div', 'flex items-center gap-2', h('span', 'w-1.5 h-1.5 rounded-full bg-dim'), h('span', null, execLine(x))),
       h('span', 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] no-underline font-medium bg-stale/15 text-stale border border-stale/30', 'Stale'))
   }
-  const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'running' || x.status === 'pending' ? 'needs' : 'dim'
+  const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : ['running', 'pending', 'error'].includes(x.status) ? 'needs' : 'dim'
   return h('div', { className: cx('flex items-center justify-between bg-well p-2.5 rounded-[6px] border font-mono text-[11px] text-fg cursor-pointer', t === 'fail' ? 'border-fail/30' : t === 'pass' ? 'border-pass/30' : 'border-line2'), 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
     h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
     h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
@@ -527,6 +542,7 @@ function TestEdit({ project, test, spec, ret, need }) {
   const [f, setF] = useState(null)
   const [err, setErr] = useState('')
   const [ran, setRan] = useState(null)
+  const [conflict, setConflict] = useState(null)
   useEffect(() => {
     if (f) return
     if (test && !t) return
@@ -547,8 +563,8 @@ function TestEdit({ project, test, spec, ret, need }) {
   }
   const done = () => (ret ? navigate('build', { need: need || (s.path[0] && s.path[0].id), step: ret }) : navigate('rung', { rid: t ? t.id : s.id }))
   const save = async () => {
-    const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: fields() }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
-    if (!x.ok) return setErr(x.error)
+    const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: { ...fields(), version: t.version } }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
+    if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
     done()
   }
   const runOnce = async () => {
@@ -603,6 +619,7 @@ function TestEdit({ project, test, spec, ret, need }) {
           h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Timeout'), input('timeout')),
           h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Output limit'), input('limit')))),
     h(ErrorLine, { text: err }),
+    h(Conflict, { res: conflict, path: t ? `/projects/${encodeURIComponent(project)}/rungs/${encodeURIComponent(t.id)}` : null }),
     h('div', 'flex items-center gap-2.5 pt-4 border-t border-line',
       h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'save-test', onClick: save }, 'Save test'),
       f.type === 'manual' ? null : h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'run-once', onClick: runOnce }, 'Run once'),

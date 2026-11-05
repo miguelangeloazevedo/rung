@@ -776,6 +776,13 @@ class Engine(LifecycleMixin):
                         sd["draft_state"] = "drafting"
                         c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(sd), s["pk"]))
                         spec_pk = s["pk"]
+            else:  # I write: an unwritten AI draft (failed or not) becomes the person's to write
+                for s in existing:
+                    sd = _l(s["data"], {})
+                    if s["status"] == "draft" and not s["text"]:
+                        sd.pop("draft_error", None)
+                        sd.update({"draft_state": "", "author_role": "human"})
+                        c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(sd), s["pk"]))
         return self._rung_dict(self._rung_by_pk(spec_pk)) if spec_pk else None
 
     @writes()

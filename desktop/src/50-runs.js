@@ -25,13 +25,25 @@ function elapsed(from, to) {
 
 // ------------------------------------------------------------------ run
 
+const OUTCOME_WORD = { needs_input: 'needs input', no_change: 'no change', unknown: 'unknown', partial: 'partial', error: 'error' }
+
+// pass and fail come from the tests; every other outcome is what the worker or the runner reported
+function outcomeTone(st) {
+  if (st === 'pass' || st === 'passed') return 'pass'
+  if (st === 'fail' || st === 'failed') return 'fail'
+  if (['running', 'queued', 'needs_input', 'partial', 'error'].includes(st)) return 'needs'
+  return 'dim'
+}
+
 function attemptLine(a) {
   const ex = (a.executions || [])
   const failed = ex.filter(x => x.status === 'fail').map(x => x.test)
   const passed = ex.filter(x => x.status === 'pass').map(x => x.test)
   if (a.status === 'running') return `Attempt ${a.n} · running`
   const tests = a.status === 'pass' ? passed : failed.length ? failed : ex.map(x => x.test)
-  return `Attempt ${a.n} · ${a.status}${tests.length ? ' · ' + [...new Set(tests)].join(', ') : ''}${a.ended_at ? ' · ' + dur(a.ended_at - a.started_at) : ''}`
+  const word = OUTCOME_WORD[a.status] || a.status
+  const why = a.reason && a.status !== 'pass' && a.status !== 'fail' ? ' · ' + a.reason : ''
+  return `Attempt ${a.n} · ${word}${tests.length ? ' · ' + [...new Set(tests)].join(', ') : ''}${why}${a.ended_at ? ' · ' + dur(a.ended_at - a.started_at) : ''}`
 }
 
 function RunView({ project, run }) {
@@ -50,7 +62,7 @@ function RunView({ project, run }) {
   const needId = spec.path[0] && spec.path[0].id
   const stop = async () => { const x = await post(`/runs/${r.id}/cancel`); setErr(x.ok ? '' : x.error) }
   if (!live) {
-    const tone = r.status === 'passed' ? 'pass' : r.status === 'cancelled' ? 'dim' : 'fail'
+    const tone = outcomeTone(r.status)
     const reqText = (spec.path.find(p => p.id === r.requirement) || {}).text || ''
     const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'run' },
       h('div', 'flex flex-col gap-2',
@@ -68,8 +80,8 @@ function RunView({ project, run }) {
         h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Attempts'),
         h('div', { className: 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]', 'data-testid': 'attempts' },
           ...atts.map(a => {
-            const t = a.status === 'pass' ? 'pass' : a.status === 'fail' ? 'fail' : 'dim'
-            return h('div', { key: a.n, className: 'flex items-center justify-between py-0.5 cursor-pointer', 'data-attempt': a.n, onClick: () => navigate('attempt', { run: r.id, n: a.n }) },
+            const t = outcomeTone(a.status)
+            return h('div', { key: a.n, className: 'flex items-center justify-between py-0.5 cursor-pointer', 'data-attempt': a.n, 'data-outcome': a.status, onClick: () => navigate('attempt', { run: r.id, n: a.n }) },
               h('div', { className: cx('flex items-center gap-2', TONE_TEXT[t]) }, h(Dot, { t }), h('span', null, attemptLine(a))),
               h('span', 'text-[10px] text-muted', 'Details'))
           }))),
@@ -78,7 +90,7 @@ function RunView({ project, run }) {
         h('div', { className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2', 'data-testid': 'run-coverage' },
           h('span', 'text-xs mono text-fg', `${r.requirement} ${reqText}`),
           h(Badge, { status: r.coverage === 'covered' ? 'covered' : r.coverage === 'failing' ? 'failing' : r.coverage === 'stale' ? 'stale' : 'open' }))),
-      r.reason && r.status !== 'passed' ? h('div', { className: cx('text-xs', TONE_TEXT[tone]) }, r.reason) : null,
+      r.reason && r.status !== 'passed' ? h('div', { className: cx('text-xs', TONE_TEXT[tone === 'dim' ? 'muted' : tone]), 'data-testid': 'run-reason' }, r.reason) : null,
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-2 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'back-to-build', onClick: () => navigate('build', { need: needId, step: 'develop' }) }, 'Back to build'),
@@ -103,12 +115,12 @@ function RunView({ project, run }) {
       h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Attempts'),
       h('div', { className: 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]', 'data-testid': 'attempts' },
         ...(atts.length ? atts : [{ n: 1, status: 'running' }]).map(a => {
-          const t = a.status === 'pass' ? 'pass' : a.status === 'fail' ? 'fail' : a.status === 'running' ? 'needs' : 'dim'
-          return h('div', { key: a.n, className: 'flex items-center justify-between text-fg py-0.5 cursor-pointer', 'data-attempt': a.n, onClick: () => navigate('attempt', { run: r.id, n: a.n }) },
+          const t = outcomeTone(a.status)
+          return h('div', { key: a.n, className: 'flex items-center justify-between text-fg py-0.5 cursor-pointer', 'data-attempt': a.n, 'data-outcome': a.status, onClick: () => navigate('attempt', { run: r.id, n: a.n }) },
             h('div', 'flex items-center gap-2',
               h('span', { className: cx('w-1.5 h-1.5 rounded-full', TONE_BG[t]), style: t === 'needs' ? { animation: 'rung-pulse 2s ease-in-out infinite' } : undefined }),
               h('span', null, attemptLine(a))),
-            h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, a.status === 'pass' ? 'passed' : a.status === 'fail' ? 'failed' : a.status))
+            h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, a.status === 'pass' ? 'passed' : a.status === 'fail' ? 'failed' : OUTCOME_WORD[a.status] || a.status))
         }))),
     h('div', 'flex flex-col gap-1.5 pt-2 border-t border-line',
       h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-xs text-fg flex flex-col gap-1.5', 'data-testid': 'live-output' },
@@ -132,7 +144,7 @@ function AttemptView({ project, run, n }) {
   if (!a) return h(Page, { project }, h(Loading))
   const next = (r.attempts || []).find(x => x.n === a.n + 1)
   const fails = (a.executions || []).filter(x => x.status === 'fail')
-  const tone = a.status === 'pass' ? 'pass' : a.status === 'fail' ? 'fail' : 'needs'
+  const tone = outcomeTone(a.status) === 'dim' ? 'muted' : outcomeTone(a.status)
   const outText = (fails[0] || (a.executions || [])[0] || {}).output || ''
   const outLines = outText.split('\n').filter(Boolean).slice(-12)
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'attempt' },
@@ -142,7 +154,8 @@ function AttemptView({ project, run, n }) {
         h('div', 'flex items-center gap-2.5',
           h('h2', 'text-base font-semibold text-fg', `Attempt ${a.n}`),
           h(Badge, { status: a.status === 'pass' ? 'pass' : a.status === 'fail' ? 'fail' : a.status })),
-        h('span', 'text-xs mono text-muted', `${r.profile}${a.ended_at ? ' · ' + dur(a.ended_at - a.started_at) : ''}`))),
+        h('span', 'text-xs mono text-muted', `${r.profile}${a.ended_at ? ' · ' + dur(a.ended_at - a.started_at) : ''}`)),
+      a.reason ? h('div', { className: cx('text-xs', TONE_TEXT[tone]), 'data-testid': 'attempt-reason' }, a.reason) : null),
     h('div', 'flex flex-col gap-1.5 pt-3 border-t border-line',
       h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Files changed'),
       h('div', { className: 'flex flex-col gap-1 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]', 'data-testid': 'files-changed' },
@@ -153,7 +166,7 @@ function AttemptView({ project, run, n }) {
       h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Commands'),
       ...(a.executions || []).map(x => h('div', { key: `${x.test}#${x.n}`, className: 'flex items-center justify-between bg-well px-2.5 py-1.5 rounded-[6px] border border-line2 font-mono text-[11px] cursor-pointer', onClick: () => navigate('exec', { test: x.test, n: x.n }) },
         h('span', 'text-fg', x.command),
-        h('span', { className: cx('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border', x.status === 'pass' ? 'bg-pass/10 text-pass border-pass/30' : 'bg-fail/10 text-fail border-fail/30') }, `exit ${x.exit_code == null ? x.status : x.exit_code}`)))),
+        h('span', { className: cx('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border', x.status === 'pass' ? 'bg-pass/10 text-pass border-pass/30' : x.status === 'fail' ? 'bg-fail/10 text-fail border-fail/30' : 'bg-needs/10 text-needs border-needs/30') }, `exit ${x.exit_code == null ? x.status : x.exit_code}`)))),
     h('div', 'flex flex-col gap-1.5 pt-3 border-t border-line',
       h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Test output'),
       h('div', { className: cx('bg-well p-3 rounded-[6px] border border-line2 font-mono text-[11px] flex flex-col gap-1', TONE_TEXT[tone]), 'data-testid': 'test-output' },
@@ -227,7 +240,7 @@ function ExecView({ project, test, n }) {
     h(Fact, { key: 'b', big, label: 'Carried by', value: x.carried_by || 'engine' }),
     h(Fact, { key: 'd', big, label: 'Duration', value: x.duration != null ? dur(x.duration) : '' }),
     h(Fact, { key: 's', big, label: 'Started', value: clock(x.started_at) }),
-    h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? x.status : String(x.exit_code), mono: true, tone: pass ? 'pass' : 'fail' }),
+    h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? x.status : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : 'needs' }),
     h(Fact, { key: 'x', big, label: 'Context', value: x.context || '' })
   ]
   if (voided) {
@@ -325,15 +338,16 @@ function DefectModal({ project }) {
     setDone(x.data)
     close()
   }
-  return h('div', { className: 'absolute inset-0 bg-well/75 flex items-center justify-center z-50 p-4', 'data-testid': 'defect-modal', onClick: close },
-    h('div', { className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col', onClick: e => e.stopPropagation() },
-      h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
-        h('h3', 'text-sm font-semibold text-fg', 'Raise defect'),
-        h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: close }, '✕')),
-      h('div', 'p-5 flex flex-col gap-4',
+  const ready = title.trim() && sel.size
+  return h(Dialog, {
+    title: 'Raise defect', onClose: close, testid: 'defect-modal',
+    footer: frag(
+      h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', onClick: close }, 'Cancel'),
+      h('button', { type: 'button', 'aria-disabled': ready ? undefined : 'true', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', !ready && 'opacity-40 cursor-not-allowed'), 'data-testid': 'raise', onClick: () => ready && raise() }, 'Raise'))
+  },
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-[11px] font-semibold text-muted uppercase tracking-wider', 'Title'),
-          h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-xs text-fg focus:outline-none focus:border-needs', type: 'text', name: 'defect-title', value: title, autoFocus: true, onChange: e => setTitle(e.target.value) })),
+          h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-xs text-fg focus:border-needs', type: 'text', name: 'defect-title', value: title, 'data-autofocus': '1', onChange: e => setTitle(e.target.value) })),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-[11px] font-semibold text-muted uppercase tracking-wider', 'Linked executions'),
           h('div', { className: 'flex flex-col gap-1.5 bg-well border border-line rounded-[6px] p-2.5 font-mono text-[11px]', 'data-testid': 'linked' },
@@ -343,13 +357,10 @@ function DefectModal({ project }) {
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-[11px] font-semibold text-muted uppercase tracking-wider', 'Category'),
           h('div', 'relative',
-            h('select', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-xs text-fg focus:outline-none focus:border-needs appearance-none cursor-pointer', name: 'category', value: cat, onChange: e => setCat(e.target.value) },
+            h('select', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-xs text-fg focus:border-needs appearance-none cursor-pointer', name: 'category', value: cat, onChange: e => setCat(e.target.value) },
               ...['Implementation', 'Specification', 'Requirement', 'Test'].map(c => h('option', { key: c, value: c }, c))),
             h('div', 'pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-muted', '▾'))),
-        h(ErrorLine, { text: err })),
-      h('div', 'flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line bg-card',
-        h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', onClick: close }, 'Cancel'),
-        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', (!title.trim() || !sel.size) && 'opacity-40 cursor-not-allowed'), 'data-testid': 'raise', onClick: () => title.trim() && sel.size && raise() }, 'Raise'))))
+        h(ErrorLine, { text: err }))
 }
 
 function DefectNew({ project, test }) {

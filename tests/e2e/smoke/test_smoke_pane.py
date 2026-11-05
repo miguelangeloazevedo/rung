@@ -84,10 +84,13 @@ def test_theme_status_colours_distinct(rung, csvtidy, theme):
 
 
 def test_empty_states(rung, page, tmp_path):
-    # No project at all: the new-project form.
+    # No project at all: the start screen, then (dismissed) the new-project form.
+    H.open_rung(page)
+    H.wait_view(page, "start")
+    shot(page, "empty-no-project")
+    rung.engine.set_onboarding(start_dismissed=True)
     H.open_rung(page)
     H.wait_view(page, "project-new")
-    shot(page, "empty-no-project")
     # A project with nothing in it.
     folder = H.copy_fixture("csvtidy", tmp_path / "w")
     rung.engine.create_project("csvtidy", str(folder), "pytest", ["coder"])

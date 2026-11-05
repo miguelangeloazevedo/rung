@@ -85,6 +85,7 @@ def _state(svc, human, body):
         t = e.tiles(cur)
         out["needs_you"] = t["needs_you"]
         out["running"] = t["running"]
+        out["current_archived"] = t["archived"]
     return out
 
 
@@ -168,6 +169,7 @@ def _home(svc, human, body, project):
     e = svc.engine
     h = e.home(project)
     h["tree"] = e.tree(project)
+    h["retired"] = len(e.tree(project, retired=True))
     h["rev"] = e.rev()
     focus = body.get("focus") if isinstance(body, dict) else None
     h["allocation"] = _allocation_focus(svc, project, focus)

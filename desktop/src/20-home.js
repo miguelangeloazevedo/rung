@@ -21,7 +21,7 @@ function ExecList({ test, execs, limit }) {
   return h('div', 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]',
     ...rows.map(x => {
       const dead = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; earlier fails stay failed
-      const t = dead ? 'dim' : x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'pending' ? 'needs' : 'dim'
+      const t = dead ? 'dim' : x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'pending' || x.status === 'error' ? 'needs' : 'dim'
       return h('div', {
         key: x.n,
         className: cx('flex items-center justify-between py-0.5 cursor-pointer', dead ? 'line-through text-dim' : 'text-fg'),
@@ -35,7 +35,7 @@ function ExecList({ test, execs, limit }) {
     }))
 }
 
-function StaleCard({ project, item }) {
+function StaleCard({ project, item, ro }) {
   const r = useApi(`/projects/${project}/rungs/${item.id}`).data
   const tests = r && r.kind === 'specification' ? (r.children || []).filter(c => c.type === 'command' && c.status !== 'dismissed') : []
   const first = tests[0]
@@ -61,14 +61,14 @@ function StaleCard({ project, item }) {
         h('span', 'font-medium mono text-fg', `${first.id} · ${first.command || first.text}`),
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
-    h('div', 'flex items-center gap-2 pt-2 border-t border-line',
+    ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
       h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${project}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
 }
 
-function ProposedCard({ project, item }) {
+function ProposedCard({ project, item, ro }) {
   const [err, setErr] = useState('')
   const act = async which => {
     const res = await post(`/projects/${project}/rungs/${item.id}/${which}`)
@@ -83,16 +83,16 @@ function ProposedCard({ project, item }) {
     h('div', 'flex items-center gap-2 text-xs',
       h('span', 'px-1.5 py-0.5 rounded border border-needs text-needs text-[10px] font-semibold uppercase tracking-wider', 'Proposed'),
       h('span', 'mono text-muted', item.id),
-      h('span', { className: 'text-muted', 'data-testid': 'proposal-source' }, `by ${item.proposer || 'an agent'} · from chat "${item.source_chat || 'a chat'}"`)),
+      h('span', { className: 'text-muted', 'data-testid': 'proposal-source' }, `by ${item.proposer || 'an agent'} · ${/^run \d+$/.test(item.source_chat || '') ? 'from ' + item.source_chat : `from chat "${item.source_chat || 'a chat'}"`}`)),
     h('span', 'text-sm text-fg', item.text),
     h('span', 'text-[11px] text-muted mono', `${item.parent} › ${item.id}`),
     h(ErrorLine, { text: err })),
-  h('div', 'flex items-center gap-2',
+  ro ? null : h('div', 'flex items-center gap-2',
     h(Btn, { kind: 'acceptSolid', testid: 'accept', onClick: () => act('approve') }, 'Accept'),
     h(Btn, { kind: 'ghostLine', testid: 'dismiss', onClick: () => act('dismiss') }, 'Dismiss')))
 }
 
-function ApprovalCard({ project, item }) {
+function ApprovalCard({ project, item, ro }) {
   const [err, setErr] = useState('')
   return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item' },
     h('div', 'flex flex-col gap-1',
@@ -104,7 +104,7 @@ function ApprovalCard({ project, item }) {
       item.note ? h('span', 'text-[11px] text-muted', item.note) : null,
       h(ErrorLine, { text: err })),
     h('div', 'flex items-center gap-2',
-      h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${project}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
+      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${project}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
       h(Btn, { kind: 'ghostLine', onClick: () => navigate('rung', { rid: item.id }) }, 'Open')))
 }
 
@@ -124,12 +124,22 @@ function RunningRow({ run }) {
 function Home({ project }) {
   const q = useApi(`/projects/${project}/home`, { live: true })
   const d = q.data
-  if (!d) return h(Frame, { main: q.error ? h(ErrorLine, { text: errText(q.error) }) : h(Loading) })
+  if (!d) {
+    return h(Frame, {
+      main: q.error
+        ? frag(h(ErrorLine, { text: errText(q.error) }), h('div', null, h(Btn, { onClick: () => navigate('projects') }, 'Projects')))
+        : h(Loading)
+    })
+  }
   const items = d.needs_you || []
   const stale = items.filter(i => i.type === 'stale')
   const approvals = items.filter(i => i.type === 'approval')
   const proposed = items.filter(i => i.type === 'proposed')
-  const head = h('header', 'flex flex-col gap-4', h(Header, { project }), h(Tiles, { tiles: d.tiles }))
+  const errors = items.filter(i => i.type === 'error')
+  const inputs = items.filter(i => i.type === 'needs_input')
+  const ro = !!(d.tiles && d.tiles.archived)
+  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro }), ro ? h(ArchivedBar, { project }) : null,
+    h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
     return h(Frame, {
@@ -137,7 +147,8 @@ function Home({ project }) {
         h('div', { className: 'flex-1 flex flex-col items-center justify-center py-20 gap-4', 'data-testid': 'empty-project' },
           h('div', 'w-12 h-12 rounded-[6px] bg-card border border-line flex items-center justify-center text-muted', '≡'),
           h('h2', 'text-base font-semibold text-fg', 'No needs yet'),
-          h('button', { type: 'button', className: 'px-4 py-2 rounded-[6px] bg-needs text-on-needs font-medium text-xs', onClick: () => navigate('need-new') }, 'Write the first need')))
+          ro ? null : h('button', { type: 'button', className: 'px-4 py-2 rounded-[6px] bg-needs text-on-needs font-medium text-xs', onClick: () => navigate('need-new') }, 'Write the first need'),
+          d.retired ? h('button', { type: 'button', className: 'text-[11px] text-muted hover:text-fg', 'data-testid': 'retired-link', onClick: () => navigate('retired') }, `Retired ${d.retired}`) : null))
     })
   }
   const main = frag(
@@ -145,10 +156,12 @@ function Home({ project }) {
     h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'needs-you' },
       h(SectionTitle, { tone: items.length ? 'needs' : null, dot: items.length ? 'needs' : 'dim', right: items.length ? '' : 'Priority queue' }, 'Needs you'),
       items.length
-        ? frag(...stale.map(i => h(StaleCard, { key: 's' + i.id, project, item: i })),
-          ...approvals.map(i => h(ApprovalCard, { key: 'a' + i.id + i.n, project, item: i })))
+        ? frag(...stale.map(i => h(StaleCard, { key: 's' + i.id, project, item: i, ro })),
+          ...errors.map(i => h(ErrorCard, { key: 'e' + i.id + i.n, project, item: i, ro })),
+          ...inputs.map(i => h(NeedsInputCard, { key: 'i' + i.run, project, item: i, ro })),
+          ...approvals.map(i => h(ApprovalCard, { key: 'a' + i.id + i.n, project, item: i, ro })))
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing needs you'),
-      proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i }))) : null),
+      proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro }))) : null),
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'running' },
       h(SectionTitle, { dot: (d.running || []).length ? 'needs' : 'dim' }, 'Running'),
       (d.running || []).length || (d.running_tests || []).length
@@ -171,7 +184,7 @@ function Home({ project }) {
           h('span', 'text-xs font-medium', r.id), h('span', 'text-xs', r.text),
           (r.specs || []).length ? h('span', 'text-[11px] text-dim', '· ' + r.specs.join(', ')) : null),
         h('span', 'text-xs', 'draft')))) : null)
-  return h(Frame, { main, rail: h(Rail, { tree: d.tree, alloc: d.allocation, sel }) })
+  return h(Frame, { main, rail: h(Rail, { tree: d.tree, alloc: d.allocation, sel, retired: d.retired }) })
 }
 
 // ------------------------------------------------------------------ project picker
@@ -190,20 +203,24 @@ function StatChip({ label, n, t, of }) {
     of != null ? `${label} ${n} of ${of}` : `${label} ${n}`)
 }
 
-function Projects() {
+function Projects({ tab }) {
   const st = useApi('/state').data
   const [qtext, setQ] = useState('')
+  const archived = tab === 'archived'
   const rows = ((st && st.projects) || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   rows.sort((a, b) => (b.stats.last_activity || 0) - (a.stats.last_activity || 0))
   const main = frag(
     h('header', 'flex items-center justify-between',
       h('h1', 'text-xl font-bold tracking-tight text-fg', 'Projects'),
       h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project')),
-    h('div', 'flex items-center',
+    archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', { tab: v }) }) : null,
+    archived ? h(ArchivedList) : null,
+    archived ? null : h('div', 'flex items-center',
       h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
         h('span', 'text-muted text-xs', '⌕'),
-        h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', value: qtext, onChange: e => setQ(e.target.value) }))),
-    h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
+        h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
+    archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
+      st && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects') : null,
       ...rows.map(p => h(Card, {
         key: p.name, className: 'p-4 flex items-center justify-between', testid: 'project-row',
         onClick: async () => { await post(`/projects/${encodeURIComponent(p.name)}/open`); navigate('home') }
@@ -218,7 +235,7 @@ function Projects() {
           h(StatChip, { label: 'Stale', n: p.stats.stale, t: 'stale' }),
           h(StatChip, { label: 'Covered', n: p.stats.covered, of: p.stats.requirements })),
         h('span', { className: 'text-xs text-muted', 'data-stat': 'Last activity' }, ago(p.stats.last_activity)))))))
-  return h(Frame, { main, wide: true })
+  return h('div', 'relative h-full w-full', h(Frame, { main, wide: true }))
 }
 
 // ------------------------------------------------------------------ new project
@@ -228,22 +245,36 @@ function NewProject() {
   const profiles = ((st && st.profiles) || []).map(p => p.name)
   const [name, setName] = useState('')
   const [folder, setFolder] = useState('')
-  const [cmd, setCmd] = useState('pytest')
+  const [cmd, setCmd] = useState('')
   const [picked, setPicked] = useState([])
   const [err, setErr] = useState('')
+  const [errs, setErrs] = useState({})
+  const touched = useRef({})
   const hasProjects = st && st.projects && st.projects.length
+  const fill = async path => {
+    // Name, test command and profiles follow the folder until the person edits them.
+    if (!path.trim()) return
+    try {
+      const d = await rest('/projects/defaults', { method: 'POST', body: { folder: path.trim() } })
+      if (!touched.current.name) setName(d.name || '')
+      if (!touched.current.cmd) setCmd(d.test_command || '')
+      if (!touched.current.profiles) setPicked(d.profiles || [])
+    } catch (_) { /* the field error shows on create */ }
+  }
   const choose = async () => {
     try {
       const os = CTX && CTX.os
       const r = os && os.pickFolder ? await os.pickFolder() : null
-      if (r) setFolder(typeof r === 'string' ? r : r.path || '')
+      if (r) { const p = typeof r === 'string' ? r : r.path || ''; setFolder(p); fill(p) }
     } catch (_) { /* typed path still works */ }
   }
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
-    if (res.ok) navigate('home')
-    else setErr(res.error)
+    if (res.ok) return navigate('home')
+    setErrs(res.field ? { [res.field]: res.error } : {})
+    setErr(res.field ? '' : res.error)
   }
+  const fe = k => errs[k] ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', 'data-field': k }, errs[k]) : null
   const inp = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'
   const main = h('div', { className: 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8', 'data-testid': 'new-project' },
     h('div', 'w-[640px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
@@ -251,27 +282,28 @@ function NewProject() {
       h('div', 'flex flex-col gap-4',
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Name'),
-          h('input', { className: inp, type: 'text', name: 'name', value: name, onChange: e => setName(e.target.value) })),
+          h('input', { className: inp, type: 'text', name: 'name', value: name, onChange: e => { touched.current.name = true; setName(e.target.value) } }), fe('name')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Folder'),
           h('div', 'flex items-center gap-2',
-            h('input', { className: cx(inp, 'font-mono flex-1'), type: 'text', name: 'folder', value: folder, onChange: e => setFolder(e.target.value) }),
-            h('button', { type: 'button', className: 'px-3 py-2 bg-btn border border-line rounded-[6px] text-xs font-medium text-fg', onClick: choose }, 'Choose'))),
+            h('input', { className: cx(inp, 'font-mono flex-1'), type: 'text', name: 'folder', value: folder, onChange: e => setFolder(e.target.value), onBlur: e => fill(e.target.value) }),
+            h('button', { type: 'button', className: 'px-3 py-2 bg-btn border border-line rounded-[6px] text-xs font-medium text-fg', onClick: choose }, 'Choose')), fe('folder')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Test command'),
-          h('input', { className: cx(inp, 'font-mono'), type: 'text', name: 'test_command', value: cmd, onChange: e => setCmd(e.target.value) })),
+          h('input', { className: cx(inp, 'font-mono'), type: 'text', name: 'test_command', value: cmd, onChange: e => { touched.current.cmd = true; setCmd(e.target.value) } }), fe('test_command')),
         h('div', 'flex flex-col gap-2',
           h('label', 'text-xs font-medium text-muted', 'Profiles'),
           h('div', 'flex flex-col gap-2 pt-1',
             ...profiles.map(p => h('label', { key: p, className: 'flex items-center gap-2.5 text-xs text-fg cursor-pointer' },
               h('input', {
                 type: 'checkbox', className: 'rounded accent-needs', name: 'profile', value: p, checked: picked.includes(p),
-                onChange: e => setPicked(e.target.checked ? [...picked, p] : picked.filter(x => x !== p))
+                onChange: e => { touched.current.profiles = true; setPicked(e.target.checked ? [...picked, p] : picked.filter(x => x !== p)) }
               }),
-              h('span', null, p)))))),
+              h('span', null, p)))), fe('profiles'))),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center justify-end gap-2 pt-4 border-t border-line',
-        hasProjects ? h(Btn, { onClick: () => navigate('projects') }, 'Cancel') : null,
+        hasProjects ? h(Btn, { onClick: () => navigate('projects') }, 'Cancel')
+          : st && st.onboarding && st.onboarding.start ? h(Btn, { testid: 'back-to-start', onClick: () => navigate('start') }, 'Back') : null,
         h(Btn, { kind: 'primary', testid: 'create-project', onClick: create }, 'Create project'))))
   return h('div', 'flex flex-row h-full w-full overflow-hidden', main)
 }
@@ -281,9 +313,10 @@ function NewProject() {
 const COLOUR_ROWS = [['needs_you', 'Needs you', 'needs'], ['pass', 'Pass', 'pass'], ['fail', 'Fail', 'fail'], ['stale', 'Stale', 'stale'], ['draft', 'Draft', 'dim']]
 const FIXED = [['theme', 'From theme'], ['#e5a94b', 'Amber'], ['#4cc38a', 'Green'], ['#e5534b', 'Red'], ['#a78bfa', 'Violet'], ['#6b9eff', 'Blue'], ['#8d8a9a', 'Grey']]
 
-function Toggle({ on, onChange, testid }) {
+function Toggle({ on, onChange, testid, label }) {
   return h('div', {
-    role: 'switch', 'aria-checked': on ? 'true' : 'false', 'data-testid': testid,
+    role: 'switch', 'aria-checked': on ? 'true' : 'false', 'data-testid': testid, 'aria-label': label, tabIndex: 0,
+    onKeyDown: activate(() => onChange(!on)),
     className: cx('inline-flex items-center w-8 h-4 rounded-full p-0.5 cursor-pointer', on ? 'bg-needs justify-end' : 'bg-line justify-start'),
     onClick: () => onChange(!on)
   }, h('div', { className: cx('w-3 h-3 rounded-full', on ? 'bg-card' : 'bg-muted') }))
@@ -291,6 +324,7 @@ function Toggle({ on, onChange, testid }) {
 
 function Settings({ project }) {
   const q = useApi('/settings')
+  const onb = (useApi('/state').data || {}).onboarding
   const [draft, setDraft] = useState(null)
   const [adding, setAdding] = useState(null)
   const [label, setLabel] = useState('')
@@ -341,7 +375,7 @@ function Settings({ project }) {
               h('td', 'px-4 py-2.5',
                 h('div', 'flex items-center gap-1.5 flex-wrap',
                   ...p.labels.map(l => h('span', { key: l, className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-btn border border-line text-fg text-[11px]', 'data-label': l },
-                    l, h('span', { className: 'text-muted cursor-pointer', 'data-remove': l, onClick: () => setProf(i, { labels: p.labels.filter(x => x !== l) }) }, '×'))),
+                    l, h('span', { className: 'text-muted cursor-pointer', 'aria-label': `Remove ${l}`, 'data-remove': l, onClick: () => setProf(i, { labels: p.labels.filter(x => x !== l) }) }, '×'))),
                   adding === p.name
                     ? h('input', {
                       autoFocus: true, className: 'w-20 bg-well border border-line rounded px-1.5 py-0.5 text-[11px] text-fg outline-none', value: label, 'data-testid': 'label-input',
@@ -356,10 +390,10 @@ function Settings({ project }) {
                         if (e.key === 'Escape') { setAdding(null); setLabel('') }
                       }
                     })
-                    : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
-              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-4 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', onChange: v => setProf(i, { enabled: v }) })))))))),
+                    : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
+              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-4 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Status colours'),
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
@@ -369,7 +403,7 @@ function Settings({ project }) {
             h('span', 'text-xs text-fg font-medium', word)),
           h('select', {
             className: 'bg-well border border-line text-xs text-fg rounded px-2.5 py-1 outline-none cursor-pointer',
-            value: colours[k] || 'theme', 'data-colour': k,
+            value: colours[k] || 'theme', 'data-colour': k, 'aria-label': `${word} colour`,
             onChange: e => setSet('colours', { ...colours, [k]: e.target.value })
           }, ...FIXED.map(([v, l]) => h('option', { key: v, value: v }, l))))))),
     h('section', 'flex flex-col gap-3',
@@ -381,6 +415,15 @@ function Settings({ project }) {
         h('div', 'flex items-center justify-between px-4 py-3',
           h('span', 'text-xs text-fg font-medium', 'Output limit'),
           h('input', { className: 'w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', type: 'text', name: 'output_limit', value: draft.settings.output_limit_label != null ? draft.settings.output_limit_label : `${Math.round(draft.settings.output_limit / 1000)} KB`, onChange: e => setSet('output_limit_label', e.target.value) })))),
+    h('section', { className: 'flex flex-col gap-3', 'data-testid': 'settings-project' },
+      h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
+      h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
+        h('div', 'flex items-center justify-between px-4 py-3',
+          h('span', 'text-xs text-fg font-medium', 'First green'),
+          h(Toggle, { on: !(onb && onb.checklist_hidden), testid: 'show-first-green', label: 'Show First green', onChange: v => post('/onboarding', { checklist_hidden: !v }) })),
+        project ? h('div', 'flex items-center justify-between px-4 py-3',
+          h('span', 'text-xs text-fg font-medium mono', project),
+          h(Btn, { kind: 'small', testid: 'open-project-settings', onClick: () => navigate('project-settings') }, 'Project settings')) : null)),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center justify-end gap-3 pt-2 pb-6',
       h('button', { type: 'button', className: 'px-4 py-1.5 rounded-[6px] border border-line text-xs font-semibold text-muted', onClick: cancel }, 'Cancel'),
