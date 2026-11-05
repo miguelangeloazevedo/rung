@@ -182,7 +182,7 @@ function Strip({ current, reached, need, done: doneList }) {
 function TreeTest({ n, sel }) {
   const t = tone(n)
   return h('div', {
-    className: 'pl-3 ml-0.5 border-l border-line flex items-center gap-1.5 cursor-pointer',
+    className: 'pl-3 ml-0.5 py-1 border-l border-line flex items-center gap-1.5 cursor-pointer',
     'data-rung': n.id,
     onClick: () => navigate('rung', { rid: n.id })
   },

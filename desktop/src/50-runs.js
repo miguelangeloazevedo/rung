@@ -240,7 +240,7 @@ function ExecView({ project, test, n }) {
     h(Fact, { key: 'b', big, label: 'Carried by', value: x.carried_by || 'engine' }),
     h(Fact, { key: 'd', big, label: 'Duration', value: x.duration != null ? dur(x.duration) : '' }),
     h(Fact, { key: 's', big, label: 'Started', value: clock(x.started_at) }),
-    h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? x.status : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : 'needs' }),
+    h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? 'none' : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : x.exit_code == null ? undefined : 'needs' }),
     h(Fact, { key: 'x', big, label: 'Context', value: x.context || '' })
   ]
   if (voided) {

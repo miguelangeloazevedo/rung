@@ -729,7 +729,7 @@ function Strip({ current, reached, need, done: doneList }) {
 function TreeTest({ n, sel }) {
   const t = tone(n)
   return h('div', {
-    className: 'pl-3 ml-0.5 border-l border-line flex items-center gap-1.5 cursor-pointer',
+    className: 'pl-3 ml-0.5 py-1 border-l border-line flex items-center gap-1.5 cursor-pointer',
     'data-rung': n.id,
     onClick: () => navigate('rung', { rid: n.id })
   },
@@ -2572,7 +2572,7 @@ function ExecView({ project, test, n }) {
     h(Fact, { key: 'b', big, label: 'Carried by', value: x.carried_by || 'engine' }),
     h(Fact, { key: 'd', big, label: 'Duration', value: x.duration != null ? dur(x.duration) : '' }),
     h(Fact, { key: 's', big, label: 'Started', value: clock(x.started_at) }),
-    h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? x.status : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : 'needs' }),
+    h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? 'none' : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : x.exit_code == null ? undefined : 'needs' }),
     h(Fact, { key: 'x', big, label: 'Context', value: x.context || '' })
   ]
   if (voided) {
@@ -2875,7 +2875,13 @@ function ReadOut({ project, need }) {
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'readout' },
     h('div', 'flex items-center justify-between',
       h(Crumbs, { path: [{ id: n.id }], last: 'Read-out' }),
-      n.retired ? h(Badge, { status: 'retired' }) : h(Badge, { status: n.status })),
+      h('div', 'flex items-center gap-2',
+        n.retired ? h(Badge, { status: 'retired' }) : h(Badge, { status: n.status }),
+        h(Btn, { kind: 'primary', testid: 'export', onClick: exp }, 'Export'),
+        h(Btn, { testid: 'back', onClick: () => navigate('rung', { rid: n.id }) }, 'Back'))),
+    exported ? h(Well, { className: 'flex items-center justify-between text-xs', testid: 'export-path' },
+      h('span', 'text-muted', 'Exported'), h('span', 'mono text-fg', shortPath(exported))) : null,
+    h(ErrorLine, { text: err }),
     h(Section, { title: 'Intent', testid: 'readout-intent' },
       h(Well, { className: 'flex flex-col gap-1' },
         h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'intent-text' }, n.text),
@@ -2907,13 +2913,7 @@ function ReadOut({ project, need }) {
             : h('span', 'flex items-center gap-1.5 shrink-0',
               h('span', { className: 'text-[11px] text-muted', 'data-testid': 'not-proven-reason' }, r.reason),
               h(Badge, { status: 'not_proven', small: true })))))
-        : h(Well, { className: 'text-xs text-dim' }, 'No requirements')),
-    exported ? h(Well, { className: 'flex items-center justify-between text-xs', testid: 'export-path' },
-      h('span', 'text-muted', 'Exported'), h('span', 'mono text-fg', shortPath(exported))) : null,
-    h(ErrorLine, { text: err }),
-    h('div', 'flex items-center gap-2 pt-3 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'export', onClick: exp }, 'Export'),
-      h(Btn, { testid: 'back', onClick: () => navigate('rung', { rid: n.id }) }, 'Back')))
+        : h(Well, { className: 'text-xs text-dim' }, 'No requirements')))
   return h(Page, { project, sel: n.id }, body)
 }
 
@@ -2982,7 +2982,7 @@ function DeleteDialog({ name, onClose, after }) {
     title: `Delete ${name}`, onClose, testid: 'delete-dialog',
     footer: frag(h(Btn, { onClick: onClose }, 'Cancel'), h(DangerBtn, { testid: 'delete-confirm', disabled: typed !== name, onClick: go }, 'Delete'))
   },
-  h(Field, { label: 'Project name' }, h('input', { className: INPUT, type: 'text', name: 'confirm', value: typed, autoComplete: 'off', 'data-autofocus': '1', onChange: e => setTyped(e.target.value) })),
+  h(Field, { label: 'Project name' }, h('input', { className: INPUT, type: 'text', name: 'confirm', value: typed, placeholder: name, autoComplete: 'off', 'data-autofocus': '1', onChange: e => setTyped(e.target.value) })),
   h(ErrorLine, { text: err }))
 }
 
