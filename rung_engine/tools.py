@@ -66,8 +66,31 @@ def _svc():
     return service()
 
 
+def _arg(args, key: str, required: bool = True, default=None):
+    """A text argument: present when required, and text. A clear refusal instead of a crash."""
+    v = args.get(key)
+    if v is None or v == "":
+        if required:
+            raise RungError(f"{key} is required", code="bad_request", status=400, field=key)
+        return default
+    if not isinstance(v, str):
+        raise RungError(f"{key} is text", code="bad_request", status=400, field=key)
+    return v
+
+
+def _flag(args, key: str) -> bool:
+    v = args.get(key)
+    if v is None:
+        return False
+    if not isinstance(v, bool):
+        raise RungError(f"{key} is true or false", code="bad_request", status=400, field=key)
+    return v
+
+
 def _project(svc, args):
-    name = args.get("project") or svc.engine.current_project()
+    if not isinstance(args, dict):
+        raise RungError("arguments are an object", code="bad_request", status=400)
+    name = _arg(args, "project", required=False) or svc.engine.current_project()
     if not name:
         raise RungError("no Rung project yet")
     return name
@@ -106,7 +129,7 @@ def _wrap(fn):
         try:
             return json.dumps(fn(args or {}, session_id=session_id, user_task=user_task))
         except RungError as exc:
-            return json.dumps({"error": str(exc), "code": exc.code})
+            return json.dumps({"error": str(exc), "code": exc.code, **({"field": exc.field} if exc.field else {})})
         except Exception as exc:  # tools always answer with JSON
             return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
     return handler
@@ -130,35 +153,38 @@ def propose(args, session_id="", user_task="", **kw):
     svc = _svc()
     p = _project(svc, args)
     e = svc.engine
-    parent = e.rung(p, args["parent"])
+    parent_id, text = _arg(args, "parent"), _arg(args, "text")
+    detail = _arg(args, "detail", required=False, default="")
+    parent = e.rung(p, parent_id)
     from .core import CHILD_KIND
     kind = CHILD_KIND.get(parent["kind"])
     if not kind:
-        raise RungError(f"nothing can be proposed under {args['parent']}")
-    r = e.propose(p, args["parent"], kind, args["text"], proposer=_proposer(),
-                  source_chat=_source_chat(session_id, user_task), detail=args.get("detail", ""))
+        raise RungError(f"nothing can be proposed under {parent_id}")
+    r = e.propose(p, parent_id, kind, text, proposer=_proposer(),
+                  source_chat=_source_chat(session_id, user_task), detail=detail)
     return {"proposed": r["id"], "status": r["status"], "note": "A human must accept it in Rung."}
 
 
 def check(args, **kw):
     svc = _svc()
     p = _project(svc, args)
-    if args.get("all"):
+    if _flag(args, "all"):
         return svc.engine.check_all(p)
     if not args.get("spec"):
-        raise RungError("spec or all is required")
-    return svc.engine.check(p, args["spec"])
+        raise RungError("spec or all is required", code="bad_request", status=400, field="spec")
+    return svc.engine.check(p, _arg(args, "spec"))
 
 
 def run_tests(args, **kw):
     svc = _svc()
     p = _project(svc, args)
+    spec = _arg(args, "spec")
     out = []
-    for t in svc.engine.command_tests(p, args["spec"]):
+    for t in svc.engine.command_tests(p, spec):
         r = svc.engine.run_test(p, t["id"], carried_by=_proposer())
         out.append({"test": t["id"], "n": r["n"], "status": r["status"], "exit_code": r["exit_code"],
                     "output_tail": (r.get("output") or "")[-1500:]})
-    return {"spec": args["spec"], "executions": out, "check": svc.engine.check(p, args["spec"])}
+    return {"spec": spec, "executions": out, "check": svc.engine.check(p, spec)}
 
 
 HANDLERS = {"rung_status": _wrap(status), "rung_propose": _wrap(propose), "rung_check": _wrap(check),

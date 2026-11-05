@@ -22,9 +22,10 @@ def setup(parser: argparse.ArgumentParser) -> None:
     c.add_argument("spec", nargs="?", help="specification id, for example S-2.1")
     c.add_argument("--all", action="store_true", help="check every approved specification of the project")
     subs.add_parser("status", help="tiles and the Needs you list")
-    subs.add_parser("projects", help="list projects")
+    pr = subs.add_parser("projects", help="list projects")
+    pr.add_argument("--archived", action="store_true", help="list the archived projects instead")
     t = subs.add_parser("tree", help="print the ladder")
-    t.add_argument("--all-statuses", action="store_true")
+    t.add_argument("--retired", action="store_true", help="list the retired needs instead")
     r = subs.add_parser("run", help="run the command tests of a specification now")
     r.add_argument("spec")
     s = subs.add_parser("send", help="start a supervised develop run for a specification")
@@ -64,11 +65,16 @@ def _print_tree(nodes, depth=0, out=None):
     return out
 
 
+def _say(args, data, text: str) -> None:
+    """One result: JSON with --json, else the text line. Every command goes through here."""
+    print(json.dumps(data, indent=2) if getattr(args, "json", False) else text)
+
+
 def main(args) -> int:
     from .host import service, store_path
     cmd = getattr(args, "rung_command", None)
     if cmd == "where":
-        print(store_path())
+        _say(args, {"store": str(store_path())}, str(store_path()))
         return 0
     if cmd == "doctor":
         from .doctor import render, run_checks
@@ -105,11 +111,14 @@ def main(args) -> int:
                 print(f"{args.spec}: blocked by " + "; ".join(res["blockers"]))
             return 0 if res["ok"] else 1
         if cmd == "projects":
-            rows = e.projects()
-            if not rows and not args.json:
-                print("no projects: create one in the Rung pane, or run hermes rung demo reset")
+            archived = getattr(args, "archived", False)
+            rows = e.projects(archived=archived)
             if args.json:
                 print(json.dumps(rows, indent=2))
+                return 0
+            if not rows:
+                print("no archived projects" if archived else
+                      "no projects: create one in the Rung pane, or run hermes rung demo reset")
             for p in rows:
                 s = p["stats"]
                 print(f"{p['name']}: needs you {s['needs_you']}, running {s['running']}, stale {s['stale']}, "
@@ -117,46 +126,57 @@ def main(args) -> int:
             return 0
         if cmd == "tree":
             project = _project(svc, args)
-            print("\n".join(_print_tree(e.tree(project))))
+            nodes = e.tree(project, retired=getattr(args, "retired", False))
+            _say(args, nodes, "\n".join(_print_tree(nodes)))
             return 0
         if cmd == "run":
             project = _project(svc, args)
-            ok = True
+            ok, results = True, []
             for t in e.command_tests(project, args.spec):
                 r = e.run_test(project, t["id"], carried_by="engine")
                 ok = ok and r["status"] == "pass"
-                print(f"{t['id']} #{r['n']}: {r['status']} (exit {r['exit_code']})")
+                results.append({"test": t["id"], "n": r["n"], "status": r["status"], "exit_code": r["exit_code"]})
+                if not args.json:
+                    print(f"{t['id']} #{r['n']}: {r['status']} (exit {r['exit_code']})")
+            if args.json:
+                print(json.dumps({"spec": args.spec, "ok": ok, "executions": results}, indent=2))
             return 0 if ok else 1
         if cmd == "send":
             project = _project(svc, args)
             run = svc.send(project, args.spec, profile=args.profile)
-            print(f"run {run['id']} started for {args.spec} with {run['profile']}")
+            _say(args, run, f"run {run['id']} started for {args.spec} with {run['profile']}")
             return 0
         if cmd == "demo":
             p = e.reset_sample()
-            print(f"sample project reset: {p['folder']}")
+            _say(args, {"project": p["name"], "folder": p["folder"]}, f"sample project reset: {p['folder']}")
             return 0
         if cmd == "archive":
             e.archive_project(args.name)
-            print(f"{args.name}: archived")
+            _say(args, {"project": args.name, "archived": True}, f"{args.name}: archived")
             return 0
         if cmd == "restore":
             e.restore_project(args.name)
-            print(f"{args.name}: restored")
+            _say(args, {"project": args.name, "archived": False}, f"{args.name}: restored")
             return 0
         if cmd == "retire":
             project = _project(svc, args)
             e.retire_need(project, args.need, args.reason)
-            print(f"{args.need}: retired")
+            _say(args, {"project": project, "need": args.need, "retired": True}, f"{args.need}: retired")
             return 0
         if cmd == "readout":
             project = _project(svc, args)
             if args.export:
                 out = e.export_readout(project, args.need)
-                print(out["markdown"], end="")
-                print(f"written to {out['path']}", file=sys.stderr)
+                md, path = out["markdown"], out["path"]
             else:
-                print(e.readout_markdown(project, args.need), end="")
+                md, path = e.readout_markdown(project, args.need), None
+            if args.json:
+                print(json.dumps({"project": project, "need": args.need, "markdown": md,
+                                  **({"path": str(path)} if path else {})}, indent=2))
+            else:
+                print(md, end="")
+                if path:
+                    print(f"written to {path}", file=sys.stderr)
             return 0
         project = _project(svc, args)
         t = e.tiles(project)
@@ -169,7 +189,10 @@ def main(args) -> int:
             print(f"  {item['type']:9} {item['id']:8} {item['text']}")
         return 0
     except RungError as exc:
-        print(f"rung: {exc}", file=sys.stderr)
+        if getattr(args, "json", False):
+            print(json.dumps({"error": str(exc), "code": exc.code}, indent=2))
+        else:
+            print(f"rung: {exc}", file=sys.stderr)
         return 2
 
 

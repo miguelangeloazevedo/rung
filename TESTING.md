@@ -3,6 +3,18 @@
 Every suite runs from the repository root with the project's virtual environment (`.venv`, Python 3.11,
 pytest and Playwright). None of them reads or writes the Rung data of a real Hermes profile.
 
+## Setup
+
+Once, from the repository root, with Python 3.10 or newer:
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m playwright install chromium
+```
+
+The unit suite needs only the first two lines.
+
 ## Suites
 
 | Suite | Command | Needs | Time |

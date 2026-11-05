@@ -1355,6 +1355,9 @@ class Engine(LifecycleMixin):
         r = self._rung_row(project, rid)
         if r["kind"] != "specification":
             raise RungError(f"{rid} is not a specification", code="bad_request", status=400)
+        if r["pk"] in self._retired_pks(r["project_pk"]):
+            # A retired need leaves every active view and count, the gate included (NED-03).
+            return {"id": rid, "ok": False, "blockers": [f"{rid} is under a retired need"]}
         ok, blockers = self._released(r)
         return {"id": rid, "ok": ok, "blockers": blockers}
 

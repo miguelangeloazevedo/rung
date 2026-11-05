@@ -84,13 +84,15 @@ def test_rdy01_rdy03_gte08_install_on_a_clean_home(tmp_path, rung, page):
     folder = seed.copy_fixture("csvtidy", work)
     from rung_engine import Engine
     eng = Engine(str(store))
-    eng.create_project(folder=str(folder), test_command="pytest", profiles=["default"])
+    # A test command this machine has: the doctor fails a project whose runner is missing.
+    eng.create_project(folder=str(folder), test_command="python3 -m unittest -q", profiles=["default"])
     eng.close()
     def hermes(*a, answer=""):
         return subprocess.run([HERMES_BIN, *a], env=env, input=answer, capture_output=True, text=True, timeout=180)
     ok = hermes("rung", "doctor")
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    for name in ("python", "store folder", "store", "schema", "project csvtidy folder", "desktop pane", "hermes"):
+    for name in ("python", "store folder", "store", "store writable", "schema", "profiles", "worker", "drafting",
+                 "project csvtidy folder", "project csvtidy test command", "desktop pane", "hermes"):
         assert f"ok    {name}:" in ok.stdout, name
     shutil.rmtree(folder)
     bad = hermes("rung", "doctor")
