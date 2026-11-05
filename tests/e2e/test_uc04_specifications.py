@@ -4,6 +4,7 @@ import harness as H
 from support import seed
 
 S6 = "Preserve column order from the first file"
+S6_V2 = "Preserve the first file's column order, then the second file's new columns"
 SUPPORT = "Columns from the second file follow, in their own order, after the first file's columns."
 
 
@@ -12,7 +13,7 @@ def badge(page, spec):
     return loc.inner_text() if loc.count() else ""
 
 
-def test_specifications(rung, csvtidy, page):
+def test_spc01_spc02_spc03_spc04_specifications(rung, csvtidy, page):
     e = rung.engine
     seed.seed_merge(e, csvtidy, upto="requirements")
     H.configure_stubs(e, csvtidy, delay=2.0)
@@ -65,4 +66,21 @@ def test_specifications(rung, csvtidy, page):
     ]
     detail = H.stored(rung.store, "SELECT detail FROM rungs WHERE rid='S-6.1'")[0]["detail"]
     assert SUPPORT in detail
+
+    # 6. An approved specification's own view offers Edit specification; saving records a new version.
+    v0 = H.stored(rung.store, "SELECT version FROM rungs WHERE rid='S-6.1'")[0]["version"]
+    page.evaluate("window.__rungNavigate('rung', {rid: 'S-6.1'})")
+    H.wait_view(page, "rung")
+    H.button(page, "Edit specification").click()
+    H.wait_view(page, "spec-edit")
+    field = page.locator(".rung input[name=spec-text]")
+    assert field.input_value() == S6
+    field.fill(S6_V2)
+    H.button(page, "Save and approve").click()
+    H.wait_until(lambda: H.view(page) == "rung" and S6_V2 in H.main_area(page).inner_text(), msg="edited spec shown")
+    row = H.stored(rung.store, "SELECT version, text, status FROM rungs WHERE rid='S-6.1'")[0]
+    assert row == {"version": v0 + 1, "text": S6_V2, "status": "approved"}
+    versions = H.stored(rung.store, "SELECT v.version, v.text FROM rung_versions v JOIN rungs r ON r.pk=v.rung_pk "
+                                    "WHERE r.rid='S-6.1' ORDER BY v.version")
+    assert [v["text"] for v in versions][-2:] == [S6, S6_V2]
     H.evidence(page, 4)

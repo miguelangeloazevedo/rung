@@ -511,11 +511,12 @@ const BADGE = {
   queued: ['Queued', 'text-needs border border-needs']
 }
 
-function Badge({ status, label, small, onClick }) {
+function Badge({ status, label, small, onClick, struck, testid }) {
   const [word, cls] = BADGE[status] || [status, 'bg-btn text-muted border border-line']
   return h('span', {
-    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer'),
+    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer', struck && 'line-through'),
     'data-status': status,
+    'data-testid': testid,
     onClick: onClick ? e => { e.stopPropagation(); onClick() } : undefined
   }, label || word)
 }
@@ -1873,7 +1874,8 @@ function SpecView({ project, r, ret, need }) {
       h('div', 'flex items-center gap-2 pt-1 border-t border-line',
         h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs mt-3', r.status !== 'stale' && 'opacity-40 cursor-not-allowed'), 'data-testid': 'approve', 'data-locked': r.status !== 'stale' ? '1' : undefined, onClick: () => r.status === 'stale' && act(`${P(project)}/rungs/${r.id}/approve`) }, 'Approve'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'run-tests', onClick: runTests }, 'Run tests'),
-        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'))),
+        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
+        h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'))),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
@@ -2394,7 +2396,7 @@ function ExecView({ project, test, n }) {
         h('div', 'flex items-center justify-between',
           h('div', 'flex items-center gap-2.5',
             h('h2', 'text-lg font-bold text-fg', `Execution #${x.n}`),
-            h(Badge, { status: x.status }), h(Badge, { status: 'stale' })),
+            h(Badge, { status: x.status, struck: true, testid: 'voided-result' }), h(Badge, { status: 'stale' })),
           h('div', 'flex items-center gap-2',
             h(Btn, { kind: 'primary', testid: 'run-again', onClick: again }, 'Run again'),
             h(Btn, { testid: 'back-to-test', onClick: back }, 'Back to test')))),

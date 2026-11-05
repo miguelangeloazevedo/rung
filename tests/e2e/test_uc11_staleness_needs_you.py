@@ -31,7 +31,7 @@ def chat(page, text):
     page.keyboard.press("Enter")
 
 
-def test_staleness_and_needs_you(rung, csvtidy, page):
+def test_chg01_chg02_chg03_chg04_chg05_chg06_chg07_exe05_staleness_and_needs_you(rung, csvtidy, page):
     e = rung.engine
     seed.seed_csvtidy(e, csvtidy)
     e.open_project("csvtidy")
@@ -56,6 +56,13 @@ def test_staleness_and_needs_you(rung, csvtidy, page):
     last_pass.wait_for()
     assert "Stale" in last_pass.inner_text()
     assert "line-through" in last_pass.get_attribute("class")
+    # 4. The pass's own view shows its result struck through as no longer counting.
+    last_pass.click()
+    H.wait_view(page, "exec")
+    voided = page.locator(".rung [data-testid=voided-result]")
+    voided.wait_for()
+    assert voided.inner_text() == "Pass" and "line-through" in voided.get_attribute("class")
+    assert "No longer counts" in page.locator(".rung [data-testid=no-longer-counts]").inner_text()
     assert [x["status"] for x in e.executions("csvtidy", "T-2.1a")][0] == "pass"
 
     # 2. Needs you rises by one, identical in all three places; coverage drops.

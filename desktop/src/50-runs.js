@@ -237,7 +237,7 @@ function ExecView({ project, test, n }) {
         h('div', 'flex items-center justify-between',
           h('div', 'flex items-center gap-2.5',
             h('h2', 'text-lg font-bold text-fg', `Execution #${x.n}`),
-            h(Badge, { status: x.status }), h(Badge, { status: 'stale' })),
+            h(Badge, { status: x.status, struck: true, testid: 'voided-result' }), h(Badge, { status: 'stale' })),
           h('div', 'flex items-center gap-2',
             h(Btn, { kind: 'primary', testid: 'run-again', onClick: again }, 'Run again'),
             h(Btn, { testid: 'back-to-test', onClick: back }, 'Back to test')))),

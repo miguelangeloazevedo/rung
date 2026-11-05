@@ -47,11 +47,12 @@ const BADGE = {
   queued: ['Queued', 'text-needs border border-needs']
 }
 
-function Badge({ status, label, small, onClick }) {
+function Badge({ status, label, small, onClick, struck, testid }) {
   const [word, cls] = BADGE[status] || [status, 'bg-btn text-muted border border-line']
   return h('span', {
-    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer'),
+    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer', struck && 'line-through'),
     'data-status': status,
+    'data-testid': testid,
     onClick: onClick ? e => { e.stopPropagation(); onClick() } : undefined
   }, label || word)
 }
