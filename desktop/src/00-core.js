@@ -103,11 +103,12 @@ async function post(path, body) {
   }
 }
 
-// The version the person started editing from. Refetches never move it, so a write made meanwhile elsewhere
-// is refused as a conflict instead of being silently overwritten.
-function useBase(v) {
+// The version of the content the form shows. While `follow` is true (nothing typed yet, the form shows the live
+// rung) it follows refetches; once the person edits, refetches never move it, so a write made meanwhile
+// elsewhere is refused as a conflict instead of being silently overwritten.
+function useBase(v, follow = false) {
   const ref = useRef(null)
-  if (ref.current == null && v != null) ref.current = v
+  if (v != null && (ref.current == null || follow)) ref.current = v
   return ref.current
 }
 

@@ -33,7 +33,7 @@ rendered markup, or any element wider than the window.
 
 ## Findings
 
-| # | Severity | Field | Worst-case value | Status | Reason or change |
+| # | Severity | Field | Worst-case value | Status | Reason |
 | --- | --- | --- | --- | --- | --- |
 | W1 | Ugly | Rail need text | a 300 character unbroken word | fixed | The rail column now shrinks (`min-w-0`) and the pane breaks unbroken words (`overflow-wrap:anywhere`); before, the rail ran 1,460 px past the window |
 | W2 | Broken | Test folder | `../..`, `/etc`, `~`, a symlink to outside | fixed | Refused on save with a field error, and at run time the resolved folder must stay inside the project folder; the execution is Error with the reason |

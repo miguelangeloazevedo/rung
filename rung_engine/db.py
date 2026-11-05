@@ -221,6 +221,14 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=30, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 30000")
+    # A store written by a newer release is refused before anything here changes it.
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    except sqlite3.Error:
+        row = None
+    if row is not None and int(row[0]) > SCHEMA_VERSION:
+        conn.close()
+        raise StoreTooNew(f"the store is schema {int(row[0])}; this Rung reads up to {SCHEMA_VERSION}")
     try:
         conn.execute("PRAGMA journal_mode = WAL")
     except sqlite3.DatabaseError:

@@ -70,8 +70,10 @@ def writes(rid: bool = True):
     def deco(fn):
         @functools.wraps(fn)
         def wrapper(self, project, *args, **kwargs):
-            self._check_writable(project, args[0] if rid and args and isinstance(args[0], str) else None)
-            return fn(self, project, *args, **kwargs)
+            # One write at a time per engine: what a write reads and checks is still true when it commits.
+            with self._lock:
+                self._check_writable(project, args[0] if rid and args and isinstance(args[0], str) else None)
+                return fn(self, project, *args, **kwargs)
         wrapper.writes = True
         return wrapper
     return deco
@@ -599,6 +601,7 @@ class Engine(LifecycleMixin):
         now = self.clock()
         stale_rids: list[str] = []
         with self._tx() as c:
+            self._still_version(c, r)
             version = r["version"]
             if changed or data_changed:
                 version += 1
@@ -631,6 +634,14 @@ class Engine(LifecycleMixin):
                       "updated_at=? WHERE pk=?", (new_text, new_detail, _j(new_data), version, status, ab, at, now, r["pk"]))
             self._touch_project(c, r["project_pk"])
         return self._rung_dict(self._rung_by_pk(r["pk"]))
+
+    @staticmethod
+    def _still_version(c, r) -> None:
+        """Inside the write transaction: refuse when another process changed the rung since it was read."""
+        now = c.execute("SELECT version FROM rungs WHERE pk = ?", (r["pk"],)).fetchone()
+        if now is not None and now[0] != r["version"]:
+            raise RungError(f"{r['rid']} changed since it was opened (version {now[0]}, edited {r['version']})",
+                            code="conflict", status=409)
 
     @staticmethod
     def _check_version(r, expect_version) -> None:
@@ -945,7 +956,8 @@ class Engine(LifecycleMixin):
         # A different command or type makes earlier results of this test stop counting.
         old = _l(r["data"], {})
         semantic = any(old.get(k) != data.get(k) for k in ("type", "command", "folder", "pass_rule", "steps"))
-        out = self.edit(project, test_rid, text=text, actor=actor, data=data, approve=False)
+        out = self.edit(project, test_rid, text=text, actor=actor, data=data, approve=False,
+                        expect_version=r["version"])
         if semantic and self._q1("SELECT 1 FROM executions WHERE test_pk = ?", (r["pk"],)):
             with self._tx() as c:
                 seq = self._next_seq(c)
@@ -1105,14 +1117,17 @@ class Engine(LifecycleMixin):
 
     @writes()
     def begin_execution(self, project: str, test_rid: str, carried_by: str = "engine", run_pk=None,
-                        attempt=None) -> int:
-        """Create a running command execution and return its number. perform_execution runs it."""
+                        attempt=None, once_by: Actor | None = None) -> int:
+        """Create a running command execution and return its number. perform_execution runs it.
+        Only approved commands run; `once_by` is a person pressing Run once on the command in the editor."""
         t = self._rung_row(project, test_rid)
         data = _l(t["data"], {})
         if data.get("type") == "manual":
             raise RungError("a manual test is recorded by a human, not run", code="bad_request", status=400)
-        if t["status"] not in ("approved", "stale", "draft"):
-            raise RungError(f"{test_rid} is {t['status']}")
+        trial = once_by is not None and once_by.is_human and t["status"] == "draft"
+        if not trial and (t["status"] not in ("approved", "stale") or t["approved_at"] is None):
+            raise RungError(f"{test_rid} is {t['status']}; a person approves a test before it runs",
+                            code="not_approved", status=409)
         p = self._project_row(t["project_pk"])
         folder = Path(p["folder"]).expanduser() / data.get("folder", ".")
         with self._tx() as c:
@@ -1133,9 +1148,8 @@ class Engine(LifecycleMixin):
         e = self._q1("SELECT * FROM executions WHERE test_pk = ? AND n = ?", (t["pk"], n))
 
         def push(text):
-            with self._lock:
-                self.conn.execute("UPDATE executions SET output = ? WHERE pk = ?", (text, e["pk"]))
-                self.conn.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'rev'")
+            with self._tx() as c:
+                c.execute("UPDATE executions SET output = ? WHERE pk = ?", (text, e["pk"]))
 
         def cancelled():
             row = self._q1("SELECT status FROM executions WHERE pk = ?", (e["pk"],))
@@ -1158,8 +1172,7 @@ class Engine(LifecycleMixin):
             else:
                 rule = data.get("pass_rule") or {"kind": "exit_code", "value": 0}
                 # The shell answers 127 (not found) and 126 (not executable) when the command never started.
-                unstarted = res.exit_code in (126, 127) and not (rule.get("kind", "exit_code") == "exit_code"
-                                                                 and int(rule.get("value", 0)) == res.exit_code)
+                unstarted = res.exit_code in (126, 127)
                 if res.timed_out or res.launch_error or unstarted:
                     status = "error"
                     if unstarted:

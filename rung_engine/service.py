@@ -126,8 +126,9 @@ class Service:
                         made.append(self.engine.add_test(project, spec["id"], fields, Actor("agent", "drafting")))
         return made
 
-    def run_test(self, project: str, test_rid: str, carried_by: str = "engine", wait: bool = False) -> int:
-        n = self.engine.begin_execution(project, test_rid, carried_by)
+    def run_test(self, project: str, test_rid: str, carried_by: str = "engine", wait: bool = False,
+                 once_by=None) -> int:
+        n = self.engine.begin_execution(project, test_rid, carried_by, once_by=once_by)
         t = self._bg(self.engine.perform_execution, project, test_rid, n)
         if wait:
             t.join()

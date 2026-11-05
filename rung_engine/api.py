@@ -447,7 +447,7 @@ def _edit_test(svc, human, body, project, rid):
 
 @route("POST", "/projects/{project}/tests/{rid}/run")
 def _run_test(svc, human, body, project, rid):
-    n = svc.run_test(project, rid, carried_by="engine")
+    n = svc.run_test(project, rid, carried_by="engine", once_by=human if body.get("once") else None)
     return {"n": n}
 
 

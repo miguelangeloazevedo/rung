@@ -35,7 +35,7 @@ Coverage by criterion:
 
 ## Findings
 
-| # | Criterion | Finding | Status | Reason or change |
+| # | Criterion | Finding | Status | Reason |
 | --- | --- | --- | --- | --- |
 | A1 | 4.1.2 | Checkboxes and radios got a synthetic `aria-label` that overrode their visible label | fixed | The element factory no longer names checkboxes and radios; the wrapping label names them |
 | A2 | 4.1.2 | Project status colour selectors and the numeric cost and max runs fields had no name | fixed | Named from the field label map in `desktop/src/00-core.js` |

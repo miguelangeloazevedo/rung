@@ -95,6 +95,22 @@ class LifecycleMixin:
                 c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_project', ?)", (_j(after["name"]),))
         return self.project(after["name"])
 
+    def _refuse_while_busy(self, project_pk, what: str, pks=None) -> None:
+        """Archive, delete and retire wait for work in flight: a develop run, a draft being written or a test
+        execution still running would otherwise land in a read-only or removed ladder."""
+        from .core import RungError
+        scope, args = ("project_pk = ?", [project_pk]) if pks is None else \
+            (f"pk IN ({','.join('?' * len(pks))})", list(pks))
+        if self._q1(f"SELECT 1 FROM runs WHERE status IN ('queued','running') AND "
+                    f"{'project_pk = ?' if pks is None else 'spec_pk IN (' + ','.join('?' * len(pks)) + ')'}", args):
+            raise RungError(f"{what} has a running develop run; stop it first")
+        if self._q1(f"SELECT 1 FROM rungs WHERE {scope} AND kind='specification' AND "
+                    "json_extract(data, '$.draft_state') = 'drafting'", args):
+            raise RungError(f"{what} has a specification being drafted; wait for the draft first")
+        if self._q1(f"SELECT 1 FROM executions e JOIN rungs t ON t.pk = e.test_pk WHERE e.status = 'running' AND "
+                    f"{'t.project_pk = ?' if pks is None else 't.pk IN (' + ','.join('?' * len(pks)) + ')'}", args):
+            raise RungError(f"{what} has a test running; wait for it first")
+
     def archive_project(self, name: str, actor=None) -> dict:
         from .core import HUMAN, RungError
         actor = actor or HUMAN
@@ -103,8 +119,7 @@ class LifecycleMixin:
         p = self._project_row(name)
         if p["archived_at"] is not None:
             raise RungError(f"{name} is already archived")
-        if self._q1("SELECT 1 FROM runs WHERE project_pk=? AND status IN ('queued','running')", (p["pk"],)):
-            raise RungError(f"{name} has a running develop run; stop it first")
+        self._refuse_while_busy(p["pk"], name)
         with self._tx() as c:
             c.execute("UPDATE projects SET archived_at=? WHERE pk=?", (self.clock(), p["pk"]))
             self._log(c, p["pk"], "project_archived", {}, actor.name)
@@ -132,8 +147,7 @@ class LifecycleMixin:
         p = self._project_row(name)
         if (confirm or "") != p["name"]:
             raise RungError("type the project name to delete it", code="bad_request", status=400, field="confirm")
-        if self._q1("SELECT 1 FROM runs WHERE project_pk=? AND status IN ('queued','running')", (p["pk"],)):
-            raise RungError(f"{name} has a running develop run; stop it first")
+        self._refuse_while_busy(p["pk"], name)
         with self._tx() as c:
             c.execute("DELETE FROM projects WHERE pk=?", (p["pk"],))
             self._log(c, None, "project_deleted", {"name": p["name"], "folder": p["folder"]}, actor.name)
@@ -159,8 +173,7 @@ class LifecycleMixin:
             raise RungError("a reason is required", code="bad_request", status=400, field="reason")
         sub = [n["pk"]] + [r["pk"] for r in self._descendants(n["pk"])]
         marks = ",".join("?" * len(sub))
-        if self._q1(f"SELECT 1 FROM runs WHERE spec_pk IN ({marks}) AND status IN ('queued','running')", sub):
-            raise RungError(f"{rid} has a running develop run; stop it first")
+        self._refuse_while_busy(n["project_pk"], rid, sub)
         with self._tx() as c:
             c.execute("UPDATE rungs SET retired_at=?, retired_reason=?, retired_by=? WHERE pk=?",
                       (self.clock(), reason[:500], actor.name, n["pk"]))

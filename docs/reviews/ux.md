@@ -27,7 +27,7 @@ Views that already existed are held to the approved prototype and are not re-rev
 
 ## Findings
 
-| # | View | Finding | Status | Reason or change |
+| # | View | Finding | Status | Reason |
 | --- | --- | --- | --- | --- |
 | U1 | read-out | `Export` sat under the last section, below the fold on a need with many requirements (rule 4) | fixed | `Export` and `Back` moved to the header row next to the status badge (`desktop/src/60-lifecycle.js`) |
 | U2 | delete dialog | The confirm field gave no cue to what must be typed | fixed | The field shows the project name as its placeholder; data, not a hint sentence |

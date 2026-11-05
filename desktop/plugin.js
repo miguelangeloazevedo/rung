@@ -334,11 +334,12 @@ async function post(path, body) {
   }
 }
 
-// The version the person started editing from. Refetches never move it, so a write made meanwhile elsewhere
-// is refused as a conflict instead of being silently overwritten.
-function useBase(v) {
+// The version of the content the form shows. While `follow` is true (nothing typed yet, the form shows the live
+// rung) it follows refetches; once the person edits, refetches never move it, so a write made meanwhile
+// elsewhere is refused as a conflict instead of being silently overwritten.
+function useBase(v, follow = false) {
   const ref = useRef(null)
-  if (ref.current == null && v != null) ref.current = v
+  if (v != null && (ref.current == null || follow)) ref.current = v
   return ref.current
 }
 
@@ -2080,9 +2081,9 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const rq = useRung(project, req || (sq.data && sq.data.parent))
   const s = sq.data
   const r = rq.data
-  const base = useBase(s && s.version)
   const [text, setText] = useState(null)
   const [detail, setDetail] = useState(null)
+  const base = useBase(s && s.version, text == null && detail == null)
   const [sug, setSug] = useState(null)
   const [mark, setMark] = useState('')
   const [err, setErr] = useState('')
@@ -2280,7 +2281,7 @@ function TestEdit({ project, test, spec, ret, need }) {
       const x = await post(`${P(project)}/tests/${id}`, { fields: fields() })
       if (!x.ok) return setErr(x.error)
     }
-    const r = await post(`${P(project)}/tests/${id}/run`)
+    const r = await post(`${P(project)}/tests/${id}/run`, { once: true })
     if (!r.ok) return setErr(r.error)
     navigate('exec', { test: id, n: r.data.n })
   }
