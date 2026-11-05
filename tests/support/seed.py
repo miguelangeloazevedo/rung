@@ -121,3 +121,33 @@ def seed_built(engine: Engine, folder: Path) -> None:
     engine.add_test("csvtidy", "S-3.1", {"type": "command", "command": "pytest tests/test_dropped.py"}, HUMAN,
                     status="approved")
     engine.approve_tests("csvtidy", "N-1", HUMAN)
+
+
+MERGE_NEED = "Merge two CSV exports by a shared key"
+
+
+def seed_merge(engine: Engine, folder: Path, upto: str = "develop") -> None:
+    """csvtidy plus N-2 carried through the build flow with the drafting stub, up to `upto`:
+    "requirements" (approved), "specifications" (approved), "tests" (proposed, not accepted)
+    or "develop" (every test accepted, Tests step approved)."""
+    from rung_engine.service import Service
+    seed_csvtidy(engine, folder)
+    engine.open_project("csvtidy")
+    svc = Service(engine, inline_runs=True)
+    texts = svc.suggest_requirements("csvtidy", MERGE_NEED)
+    engine.create_need("csvtidy", MERGE_NEED, HUMAN, requirements=texts)
+    engine.approve_requirements("csvtidy", "N-2", HUMAN)
+    if upto == "requirements":
+        return
+    svc.set_authoring("csvtidy", "R-4", "ai", wait=True)
+    svc.set_authoring("csvtidy", "R-5", "ai", wait=True)
+    engine.write_spec("csvtidy", "R-6", "Preserve column order from the first file")
+    engine.approve_drafted("csvtidy", "N-2", HUMAN)
+    if upto == "specifications":
+        return
+    made = svc.propose_tests("csvtidy", "N-2")
+    if upto == "tests":
+        return
+    for t in made:
+        engine.approve("csvtidy", t["id"], HUMAN)
+    engine.approve_tests("csvtidy", "N-2", HUMAN)

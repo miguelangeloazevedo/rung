@@ -104,17 +104,27 @@ def desktop(theme=THEME):
         page.set_default_timeout(20000)
         _size_window(page)
         if _prefs(page, theme):
-            page.reload(wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_load_state("domcontentloaded")
+            reload(page)
         yield page
+
+
+def reload(page) -> None:
+    """Reload the Desktop window. The first load after the dev build starts compiles the app,
+    which can take minutes, so a slow load is waited out rather than failed."""
+    for attempt in range(3):
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=120000)
+            return
+        except Exception:
+            if attempt == 2:
+                raise
 
 
 def open_rung(page, fresh: bool = True):
     """Open Rung the way a person does: the sidebar entry. `fresh` reloads first so no state leaks."""
     if fresh:
         page.evaluate("location.hash = '#/'")
-        page.reload(wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_load_state("domcontentloaded")
+        reload(page)
     dismiss_toasts(page)
     nav = page.get_by_role("link", name="Rung", exact=True)
     if not nav.count():
@@ -203,7 +213,7 @@ def configure_stubs(engine, folder: Path, delay: float = 0.6, worker_delay: floa
     """Deterministic drafting and worker stubs, chosen through Rung's own settings."""
     engine.set_setting("drafting", {"kind": "stub", "profile": "", "stub_file": str(folder / ".rung-stub" / "drafts.json"),
                                     "delay": delay})
-    engine.set_setting("worker", {"kind": "stub", "stub_dir": str(folder / ".rung-stub" / "attempts"),
+    engine.set_setting("worker", {"kind": "stub", "stub_dir": str(folder / ".rung-stub"),
                                   "max_turns": 30, "delay": worker_delay})
 
 
@@ -228,3 +238,14 @@ def stored(path: Path, sql: str, args=()):
 
 def dump(obj) -> str:
     return json.dumps(obj, indent=1, default=str)
+
+
+def node(engine, project: str, rid: str) -> dict:
+    """A rung as the tree reports it: with its result, coverage and released state."""
+    stack = list(engine.tree(project))
+    while stack:
+        n = stack.pop()
+        if n["id"] == rid:
+            return n
+        stack.extend(n.get("children", []))
+    raise KeyError(rid)

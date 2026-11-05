@@ -3,6 +3,16 @@ import pytest
 from rung_engine import Actor, RungError
 
 
+def _result(e, rid):
+    stack = list(e.tree("csvtidy"))
+    while stack:
+        n = stack.pop()
+        if n["id"] == rid:
+            return n["result"]
+        stack.extend(n.get("children", []))
+    raise KeyError(rid)
+
+
 def test_failed_runs_and_defect(seeded):
     e = seeded
     ex = e.executions("csvtidy", "T-2.1a")
@@ -29,11 +39,13 @@ def test_manual_needs_human_approval(seeded):
     assert p["status"] == "pending" and not p["counts"]
     assert any(i["type"] == "approval" for i in e.needs_you("csvtidy"))
     assert not e.check("csvtidy", "S-2.1")["ok"]  # latest counting manual result is still the fail
+    assert _result(e, "T-2.1b") == "pending"  # shown as pending, still not counted
     with pytest.raises(RungError):
         e.approve_result("csvtidy", "T-2.1b", p["n"], Actor("agent", "coder"))
     a = e.approve_result("csvtidy", "T-2.1b", p["n"])
     assert a["status"] == "pass" and a["counts"]
     assert e.check("csvtidy", "S-2.1")["ok"]
+    assert _result(e, "T-2.1b") == "pass"
     hist = e.executions("csvtidy", "T-2.1b")
     assert [(h["status"], h["note"], h["recorder"]) for h in hist] == [
         ("pass", "Sorted 120 rows, order correct", "you"), ("fail", "dates sort as text", "you")]
@@ -43,7 +55,6 @@ def test_manual_needs_human_approval(seeded):
 def test_ai_judged_never_releases(seeded):
     e = seeded
     e.add_test("csvtidy", "S-1.1", {"type": "ai_judged", "command": "false", "text": "Output reads well"}, status="approved")
-    assert not e.check("csvtidy", "S-1.1")["ok"] or True
     e.run_test("csvtidy", "T-1.1b")
     chk = e.check("csvtidy", "S-1.1")
     assert not chk["ok"] and any("AI judged" in b for b in chk["blockers"])

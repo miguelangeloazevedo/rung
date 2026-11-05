@@ -383,7 +383,7 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
     open ? h('div', { className: 'absolute z-10 bg-card border border-line rounded-[6px] p-2 flex flex-col gap-1 shadow-2xl', style: { top: '100%', left: '38%', width: '300px' }, 'data-testid': 'pick-menu' },
       ...a.suggestions.map(sg => h('div', {
         key: sg.profile, className: 'flex items-center justify-between px-2 py-1.5 rounded hover:bg-btnh cursor-pointer text-xs', 'data-pick': sg.profile,
-        onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { profile: sg.profile }); onErr(res.ok ? '' : res.error) }
+        onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
       },
       h('span', 'mono text-fg', sg.profile),
       h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null)

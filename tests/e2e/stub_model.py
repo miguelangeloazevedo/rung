@@ -8,6 +8,7 @@ can call Rung tools without any paid model. Rules, on the last user message:
 - anything after a tool result               -> a short summary of the result
 - title requests                             -> the first words of the user message
 - goal judge requests                        -> {"done": true, ...}
+- a user message containing "slowly"         -> "Working on it." after 8 seconds
 - anything else                              -> "OK."
 
     python tests/e2e/stub_model.py --port 18765
@@ -24,6 +25,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOG: list[dict] = []
+SLOW_SECONDS = 8
 
 
 def _text(content) -> str:
@@ -32,6 +34,16 @@ def _text(content) -> str:
     if isinstance(content, list):
         return " ".join(p.get("text", "") for p in content if isinstance(p, dict))
     return ""
+
+
+def _call(tools: set, name: str, args: dict) -> dict | None:
+    """Call a tool directly when it is listed, or through Hermes's deferred-tool bridge
+    (tool_search keeps plugin tools behind tool_call when the tool list is long)."""
+    if name in tools:
+        return {"tool": name, "args": args}
+    if "tool_call" in tools:
+        return {"tool": "tool_call", "args": {"calls": [{"name": name, "arguments": args}]}}
+    return None
 
 
 def decide(body: dict) -> dict:
@@ -50,11 +62,19 @@ def decide(body: dict) -> dict:
     if ("judge" in system or "goal" in system and "verdict" in system) and not tools:
         return {"text": json.dumps({"done": True, "reason": "gates pass"})}
     m = re.search(r"propose requirement under ([A-Z]-\d+(?:\.\d+)?)\s*:\s*(.+)", last_user, re.I | re.S)
-    if m and "rung_propose" in tools:
-        return {"tool": "rung_propose", "args": {"parent": m.group(1), "text": m.group(2).strip().splitlines()[0]}}
+    if m:
+        call = _call(tools, "rung_propose", {"parent": m.group(1), "text": m.group(2).strip().splitlines()[0]})
+        if call:
+            return call
     m = re.search(r"run rung tests for (S-\d+\.\d+)", last_user, re.I)
-    if m and "rung_run_tests" in tools:
-        return {"tool": "rung_run_tests", "args": {"spec": m.group(1)}}
+    if m:
+        call = _call(tools, "rung_run_tests", {"spec": m.group(1)})
+        if call:
+            return call
+    if "slowly" in low:
+        # A goal turn that takes a while, so a goal control (`/goal gate add`) can arrive mid-turn.
+        time.sleep(SLOW_SECONDS)
+        return {"text": "Working on it."}
     if "goal" in low or "gate" in low:
         return {"text": "Working on it."}
     return {"text": "OK."}

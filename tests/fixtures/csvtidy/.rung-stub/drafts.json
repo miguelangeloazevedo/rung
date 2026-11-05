@@ -31,6 +31,9 @@
       "tags": [
         "python",
         "cli"
+      ],
+      "required_tags": [
+        "cli"
       ]
     },
     "Keep the first file's column order": {

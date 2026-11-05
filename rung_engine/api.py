@@ -387,12 +387,14 @@ def _suggest(svc, human, body, project, rid):
 
 @route("POST", "/projects/{project}/specs/{rid}/pick")
 def _pick(svc, human, body, project, rid):
-    return svc.engine.pick(project, rid, _need(body, "profile"), human)
+    # The body key is "agent", not "profile": Hermes's dashboard auth reserves a top-level
+    # "profile" key in JSON bodies for profile scoping and refuses requests that carry another one.
+    return svc.engine.pick(project, rid, _need(body, "agent"), human)
 
 
 @route("POST", "/projects/{project}/specs/{rid}/send")
 def _send(svc, human, body, project, rid):
-    return svc.send(project, rid, human, body.get("profile"))
+    return svc.send(project, rid, human, body.get("agent"))
 
 
 @route("GET", "/projects/{project}/runs")

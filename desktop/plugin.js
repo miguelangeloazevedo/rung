@@ -1504,7 +1504,7 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
     open ? h('div', { className: 'absolute z-10 bg-card border border-line rounded-[6px] p-2 flex flex-col gap-1 shadow-2xl', style: { top: '100%', left: '38%', width: '300px' }, 'data-testid': 'pick-menu' },
       ...a.suggestions.map(sg => h('div', {
         key: sg.profile, className: 'flex items-center justify-between px-2 py-1.5 rounded hover:bg-btnh cursor-pointer text-xs', 'data-pick': sg.profile,
-        onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { profile: sg.profile }); onErr(res.ok ? '' : res.error) }
+        onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
       },
       h('span', 'mono text-fg', sg.profile),
       h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null)
@@ -1880,7 +1880,7 @@ function SpecView({ project, r, ret, need }) {
         h('a', { className: 'text-[11px] text-needs font-medium cursor-pointer', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
       h('div', 'flex flex-col gap-3',
         ...(picking
-          ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { profile: s.profile }) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
+          ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { agent: s.profile }) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
           : shown.map((s, i) => h(ScoreCard, { key: s.profile, s, first: i === 0 }))),
         a.pick ? h('div', { className: 'text-[11px] text-muted', 'data-testid': 'picked-by' }, `picked by ${a.pick.picked_by === 'you' ? 'you' : a.pick.picked_by}`) : null,
         !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null)))

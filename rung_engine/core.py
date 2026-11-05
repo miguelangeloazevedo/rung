@@ -1113,12 +1113,14 @@ class Engine:
         running = self._q1("SELECT 1 FROM executions WHERE test_pk=? AND status='running'", (t["pk"],))
         if running:
             return "running"
-        pend = self._q1("SELECT 1 FROM executions WHERE test_pk=? AND seq>? AND status='pending'", (t["pk"], t["valid_from"]))
+        pend = self._q1("SELECT seq FROM executions WHERE test_pk=? AND seq>? AND status='pending' ORDER BY seq DESC LIMIT 1",
+                        (t["pk"], t["valid_from"]))
         rows = self._counting(t)
+        # A recorded result waiting for approval is shown as pending; it never counts as a pass until approved.
+        if pend and (not rows or pend["seq"] > rows[0]["seq"]):
+            return "pending"
         if rows:
             return rows[0]["status"]
-        if pend:
-            return "pending"
         return "not_run"
 
     def _released(self, spec) -> tuple[bool, list[str]]:
