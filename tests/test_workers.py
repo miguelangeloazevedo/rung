@@ -4,7 +4,7 @@ import stat
 import time
 from pathlib import Path
 
-from rung_engine.workers import AttemptContext, HermesWorker
+from rung_engine.workers import AttemptContext, HermesWorker, StubWorker
 
 FAKE = """#!/bin/sh
 # argv: -p <profile> chat -Q -q <prompt> --max-turns N
@@ -48,3 +48,11 @@ def test_hermes_worker_cancel(tmp_path, monkeypatch):
     r = HermesWorker(_fake(tmp_path)).attempt(ctx)
     assert r.cancelled
     assert time.time() - t0 < 15
+
+
+def test_stub_worker_delay_honours_cancel(tmp_path):
+    t0 = time.time()
+    ctx = AttemptContext(folder=tmp_path, spec="S-4.1", n=1, prompt="go", profile="coder",
+                         deadline=time.time() + 60, should_cancel=lambda: time.time() - t0 > 0.5)
+    r = StubWorker(delay=30).attempt(ctx)
+    assert r.cancelled and time.time() - t0 < 3

@@ -48,7 +48,11 @@ class StubWorker:
     def attempt(self, ctx: AttemptContext) -> WorkerResult:
         root = Path(self.stub_dir).expanduser() if self.stub_dir else ctx.folder / ".rung-stub"
         src = root / ctx.spec / f"attempt-{ctx.n}"
-        time.sleep(self.delay)
+        end = time.time() + self.delay
+        while time.time() < end:  # the delay stands in for work, so a cancel cuts it short like a real worker
+            if ctx.should_cancel and ctx.should_cancel():
+                return WorkerResult(output="cancelled", exit_code=None, cancelled=True)
+            time.sleep(min(0.2, max(0.0, end - time.time())))
         cmds, lines = [], []
         if src.is_dir():
             for p in sorted(src.rglob("*")):
