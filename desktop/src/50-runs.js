@@ -128,7 +128,7 @@ function RunView({ project, run }) {
         ...(out.length ? out : ['waiting for the worker']).map((l, i) => h('div', { key: i, className: 'flex items-center gap-2 text-muted' }, h('span', null, '>'), h('span', 'text-fg', l))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Stop'),
+      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Cancel'),
       h(Btn, { testid: 'open-session', disabled: !r.session, onClick: () => host.navigate(`/${r.session}`) }, 'Open session')))
   return h(Page, { project, sel: spec.id }, body)
 }
