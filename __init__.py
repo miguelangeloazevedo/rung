@@ -18,7 +18,7 @@ def register(ctx):
     for schema in _tools.SCHEMAS:
         ctx.register_tool(name=schema["name"], toolset="rung", schema=schema,
                           handler=_tools.HANDLERS[schema["name"]], emoji="🪜")
-    ctx.register_cli_command(name="rung", help="Rung design-control ladder (check, status, tree, run, send)",
+    ctx.register_cli_command(name="rung", help="Rung design-control ladder (check, status, tree, run, send, doctor, demo reset)",
                              setup_fn=_cli.setup, handler_fn=_cli.main)
     ctx.register_command("rung", handler=_tools.slash, description="Rung: what needs you; /rung check <SPEC>",
                          args_hint="[check <SPEC>|--all]")

@@ -32,6 +32,19 @@ def setup(parser: argparse.ArgumentParser) -> None:
     s.add_argument("--profile")
     w = subs.add_parser("where", help="print the store path")
     w.set_defaults()
+    subs.add_parser("doctor", help="check the install, the store and every project folder")
+    d = subs.add_parser("demo", help="the sample project")
+    d.add_argument("action", choices=["reset"], help="reset: recreate the sample project only")
+    a = subs.add_parser("archive", help="archive a project (read only until restored)")
+    a.add_argument("name")
+    a = subs.add_parser("restore", help="restore an archived project")
+    a.add_argument("name")
+    rt = subs.add_parser("retire", help="retire a need with a reason")
+    rt.add_argument("need")
+    rt.add_argument("--reason", required=True)
+    ro = subs.add_parser("readout", help="print a need's read-out as markdown")
+    ro.add_argument("need")
+    ro.add_argument("--export", action="store_true", help="also write it to Rung's exports folder")
     parser.set_defaults(func=main)
 
 
@@ -57,6 +70,12 @@ def main(args) -> int:
     if cmd == "where":
         print(store_path())
         return 0
+    if cmd == "doctor":
+        from .doctor import render, run_checks
+        from .host import hermes_bin
+        checks = run_checks(store_path(), hermes_bin())
+        print(json.dumps(checks, indent=2) if getattr(args, "json", False) else render(checks))
+        return 0 if all(c["ok"] for c in checks) else 1
     svc = service()
     e = svc.engine
     try:
@@ -87,6 +106,8 @@ def main(args) -> int:
             return 0 if res["ok"] else 1
         if cmd == "projects":
             rows = e.projects()
+            if not rows and not args.json:
+                print("no projects: create one in the Rung pane, or run hermes rung demo reset")
             if args.json:
                 print(json.dumps(rows, indent=2))
             for p in rows:
@@ -110,6 +131,32 @@ def main(args) -> int:
             project = _project(svc, args)
             run = svc.send(project, args.spec, profile=args.profile)
             print(f"run {run['id']} started for {args.spec} with {run['profile']}")
+            return 0
+        if cmd == "demo":
+            p = e.reset_sample()
+            print(f"sample project reset: {p['folder']}")
+            return 0
+        if cmd == "archive":
+            e.archive_project(args.name)
+            print(f"{args.name}: archived")
+            return 0
+        if cmd == "restore":
+            e.restore_project(args.name)
+            print(f"{args.name}: restored")
+            return 0
+        if cmd == "retire":
+            project = _project(svc, args)
+            e.retire_need(project, args.need, args.reason)
+            print(f"{args.need}: retired")
+            return 0
+        if cmd == "readout":
+            project = _project(svc, args)
+            if args.export:
+                out = e.export_readout(project, args.need)
+                print(out["markdown"], end="")
+                print(f"written to {out['path']}", file=sys.stderr)
+            else:
+                print(e.readout_markdown(project, args.need), end="")
             return 0
         project = _project(svc, args)
         t = e.tiles(project)

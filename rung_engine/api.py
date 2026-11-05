@@ -7,6 +7,7 @@ through here; they use the Rung tools, which act as agents and cannot approve.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Callable
 
 from .core import HUMAN, Actor, NotFound, RungError
@@ -78,7 +79,8 @@ def _state(svc, human, body):
     e = svc.engine
     cur = e.current_project()
     out = {"rev": e.rev(), "current": cur, "projects": e.projects(), "settings": e.settings(),
-           "profiles": e.profiles(), "needs_you": 0, "running": 0}
+           "profiles": e.profiles(), "needs_you": 0, "running": 0, "onboarding": e.onboarding(),
+           "archived": len(e.projects(archived=True))}
     if cur:
         t = e.tiles(cur)
         out["needs_you"] = t["needs_you"]
@@ -88,8 +90,72 @@ def _state(svc, human, body):
 
 @route("POST", "/projects")
 def _create_project(svc, human, body):
-    return svc.engine.create_project(_need(body, "name"), _need(body, "folder"), _need(body, "test_command"),
-                                     list(body.get("profiles", [])))
+    """Only the folder is required; the rest fill in from it (POST /projects/defaults shows the values)."""
+    return svc.engine.create_project(body.get("name", ""), body.get("folder", ""), body.get("test_command", ""),
+                                     list(body.get("profiles") or []))
+
+
+@route("POST", "/projects/defaults")
+def _project_defaults(svc, human, body):
+    return svc.engine.project_defaults(body.get("folder", ""))
+
+
+@route("GET", "/projects/archived")
+def _archived(svc, human, body):
+    return svc.engine.projects(archived=True)
+
+
+@route("POST", "/projects/{project}/update")
+def _update_project(svc, human, body, project):
+    return svc.engine.update_project(project, new_name=body.get("name"), folder=body.get("folder"),
+                                     test_command=body.get("test_command"),
+                                     profiles=body.get("profiles"), actor=human)
+
+
+@route("POST", "/projects/{project}/archive")
+def _archive(svc, human, body, project):
+    return svc.engine.archive_project(project, human)
+
+
+@route("POST", "/projects/{project}/restore")
+def _restore(svc, human, body, project):
+    return svc.engine.restore_project(project, human)
+
+
+@route("POST", "/projects/{project}/delete")
+def _delete(svc, human, body, project):
+    return svc.engine.delete_project(project, body.get("confirm", ""), human)
+
+
+@route("GET", "/projects/{project}/events")
+def _events(svc, human, body, project):
+    return svc.engine.events(project)
+
+
+@route("GET", "/projects/{project}/first-green")
+def _first_green(svc, human, body, project):
+    return svc.engine.first_green(project)
+
+
+@route("POST", "/sample")
+def _sample(svc, human, body):
+    return svc.engine.create_sample(human)
+
+
+@route("POST", "/sample/reset")
+def _sample_reset(svc, human, body):
+    return svc.engine.reset_sample(human)
+
+
+@route("GET", "/onboarding")
+def _onboarding(svc, human, body):
+    return svc.engine.onboarding()
+
+
+@route("POST", "/onboarding")
+def _set_onboarding(svc, human, body):
+    return svc.engine.set_onboarding(start_dismissed=body.get("start_dismissed"),
+                                     checklist_hidden=body.get("checklist_hidden"))
 
 
 @route("POST", "/projects/{project}/open")
@@ -166,6 +232,31 @@ def _tree(svc, human, body, project):
     return svc.engine.tree(project)
 
 
+@route("GET", "/projects/{project}/retired")
+def _retired(svc, human, body, project):
+    return svc.engine.tree(project, retired=True)
+
+
+@route("POST", "/projects/{project}/needs/{rid}/retire")
+def _retire(svc, human, body, project, rid):
+    return svc.engine.retire_need(project, rid, body.get("reason", ""), human)
+
+
+@route("POST", "/projects/{project}/needs/{rid}/restore")
+def _restore_need(svc, human, body, project, rid):
+    return svc.engine.restore_need(project, rid, human)
+
+
+@route("GET", "/projects/{project}/needs/{rid}/readout")
+def _readout(svc, human, body, project, rid):
+    return svc.engine.readout(project, rid)
+
+
+@route("POST", "/projects/{project}/needs/{rid}/readout/export")
+def _export_readout(svc, human, body, project, rid):
+    return svc.engine.export_readout(project, rid)
+
+
 @route("GET", "/projects/{project}/needs-you")
 def _needs_you(svc, human, body, project):
     return svc.engine.needs_you(project)
@@ -186,9 +277,11 @@ def _rung(svc, human, body, project, rid):
             walk(n.get("children", []))
 
     walk(e.tree(project))
+    walk(e.tree(project, retired=True))
     node = tree_index.get(rid)
     r["children"] = node["children"] if node else []
-    for k in ("coverage", "released", "blockers", "carried_by", "result"):
+    for k in ("coverage", "released", "blockers", "carried_by", "result", "seen_failing", "retired",
+              "retired_reason", "retired_at"):
         if node and k in node:
             r[k] = node[k]
     r["history"] = e.history(project, rid)
@@ -201,6 +294,8 @@ def _rung(svc, human, body, project, rid):
         cur = e.rung(project, cur["parent"])
         path.insert(0, {"id": cur["id"], "text": cur["text"], "kind": cur["kind"], "status": cur["status"]})
     r["path"] = path
+    top = path[0]["id"] if path else rid
+    r["read_only"] = e.project(project)["archived"] or bool(tree_index.get(top, {}).get("retired"))
     if r["kind"] == "need":
         r["flow"] = e.flow(project, rid)
         r["suggestions"] = e.suggestions(project, rid, "requirement")
@@ -240,7 +335,8 @@ def _create_need(svc, human, body, project):
 @route("POST", "/projects/{project}/rungs/{rid}/edit")
 def _edit(svc, human, body, project, rid):
     return svc.engine.edit(project, rid, text=body.get("text"), detail=body.get("detail"), actor=human,
-                           approve=bool(body.get("approve")), data=body.get("data"))
+                           approve=bool(body.get("approve")), data=body.get("data"),
+                           expect_version=body.get("version"))
 
 
 @route("POST", "/projects/{project}/rungs/{rid}/approve")
@@ -466,6 +562,14 @@ def _save_settings(svc, human, body):
     if "profiles" in body:
         svc.engine.save_profiles(list(body["profiles"]))
     return {"settings": svc.engine.settings(), "profiles": svc.engine.profiles()}
+
+
+@route("GET", "/doctor")
+def _doctor(svc, human, body):
+    from .doctor import run_checks
+    from .host import hermes_bin
+    checks = run_checks(Path(svc.engine.path), hermes_bin())
+    return {"ok": all(c["ok"] for c in checks), "checks": checks}
 
 
 @route("GET", "/profiles")
