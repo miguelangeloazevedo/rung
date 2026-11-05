@@ -3022,9 +3022,9 @@ function ProjectSettings({ project }) {
   }
   const events = (pq.data || []).filter(e => e.kind === 'project_changed').slice().reverse()
   const main = frag(
-    h('header', 'flex items-center justify-between',
-      h('h1', 'text-xl font-bold tracking-tight text-fg', 'Project settings'),
-      h(Btn, { onClick: () => navigate('home') }, 'Back')),
+    h('header', 'flex flex-col gap-4',
+      h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
+      h('h2', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Project settings')),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name }, h('input', { className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
