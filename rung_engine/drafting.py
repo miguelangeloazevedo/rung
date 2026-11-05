@@ -34,13 +34,18 @@ class Drafter:
         raise NotImplementedError
 
 
+class DraftFailed(RuntimeError):
+    pass
+
+
 class StubDrafter(Drafter):
-    def __init__(self, table: dict | None = None, delay: float = 0.0):
+    def __init__(self, table: dict | None = None, delay: float = 0.0, fail: str = ""):
         self.table = table or {}
         self.delay = float(delay or 0)
+        self.fail = fail or ""
 
     @classmethod
-    def for_project(cls, project: dict, stub_file: str = "", delay: float = 0.0) -> "StubDrafter":
+    def for_project(cls, project: dict, stub_file: str = "", delay: float = 0.0, fail: str = "") -> "StubDrafter":
         path = Path(stub_file).expanduser() if stub_file else Path(project["folder"]).expanduser() / ".rung-stub" / "drafts.json"
         table = {}
         if path.is_file():
@@ -48,7 +53,7 @@ class StubDrafter(Drafter):
                 table = json.loads(path.read_text())
             except (OSError, ValueError):
                 table = {}
-        return cls(table, delay)
+        return cls(table, delay, fail)
 
     def _get(self, section, key, default):
         return self.table.get(section, {}).get(key, default)
@@ -57,6 +62,8 @@ class StubDrafter(Drafter):
         return list(self._get("requirements", need_text.strip(), []))
 
     def derive_spec(self, need_text, req_text, project):
+        if self.fail:  # the stub's failure mode, selected through the drafting setting
+            raise DraftFailed(self.fail)
         got = self._get("specifications", req_text.strip(), None)
         if isinstance(got, str):
             got = {"text": got}
@@ -139,7 +146,7 @@ def make_drafter(settings: dict, project: dict, hermes_bin: str = "hermes") -> D
     d = settings.get("drafting") or {}
     if d.get("kind") == "profile" and d.get("profile"):
         return ProfileDrafter(d["profile"], hermes_bin=hermes_bin)
-    return StubDrafter.for_project(project, d.get("stub_file", ""), d.get("delay", 0))
+    return StubDrafter.for_project(project, d.get("stub_file", ""), d.get("delay", 0), d.get("fail", ""))
 
 
 def pause(drafter: Drafter):

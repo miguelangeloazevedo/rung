@@ -7,7 +7,9 @@ work is done. A specification is released by its tests' executions and nothing e
 
 from __future__ import annotations
 
+import functools
 import json
+import os
 import string
 import threading
 import time
@@ -17,6 +19,7 @@ from pathlib import Path
 
 from . import allocation, db
 from .execute import context_line, git_commit, run_command
+from .lifecycle import LifecycleMixin
 
 KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
@@ -26,6 +29,8 @@ DEFECT_CATEGORIES = ("Implementation", "Specification", "Requirement", "Test")
 GATING_TYPES = ("command", "manual")
 FINAL_EXEC = ("pass", "fail")
 LIVE_RUN = ("queued", "running")
+# pass and fail come from the tests; the others are what the worker or the runner reported, shown as such.
+ATTEMPT_OUTCOMES = ("pass", "fail", "needs_input", "no_change", "unknown", "partial", "error", "cancelled")
 STEPS = ("need", "requirements", "specifications", "tests", "develop")
 
 DEFAULT_SETTINGS = {
@@ -36,16 +41,49 @@ DEFAULT_SETTINGS = {
     "output_limit": 64000,
     "run_timeout_min": 20,
     "colours": {"needs_you": "theme", "pass": "theme", "fail": "theme", "stale": "theme", "draft": "theme"},
+    "onboarding": {"start_dismissed": False, "checklist_hidden": False},
 }
+
+
+def detect_test_command(folder: Path) -> str:
+    """A best guess from the files in the folder; the form shows it and the person can change it."""
+    has = lambda *names: any((folder / n).exists() for n in names)  # noqa: E731
+    if has("pytest.ini", "conftest.py", "tox.ini") or (has("pyproject.toml", "setup.py", "setup.cfg") and has("tests")):
+        return "pytest"
+    if has("package.json"):
+        return "npm test"
+    if has("Cargo.toml"):
+        return "cargo test"
+    if has("go.mod"):
+        return "go test ./..."
+    if has("Makefile"):
+        return "make test"
+    if has("tests", "test"):
+        return "python3 -m unittest -q"
+    return ""
+
+
+def writes(rid: bool = True):
+    """Mark an Engine method that changes a project. Archived projects and retired needs are read only;
+    every write from the pane, the CLI and the agent tools passes through here."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(self, project, *args, **kwargs):
+            self._check_writable(project, args[0] if rid and args and isinstance(args[0], str) else None)
+            return fn(self, project, *args, **kwargs)
+        wrapper.writes = True
+        return wrapper
+    return deco
 
 
 class RungError(ValueError):
     """A refused operation. `code` is stable for the API layer."""
 
-    def __init__(self, message: str, code: str = "refused", status: int = 409):
+    def __init__(self, message: str, code: str = "refused", status: int = 409, field: str | None = None):
         super().__init__(message)
         self.code = code
         self.status = status
+        self.field = field
 
 
 class NotFound(RungError):
@@ -86,7 +124,7 @@ def _letter(k: int) -> str:
     return letters[k - 1] if 1 <= k <= 26 else f"z{k}"
 
 
-class Engine:
+class Engine(LifecycleMixin):
     def __init__(self, path: str | Path, clock=time.time):
         self.path = str(path)
         self.conn = db.connect(path)
@@ -207,31 +245,60 @@ class Engine:
 
     # ------------------------------------------------------------------ projects
 
-    def create_project(self, name: str, folder: str, test_command: str, profiles: list[str]) -> dict:
-        name = (name or "").strip()
+    def create_project(self, name: str = "", folder: str = "", test_command: str = "",
+                       profiles: list[str] | None = None) -> dict:
+        """Only the folder is required. Name, test command and profiles default from it (project_defaults)
+        and every value stays the caller's to change. Errors name the field they belong to."""
         folder = (folder or "").strip()
-        test_command = (test_command or "").strip()
-        profiles = [p for p in dict.fromkeys(profiles or []) if p]
-        if not name:
-            raise RungError("name is required", code="bad_request", status=400)
-        if not folder:
-            raise RungError("folder is required", code="bad_request", status=400)
+        self._check_folder(folder)
+        defaults = self.project_defaults(folder)
+        name = (name or "").strip() or defaults["name"]
+        test_command = (test_command or "").strip() or defaults["test_command"]
+        profiles = [p for p in dict.fromkeys(profiles or []) if p] or defaults["profiles"]
+        self._check_name(name)
         if not test_command:
-            raise RungError("test command is required", code="bad_request", status=400)
+            raise RungError("test command is required", code="bad_request", status=400, field="test_command")
         if not profiles:
-            raise RungError("tick at least one profile", code="bad_request", status=400)
-        if self._q1("SELECT 1 FROM projects WHERE name = ?", (name,)):
-            raise RungError(f"a project named {name} exists", code="conflict")
+            raise RungError("tick at least one profile", code="bad_request", status=400, field="profiles")
         now = self.clock()
         with self._tx() as c:
             for p in profiles:
                 c.execute("INSERT OR IGNORE INTO profiles(name) VALUES (?)", (p,))
-            cur = c.execute(
+            c.execute(
                 "INSERT INTO projects(name, folder, test_command, profiles, created_at, last_activity) "
                 "VALUES (?,?,?,?,?,?)", (name, folder, test_command, _j(profiles), now, now),
             )
             c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_project', ?)", (_j(name),))
         return self.project(name)
+
+    def project_defaults(self, folder: str) -> dict:
+        """What the new project form pre-fills for a folder: its name, a detected test command, enabled profiles."""
+        path = Path((folder or "").strip()).expanduser()
+        name = path.name if (folder or "").strip() else ""
+        return {"name": name, "test_command": detect_test_command(path) if path.is_dir() else "",
+                "profiles": [p["name"] for p in self.profiles() if p["enabled"]]}
+
+    @staticmethod
+    def _check_folder(folder: str) -> None:
+        if not folder:
+            raise RungError("folder is required", code="bad_request", status=400, field="folder")
+        path = Path(folder).expanduser()
+        if not path.exists():
+            raise RungError(f"folder not found: {folder}", code="bad_request", status=400, field="folder")
+        if not path.is_dir():
+            raise RungError(f"not a folder: {folder}", code="bad_request", status=400, field="folder")
+        if not os.access(path, os.R_OK | os.X_OK):
+            raise RungError(f"folder not readable: {folder}", code="bad_request", status=400, field="folder")
+
+    def _check_name(self, name: str, current_pk: int | None = None) -> None:
+        if not name:
+            raise RungError("name is required", code="bad_request", status=400, field="name")
+        if len(name) > 80 or "/" in name or name.strip() != name:
+            raise RungError("a name is up to 80 characters, without a slash", code="bad_request", status=400,
+                            field="name")
+        row = self._q1("SELECT pk FROM projects WHERE name = ?", (name,))
+        if row and row["pk"] != current_pk:
+            raise RungError(f"a project named {name} exists", code="conflict", field="name")
 
     def _project_row(self, name_or_pk):
         if isinstance(name_or_pk, int):
@@ -246,11 +313,14 @@ class Engine:
         r = self._project_row(name)
         return {"name": r["name"], "folder": r["folder"], "test_command": r["test_command"],
                 "profiles": _l(r["profiles"], []), "created_at": r["created_at"],
-                "last_activity": r["last_activity"]}
+                "last_activity": r["last_activity"], "archived": r["archived_at"] is not None,
+                "archived_at": r["archived_at"], "sample": self._is_sample(r)}
 
-    def projects(self) -> list[dict]:
+    def projects(self, archived: bool = False) -> list[dict]:
+        """The picker: active projects, or with `archived` the archived ones."""
         out = []
-        for r in self._q("SELECT name FROM projects ORDER BY last_activity DESC, name"):
+        for r in self._q(f"SELECT name FROM projects WHERE archived_at IS {'NOT ' if archived else ''}NULL "
+                         "ORDER BY last_activity DESC, name"):
             p = self.project(r["name"])
             p["stats"] = self.tiles(r["name"])
             out.append(p)
@@ -265,7 +335,7 @@ class Engine:
         name = self.get_setting("last_project")
         if name and self._q1("SELECT 1 FROM projects WHERE name = ?", (name,)):
             return name
-        r = self._q1("SELECT name FROM projects ORDER BY last_activity DESC LIMIT 1")
+        r = self._q1("SELECT name FROM projects WHERE archived_at IS NULL ORDER BY last_activity DESC LIMIT 1")
         return r["name"] if r else None
 
     # ------------------------------------------------------------------ rung access
@@ -316,8 +386,8 @@ class Engine:
         d.update(data)
         return d
 
-    def tree(self, project: str) -> list[dict]:
-        """The whole ladder, nested, without dismissed rungs."""
+    def tree(self, project: str, retired: bool = False) -> list[dict]:
+        """The whole ladder, nested, without dismissed rungs. `retired` lists the retired needs instead."""
         p = self._project_row(project)
 
         def build(row):
@@ -333,11 +403,16 @@ class Engine:
                 d["carried_by"] = self._carried_by(row)
             if row["kind"] == "test":
                 d["result"] = self._test_result(row)
+                d["seen_failing"] = self._seen_failing(row)
+            if row["kind"] == "need":
+                d["retired"] = row["retired_at"] is not None
+                d["retired_reason"] = row["retired_reason"]
+                d["retired_at"] = row["retired_at"]
             return d
 
         needs = self._q(
             "SELECT * FROM rungs WHERE project_pk = ? AND kind = 'need' AND status NOT IN ('dismissed','proposed') "
-            "ORDER BY num", (p["pk"],),
+            f"AND retired_at IS {'NOT ' if retired else ''}NULL ORDER BY num", (p["pk"],),
         )
         return [build(n) for n in needs]
 
@@ -391,6 +466,7 @@ class Engine:
         self._touch_project(c, project_pk)
         return pk
 
+    @writes(rid=False)
     def create_need(self, project: str, text: str, actor: Actor = HUMAN,
                     requirements: list[str] | None = None) -> dict:
         """A need written by a human is approved on creation (the Create need press)."""
@@ -405,6 +481,7 @@ class Engine:
                                   data={"origin": "suggested"})
         return self._rung_dict(self._rung_by_pk(pk))
 
+    @writes()
     def add_requirement(self, project: str, need_rid: str, text: str, actor: Actor = HUMAN,
                         detail: str = "") -> dict:
         need = self._rung_row(project, need_rid)
@@ -416,6 +493,7 @@ class Engine:
             pk = self._insert_rung(c, need["project_pk"], "requirement", need, text, detail, "draft", actor)
         return self._rung_dict(self._rung_by_pk(pk))
 
+    @writes()
     def propose(self, project: str, parent_rid: str, kind: str, text: str, proposer: str,
                 source_chat: str = "", detail: str = "") -> dict:
         """An agent proposes a rung. It waits under Needs you until a human accepts or dismisses it."""
@@ -427,6 +505,7 @@ class Engine:
                                    Actor("agent", proposer), proposer=proposer, source_chat=source_chat)
         return self._rung_dict(self._rung_by_pk(pk))
 
+    @writes()
     def dismiss(self, project: str, rid: str, actor: Actor = HUMAN) -> None:
         """Dismiss a proposal or an unapproved draft. A dismissed proposal leaves no rung."""
         if not actor.is_human:
@@ -442,6 +521,7 @@ class Engine:
 
     # ------------------------------------------------------------------ suggestions
 
+    @writes()
     def add_suggestions(self, project: str, parent_rid: str | None, target: str, texts: list[str]) -> list[dict]:
         p = self._project_row(project)
         parent_pk = self._rung_row(project, parent_rid)["pk"] if parent_rid else None
@@ -466,6 +546,7 @@ class Engine:
                        "ORDER BY pk", (p["pk"], parent_pk, target, status))
         return [{"id": r["pk"], "text": r["text"], "status": r["status"], "target": r["target"]} for r in rows]
 
+    @writes(rid=False)
     def resolve_suggestion(self, project: str, suggestion_id: int, accept: bool, actor: Actor = HUMAN) -> dict | None:
         if not actor.is_human:
             raise RungError("only a human can accept or dismiss suggestions", code="forbidden", status=403)
@@ -489,10 +570,14 @@ class Engine:
 
     # ------------------------------------------------------------------ edit, approve, staleness
 
+    @writes()
     def edit(self, project: str, rid: str, text: str | None = None, detail: str | None = None,
-             actor: Actor = HUMAN, approve: bool = False, data: dict | None = None) -> dict:
-        """Change a rung's text. If it changes after approval, everything that hangs below goes stale."""
+             actor: Actor = HUMAN, approve: bool = False, data: dict | None = None,
+             expect_version: int | None = None) -> dict:
+        """Change a rung's text. If it changes after approval, everything that hangs below goes stale.
+        `expect_version` is the version the editor loaded; a newer one refuses the edit (no silent overwrite)."""
         r = self._rung_row(project, rid)
+        self._check_version(r, expect_version)
         if not actor.is_human:
             raise RungError("agents cannot edit rungs; propose instead", code="forbidden", status=403)
         if r["status"] == "proposed":
@@ -546,6 +631,12 @@ class Engine:
             self._touch_project(c, r["project_pk"])
         return self._rung_dict(self._rung_by_pk(r["pk"]))
 
+    @staticmethod
+    def _check_version(r, expect_version) -> None:
+        if expect_version is not None and int(expect_version) != r["version"]:
+            raise RungError(f"{r['rid']} changed since it was opened (version {r['version']}, edited {expect_version})",
+                            code="conflict", status=409)
+
     def _mark_downstream_stale(self, c, root, seq: int, reason: str) -> list[str]:
         out = []
         for d in self._descendants(root["pk"]):
@@ -564,6 +655,7 @@ class Engine:
                 out.append(d["rid"])
         return out
 
+    @writes()
     def approve(self, project: str, rid: str, actor: Actor = HUMAN) -> dict:
         """Human approval. Agents never approve, including their own proposals."""
         if not actor.is_human:
@@ -621,6 +713,7 @@ class Engine:
                 "from_version": x["from_version"], "to_version": x["to_version"], "stale": stale,
                 "at": x["at"], "by": x["by_name"]}
 
+    @writes(rid=False)
     def revert_change(self, project: str, change_id: int, actor: Actor = HUMAN) -> dict:
         """Put a rung's text back to what it was before a change. This is a new change of its own:
         whatever went stale stays stale until a person looks at it again."""
@@ -650,6 +743,7 @@ class Engine:
 
     # ------------------------------------------------------------------ specifications
 
+    @writes()
     def set_authoring(self, project: str, req_rid: str, mode: str, actor: Actor = HUMAN) -> dict | None:
         """Per requirement: 'ai' (AI derives) or 'human' (I write, AI supports).
 
@@ -684,6 +778,7 @@ class Engine:
                         spec_pk = s["pk"]
         return self._rung_dict(self._rung_by_pk(spec_pk)) if spec_pk else None
 
+    @writes()
     def mark_drafting(self, project: str, spec_rid: str, actor: Actor = HUMAN) -> dict:
         """Ask the drafting provider for a new draft of an unapproved AI-derived specification."""
         if not actor.is_human:
@@ -693,6 +788,7 @@ class Engine:
             raise RungError(f"{spec_rid} is not an open draft", code="refused")
         data = _l(r["data"], {})
         data["draft_state"] = "drafting"
+        data.pop("draft_error", None)
         with self._tx() as c:
             c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(data), r["pk"]))
             self._touch_project(c, r["project_pk"])
@@ -726,6 +822,7 @@ class Engine:
         with self._tx() as c:
             c.execute("UPDATE rungs SET data=? WHERE pk=?", (_j(data), r["pk"]))
 
+    @writes()
     def write_spec(self, project: str, req_rid: str, text: str, detail: str = "", actor: Actor = HUMAN,
                    tags=None, required_tags=None, suggestion: str | None = None) -> dict:
         """The human-written specification for a requirement in 'I write, AI supports' mode."""
@@ -746,6 +843,7 @@ class Engine:
             pk = self._insert_rung(c, req["project_pk"], "specification", req, text, detail, "draft", actor, data=data)
         return self._rung_dict(self._rung_by_pk(pk))
 
+    @writes()
     def approve_drafted(self, project: str, need_rid: str, actor: Actor = HUMAN) -> list[str]:
         """The Specifications step's approve button. Locked while anything drafts or is missing."""
         flow = self.flow(project, need_rid)
@@ -796,6 +894,7 @@ class Engine:
             d.pop("releases_gate", None)
         return d
 
+    @writes()
     def add_test(self, project: str, spec_rid: str, fields: dict, actor: Actor = HUMAN,
                  status: str = "draft") -> dict:
         spec = self._rung_row(project, spec_rid)
@@ -813,10 +912,13 @@ class Engine:
             pk = self._insert_rung(c, spec["project_pk"], "test", spec, text, "", status, actor, data=data)
         return self._rung_dict(self._rung_by_pk(pk))
 
+    @writes()
     def edit_test(self, project: str, test_rid: str, fields: dict, actor: Actor = HUMAN) -> dict:
         r = self._rung_row(project, test_rid)
         if r["kind"] != "test":
             raise RungError(f"{test_rid} is not a test", code="bad_request", status=400)
+        fields = dict(fields)
+        self._check_version(r, fields.pop("version", None))
         p = self._project_row(r["project_pk"])
         spec = self._rung_by_pk(r["parent_pk"])
         data = self._test_data(p, spec, fields, base=_l(r["data"], {}))
@@ -840,6 +942,7 @@ class Engine:
             out = self.rung(project, test_rid)
         return out
 
+    @writes()
     def approve_tests(self, project: str, need_rid: str, actor: Actor = HUMAN) -> None:
         """The Tests step's approve button. Locked until every test is accepted."""
         if not actor.is_human:
@@ -858,6 +961,7 @@ class Engine:
             c.execute("UPDATE rungs SET data=? WHERE pk=?", (_j(data), need["pk"]))
             self._touch_project(c, need["project_pk"])
 
+    @writes()
     def approve_requirements(self, project: str, need_rid: str, actor: Actor = HUMAN) -> list[str]:
         """The Requirements step's Approve all."""
         flow = self.flow(project, need_rid)
@@ -986,6 +1090,7 @@ class Engine:
             raise NotFound(f"no execution #{n} of {test_rid}")
         return self._exec_dict(e, t)
 
+    @writes()
     def begin_execution(self, project: str, test_rid: str, carried_by: str = "engine", run_pk=None,
                         attempt=None) -> int:
         """Create a running command execution and return its number. perform_execution runs it."""
@@ -1034,11 +1139,18 @@ class Engine:
             res_exit, res_out = res.exit_code, res.output
             if res.cancelled:
                 status = "cancelled"
-            elif res.timed_out or res.launch_error:
-                status = "error"
             else:
                 rule = data.get("pass_rule") or {"kind": "exit_code", "value": 0}
-                status = "pass" if self._passes(rule, res.exit_code, res.output) else "fail"
+                # The shell answers 127 (not found) and 126 (not executable) when the command never started.
+                unstarted = res.exit_code in (126, 127) and not (rule.get("kind", "exit_code") == "exit_code"
+                                                                 and int(rule.get("value", 0)) == res.exit_code)
+                if res.timed_out or res.launch_error or unstarted:
+                    status = "error"
+                    if unstarted:
+                        res_out = (res_out or "") + f"\ncould not start: the shell exited {res.exit_code}"
+                        res_exit = None
+                else:
+                    status = "pass" if self._passes(rule, res.exit_code, res.output) else "fail"
             if data.get("type") == "ai_judged" and status == "pass":
                 status = "pass"  # recorded, but never releases a gate (see _released)
         with self._tx() as c:
@@ -1067,6 +1179,7 @@ class Engine:
             c.execute("UPDATE executions SET status='cancelled', ended_at=? WHERE test_pk=? AND n=? AND status='running'",
                       (self.clock(), t["pk"], n))
 
+    @writes()
     def record_manual(self, project: str, test_rid: str, result: str, note: str, actor: Actor = HUMAN) -> dict:
         """A human records a manual result. A pass waits for a human approval before it counts."""
         if not actor.is_human:
@@ -1087,6 +1200,7 @@ class Engine:
             self._touch_project(c, t["project_pk"])
         return self.execution(project, test_rid, n)
 
+    @writes()
     def approve_result(self, project: str, test_rid: str, n: int, actor: Actor = HUMAN) -> dict:
         if not actor.is_human:
             raise RungError("only a human approves a manual result", code="forbidden", status=403)
@@ -1119,9 +1233,30 @@ class Engine:
         # A recorded result waiting for approval is shown as pending; it never counts as a pass until approved.
         if pend and (not rows or pend["seq"] > rows[0]["seq"]):
             return "pending"
+        err = self._q1("SELECT seq FROM executions WHERE test_pk=? AND seq>? AND status='error' ORDER BY seq DESC LIMIT 1",
+                       (t["pk"], t["valid_from"]))
+        if err and (not rows or err["seq"] > rows[0]["seq"]):
+            return "error"
         if rows:
             return rows[0]["status"]
         return "not_run"
+
+    def _seen_failing(self, t) -> bool | None:
+        """For a command test: True if it failed before its first pass, False if its first result was a pass,
+        None while it has never passed. Over its whole history; it never changes whether anything is released."""
+        if _l(t["data"], {}).get("type", "command") != "command":
+            return None
+        first_pass = self._q1("SELECT n FROM executions WHERE test_pk=? AND status='pass' ORDER BY n LIMIT 1", (t["pk"],))
+        if not first_pass:
+            return None
+        return bool(self._q1("SELECT 1 FROM executions WHERE test_pk=? AND status='fail' AND n<?",
+                             (t["pk"], first_pass["n"])))
+
+    def _retired_pks(self, project_pk: int) -> set[int]:
+        """Every rung under a retired need, the need included."""
+        return {r[0] for r in self._q(
+            "WITH RECURSIVE sub(pk) AS (SELECT pk FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NOT NULL "
+            "UNION ALL SELECT r.pk FROM rungs r JOIN sub ON r.parent_pk = sub.pk) SELECT pk FROM sub", (project_pk,))}
 
     def _released(self, spec) -> tuple[bool, list[str]]:
         blockers = []
@@ -1177,7 +1312,10 @@ class Engine:
         specs = self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='specification' AND status IN ('approved','stale') "
                         "ORDER BY rid", (p["pk"],))
         results = []
+        gone = self._retired_pks(p["pk"])
         for s in specs:
+            if s["pk"] in gone:
+                continue
             ok, blockers = self._released(s)
             results.append({"id": s["rid"], "ok": ok, "blockers": blockers})
         return {"ok": bool(results) and all(x["ok"] for x in results), "results": results,
@@ -1221,7 +1359,9 @@ class Engine:
     def needs_you(self, project: str) -> list[dict]:
         p = self._project_row(project)
         items = []
-        stale = self._q("SELECT * FROM rungs WHERE project_pk=? AND status='stale' ORDER BY kind, num", (p["pk"],))
+        gone = self._retired_pks(p["pk"])
+        stale = [r for r in self._q("SELECT * FROM rungs WHERE project_pk=? AND status='stale' ORDER BY kind, num",
+                                    (p["pk"],)) if r["pk"] not in gone]
         stale_pks = {r["pk"] for r in stale}
         order = {k: i for i, k in enumerate(KINDS)}
         for r in sorted(stale, key=lambda r: (order[r["kind"]], r["rid"])):
@@ -1231,24 +1371,49 @@ class Engine:
             items.append({"type": "stale", "id": r["rid"], "kind": r["kind"], "text": r["text"],
                           "parent": self._rid_of(r["parent_pk"]), "change": ch})
         for r in self._q("SELECT * FROM rungs WHERE project_pk=? AND status='proposed' ORDER BY pk", (p["pk"],)):
+            if r["parent_pk"] in gone:
+                continue
             items.append({"type": "proposed", "id": r["rid"], "kind": r["kind"], "text": r["text"],
                           "parent": self._rid_of(r["parent_pk"]), "proposer": r["proposer"],
                           "source_chat": r["source_chat"]})
         for e in self._q("SELECT e.*, r.rid AS trid FROM executions e JOIN rungs r ON r.pk = e.test_pk "
                          "WHERE r.project_pk=? AND e.status='pending' AND e.seq > r.valid_from ORDER BY e.pk", (p["pk"],)):
+            if e["test_pk"] in gone:
+                continue
             items.append({"type": "approval", "id": e["trid"], "kind": "test", "n": e["n"],
                           "text": f"{e['trid']} #{e['n']} recorded pass", "recorder": e["recorder"], "note": e["note"]})
+        # A test whose latest result is Error: it could not run, which is neither a pass nor a fail.
+        for e in self._q("SELECT e.*, r.rid AS trid FROM executions e JOIN rungs r ON r.pk = e.test_pk "
+                         "WHERE r.project_pk=? AND e.status='error' AND e.seq > r.valid_from "
+                         "AND r.status IN ('approved','stale','draft') AND NOT EXISTS (SELECT 1 FROM executions x "
+                         "WHERE x.test_pk = e.test_pk AND x.seq > e.seq AND x.status IN ('pass','fail','error','pending')) "
+                         "ORDER BY e.pk", (p["pk"],)):
+            if e["test_pk"] in gone:
+                continue
+            lines = (e["output"] or "").strip().splitlines()
+            items.append({"type": "error", "id": e["trid"], "kind": "test", "n": e["n"],
+                          "text": f"{e['trid']} #{e['n']} could not run", "reason": lines[-1] if lines else ""})
+        # A develop run that stopped for an answer, until a newer run of that specification exists.
+        for r in self._q("SELECT r.*, s.rid AS srid FROM runs r JOIN rungs s ON s.pk = r.spec_pk WHERE r.project_pk=? "
+                         "AND r.status='needs_input' AND NOT EXISTS (SELECT 1 FROM runs x WHERE x.spec_pk = r.spec_pk "
+                         "AND x.pk > r.pk) ORDER BY r.pk", (p["pk"],)):
+            if r["spec_pk"] in gone:
+                continue
+            items.append({"type": "needs_input", "id": r["srid"], "kind": "specification", "run": r["pk"],
+                          "text": r["reason"] or "", "profile": r["profile"]})
         return items
 
     def tiles(self, project: str) -> dict:
         p = self._project_row(project)
-        reqs = self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='requirement' AND status IN ('draft','approved','stale')",
-                       (p["pk"],))
+        gone = self._retired_pks(p["pk"])
+        reqs = [r for r in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='requirement' AND status IN "
+                                   "('draft','approved','stale')", (p["pk"],)) if r["pk"] not in gone]
         covered = sum(1 for r in reqs if self._req_coverage(r) == "covered")
-        stale = self._q1("SELECT COUNT(*) FROM rungs WHERE project_pk=? AND status='stale'", (p["pk"],))[0]
+        stale = sum(1 for r in self._q("SELECT pk FROM rungs WHERE project_pk=? AND status='stale'", (p["pk"],))
+                    if r["pk"] not in gone)
         failing = 0
         for t in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='test' AND status IN ('approved','stale')", (p["pk"],)):
-            if t["status"] == "approved":
+            if t["status"] == "approved" and t["pk"] not in gone:
                 rows = self._counting(t)
                 if rows and rows[0]["status"] == "fail":
                     failing += 1
@@ -1256,7 +1421,8 @@ class Engine:
         running += self._q1("SELECT COUNT(*) FROM executions e JOIN rungs r ON r.pk=e.test_pk WHERE r.project_pk=? "
                             "AND e.status='running' AND e.run_pk IS NULL", (p["pk"],))[0]
         return {"covered": covered, "requirements": len(reqs), "stale": stale, "failing": failing,
-                "needs_you": len(self.needs_you(project)), "running": running, "last_activity": p["last_activity"]}
+                "needs_you": len(self.needs_you(project)), "running": running, "last_activity": p["last_activity"],
+                "archived": p["archived_at"] is not None}
 
     def home(self, project: str) -> dict:
         p = self._project_row(project)
@@ -1267,7 +1433,10 @@ class Engine:
                          "AND e.status='running' AND e.run_pk IS NULL ORDER BY e.pk", (p["pk"],)):
             live_execs.append({"test": e["trid"], "n": e["n"], "started_at": e["started_at"]})
         done, draft = [], []
+        gone = self._retired_pks(p["pk"])
         for s in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='specification' ORDER BY num, rid", (p["pk"],)):
+            if s["pk"] in gone:
+                continue
             if s["status"] == "approved":
                 ok, _ = self._released(s)
                 if ok:
@@ -1277,11 +1446,13 @@ class Engine:
                 draft.append({"id": s["rid"], "text": s["text"], "kind": "specification",
                               "parent": self._rid_of(s["parent_pk"])})
         for r in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='requirement' AND status='draft' ORDER BY num", (p["pk"],)):
+            if r["pk"] in gone:
+                continue
             specs = [s["rid"] for s in self._children_rows(r["pk"])]
             draft.append({"id": r["rid"], "text": r["text"], "kind": "requirement", "specs": specs,
                           "parent": self._rid_of(r["parent_pk"])})
         needs = [{"id": n["rid"], "text": n["text"], "status": n["status"]} for n in self._q(
-            "SELECT * FROM rungs WHERE project_pk=? AND kind='need' ORDER BY num", (p["pk"],))]
+            "SELECT * FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NULL ORDER BY num", (p["pk"],))]
         return {"project": self.project(project), "tiles": self.tiles(project), "needs_you": self.needs_you(project),
                 "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs}
 
@@ -1321,6 +1492,7 @@ class Engine:
                           "manual": sum(1 for t in tests if _l(t["data"], {}).get("type") == "manual"),
                           "ai_judged": sum(1 for t in tests if _l(t["data"], {}).get("type") == "ai_judged")}}
 
+    @writes()
     def pick(self, project: str, spec_rid: str, profile: str, actor: Actor = HUMAN) -> dict:
         if not actor.is_human:
             raise RungError("only a human picks a carrier", code="forbidden", status=403)
@@ -1335,6 +1507,7 @@ class Engine:
 
     # ------------------------------------------------------------------ develop runs
 
+    @writes()
     def start_run(self, project: str, spec_rid: str, actor: Actor = HUMAN, profile: str | None = None) -> dict:
         """Create a develop run for a specification. The caller launches the runner process."""
         s = self._rung_row(project, spec_rid)
@@ -1407,7 +1580,7 @@ class Engine:
             ex = self._q("SELECT e.*, t.rid AS trid FROM executions e JOIN rungs t ON t.pk=e.test_pk "
                          "WHERE e.run_pk=? AND e.attempt=? ORDER BY e.pk", (r["pk"], a["n"]))
             attempts.append({
-                "n": a["n"], "status": a["status"], "files_changed": _l(a["files_changed"], []),
+                "n": a["n"], "status": a["status"], "reason": a["reason"], "files_changed": _l(a["files_changed"], []),
                 "commands": _l(a["commands"], []), "worker_output": a["worker_output"], "fed_in": a["fed_in"],
                 "fed_forward": a["fed_forward"], "started_at": a["started_at"], "ended_at": a["ended_at"],
                 "executions": [{"test": e["trid"], "n": e["n"], "status": e["status"], "exit_code": e["exit_code"],
@@ -1471,12 +1644,14 @@ class Engine:
                       (int(run_id), n, "running", prompt, fed_in, self.clock()))
 
     def end_attempt(self, run_id: int, n: int, status: str, files_changed, commands, worker_output: str,
-                    fed_forward: str = "") -> None:
+                    fed_forward: str = "", reason: str = "") -> None:
+        if status not in ATTEMPT_OUTCOMES:
+            raise ValueError(f"attempt outcome {status} unknown")
         with self._tx() as c:
             c.execute("UPDATE attempts SET status=?, files_changed=?, commands=?, worker_output=?, fed_forward=?, "
-                      "ended_at=? WHERE run_pk=? AND n=?",
-                      (status, _j(files_changed), _j(commands), worker_output[-20000:], fed_forward, self.clock(),
-                       int(run_id), n))
+                      "reason=?, ended_at=? WHERE run_pk=? AND n=?",
+                      (status, _j(files_changed), _j(commands), worker_output[-20000:], fed_forward, reason or "",
+                       self.clock(), int(run_id), n))
 
     def update_attempt(self, run_id: int, n: int, **fields) -> None:
         allowed = {"files_changed", "commands", "worker_output"}
@@ -1492,10 +1667,10 @@ class Engine:
         out = []
         for r in self._q("SELECT * FROM runs WHERE status='running'"):
             if not r["pid"] or not alive(r["pid"]):
-                self.set_run(r["pk"], status="interrupted", ended_at=self.clock(), reason="runner process ended")
+                self.set_run(r["pk"], status="unknown", ended_at=self.clock(), reason="the runner process ended")
                 with self._tx() as c:
-                    c.execute("UPDATE attempts SET status='interrupted', ended_at=? WHERE run_pk=? AND status='running'",
-                              (self.clock(), r["pk"]))
+                    c.execute("UPDATE attempts SET status='unknown', reason='the runner process ended', ended_at=? "
+                              "WHERE run_pk=? AND status='running'", (self.clock(), r["pk"]))
                     c.execute("UPDATE executions SET status='error', ended_at=? WHERE run_pk=? AND status='running'",
                               (self.clock(), r["pk"]))
                 out.append(r["pk"])
@@ -1508,6 +1683,7 @@ class Engine:
 
     # ------------------------------------------------------------------ defects
 
+    @writes()
     def raise_defect(self, project: str, test_rid: str, executions: list[int], title: str, note: str = "",
                      actor: Actor = HUMAN, category: str = "Implementation") -> dict:
         """Only ever called by a human press. Links the test, its specification and the chosen runs."""
@@ -1523,8 +1699,12 @@ class Engine:
         if not ns:
             raise RungError("link at least one execution", code="bad_request", status=400)
         for n in ns:
-            if not self._q1("SELECT 1 FROM executions WHERE test_pk=? AND n=?", (t["pk"], n)):
+            ex = self._q1("SELECT status FROM executions WHERE test_pk=? AND n=?", (t["pk"], n))
+            if not ex:
                 raise NotFound(f"no execution #{n} of {test_rid}")
+            if ex["status"] != "fail":
+                raise RungError(f"#{n} of {test_rid} is {ex['status']}; a defect links failed runs only",
+                                code="bad_request", status=400)
         with self._tx() as c:
             k = c.execute("SELECT COUNT(*)+1 FROM defects WHERE project_pk=?", (t["project_pk"],)).fetchone()[0]
             did = f"D-{k}"

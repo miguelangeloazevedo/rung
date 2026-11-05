@@ -1,14 +1,18 @@
 """Workers do the development work of one attempt. Rung supervises them; it never trusts their report.
 
 `stub` is deterministic: for attempt N of specification S it copies `<stub_dir>/<S>/attempt-N/`
-over the project folder (and does nothing if that folder does not exist). `hermes` runs
+over the project folder (and does nothing if that folder does not exist). A file
+`<stub_dir>/<S>/attempt-N.json` selects an outcome instead: `{"outcome": "needs_input", "reason": ...}`,
+`{"outcome": "partial", "capability": ...}` or `{"outcome": "unknown"}` (the worker vanishes). `hermes` runs
 `hermes -p <profile> chat -Q -q <prompt> --max-turns N` in the project folder.
 Either way the engine then runs the specification's command tests itself.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -38,6 +42,22 @@ class WorkerResult:
     output: str = ""
     exit_code: int | None = 0
     cancelled: bool = False
+    outcome: str = ""      # "" (work done, tests decide) | needs_input | partial
+    reason: str = ""       # needs_input: what the worker needs from a human
+    capability: str = ""   # partial: the missing capability, filed as a proposed rung
+    vanished: bool = False  # the worker ended without reporting a result: Unknown
+
+
+REPORT = re.compile(r"^RUNG (NEEDS INPUT|MISSING CAPABILITY):\s*(.+)$", re.M)
+
+
+def parse_report(output: str) -> tuple[str, str]:
+    """The last report line a worker printed, as (outcome, text). Workers are told the format."""
+    found = REPORT.findall(output or "")
+    if not found:
+        return "", ""
+    kind, text = found[-1]
+    return ("needs_input" if kind == "NEEDS INPUT" else "partial"), text.strip()[:500]
 
 
 class StubWorker:
@@ -53,6 +73,22 @@ class StubWorker:
             if ctx.should_cancel and ctx.should_cancel():
                 return WorkerResult(output="cancelled", exit_code=None, cancelled=True)
             time.sleep(min(0.2, max(0.0, end - time.time())))
+        plan = root / ctx.spec / f"attempt-{ctx.n}.json"
+        if plan.is_file():
+            try:
+                spec = json.loads(plan.read_text())
+            except (OSError, ValueError):
+                spec = {}
+            outcome = spec.get("outcome", "")
+            if outcome == "unknown":
+                return WorkerResult(output="", exit_code=None, vanished=True)
+            text = spec.get("reason", "") if outcome == "needs_input" else spec.get("capability", "")
+            line = f"RUNG {'NEEDS INPUT' if outcome == 'needs_input' else 'MISSING CAPABILITY'}: {text}"
+            if ctx.on_output:
+                ctx.on_output(line)
+            return WorkerResult(output=line, exit_code=0, outcome=outcome,
+                                reason=text if outcome == "needs_input" else "",
+                                capability=text if outcome == "partial" else "")
         cmds, lines = [], []
         if src.is_dir():
             for p in sorted(src.rglob("*")):
@@ -120,8 +156,14 @@ class HermesWorker:
                 break
             time.sleep(0.3)
         reader.join(timeout=5)
-        return WorkerResult(commands=[shown], output="".join(out_lines)[-20000:], exit_code=proc.returncode,
-                            cancelled=cancelled)
+        output = "".join(out_lines)[-20000:]
+        outcome, text = parse_report(output)
+        # Killed by a signal we did not send, or exited with an error and said nothing: no result to read.
+        vanished = not cancelled and not outcome and (proc.returncode is None or proc.returncode < 0 or
+                                                       (proc.returncode != 0 and not output.strip()))
+        return WorkerResult(commands=[shown], output=output, exit_code=proc.returncode, cancelled=cancelled,
+                            outcome=outcome, reason=text if outcome == "needs_input" else "",
+                            capability=text if outcome == "partial" else "", vanished=vanished)
 
 
 def make_worker(worker_cfg: dict, hermes_bin: str = "hermes"):

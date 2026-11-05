@@ -13,12 +13,15 @@ def test_create_project_stores_exact_values(engine, tmp_path):
     assert len(engine.projects()) == 1
 
 
-@pytest.mark.parametrize("field", ["name", "folder", "test_command", "profiles"])
-def test_create_project_requires_every_field(engine, tmp_path, field):
+@pytest.mark.parametrize("field", ["folder", "test_command", "profiles"])
+def test_prj02_create_project_names_the_missing_field(engine, tmp_path, field):
+    """Only the folder is required; a value that cannot be filled in is refused on its own field."""
     args = {"name": "x", "folder": str(tmp_path), "test_command": "pytest", "profiles": ["coder"]}
     args[field] = [] if field == "profiles" else ""
-    with pytest.raises(RungError):
+    with pytest.raises(RungError) as exc:
         engine.create_project(**args)
+    assert exc.value.field == field
+    assert engine.projects() == []
 
 
 def test_duplicate_project_refused(engine, tmp_path):

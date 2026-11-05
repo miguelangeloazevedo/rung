@@ -1,0 +1,389 @@
+# pyright: reportAttributeAccessIssue=false
+"""Project and need lifecycle, onboarding, the sample project and the need read-out.
+
+A mixin of `Engine`: every write here still goes through `Engine._tx`, so the engine stays the
+single write path for the pane, the CLI and the agent tools.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+SAMPLE_NAME = "sample"
+SAMPLE_SRC = Path(__file__).resolve().parent / "sample" / "wordcount"
+SAMPLE_NEED = "Count the words in a text file"
+SAMPLE_REQ = "Count words separated by any whitespace"
+SAMPLE_SPEC = "Split on runs of spaces, tabs and newlines; an empty text has zero words"
+SAMPLE_TEST = "python3 -m unittest -q"
+
+CHECKLIST = (
+    ("write_need", "Write a need"),
+    ("approve_requirements", "Approve requirements"),
+    ("approve_specifications", "Approve specifications"),
+    ("approve_tests", "Approve tests"),
+    ("first_green", "First green test"),
+)
+
+
+def _j(v) -> str:
+    return json.dumps(v, separators=(",", ":"), sort_keys=True)
+
+
+class LifecycleMixin:
+    # ------------------------------------------------------------------ read only guard and log
+
+    def _check_writable(self, project: str, rid: str | None = None) -> None:
+        from .core import RungError
+        p = self._project_row(project)
+        if p["archived_at"] is not None:
+            raise RungError(f"{p['name']} is archived; restore it to change it", code="read_only")
+        if rid:
+            r = self._q1("SELECT * FROM rungs WHERE project_pk = ? AND rid = ?", (p["pk"], rid))
+            need = self._need_of(r) if r is not None else None
+            if need is not None and need["retired_at"] is not None:
+                raise RungError(f"{need['rid']} is retired; restore it to change it", code="read_only")
+
+    def _log(self, c, project_pk, kind: str, data: dict, by: str) -> None:
+        c.execute("INSERT INTO events(project_pk, kind, data, by_name, at) VALUES (?,?,?,?,?)",
+                  (project_pk, kind, _j(data), by, self.clock()))
+
+    def events(self, project: str | None = None) -> list[dict]:
+        if project is None:
+            rows = self._q("SELECT * FROM events WHERE project_pk IS NULL ORDER BY pk")
+        else:
+            rows = self._q("SELECT * FROM events WHERE project_pk = ? ORDER BY pk", (self._project_row(project)["pk"],))
+        return [{"kind": r["kind"], "data": json.loads(r["data"]), "by": r["by_name"], "at": r["at"]} for r in rows]
+
+    # ------------------------------------------------------------------ projects
+
+    def update_project(self, name: str, new_name: str | None = None, folder: str | None = None,
+                       test_command: str | None = None, profiles: list[str] | None = None, actor=None) -> dict:
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human changes a project", code="forbidden", status=403)
+        self._check_writable(name)
+        p = self._project_row(name)
+        before = {"name": p["name"], "folder": p["folder"], "test_command": p["test_command"],
+                  "profiles": json.loads(p["profiles"] or "[]")}
+        after = dict(before)
+        if new_name is not None:
+            after["name"] = new_name.strip()
+            self._check_name(after["name"], p["pk"])
+        if folder is not None:
+            after["folder"] = folder.strip()
+            self._check_folder(after["folder"])
+        if test_command is not None:
+            after["test_command"] = test_command.strip()
+            if not after["test_command"]:
+                raise RungError("test command is required", code="bad_request", status=400, field="test_command")
+        if profiles is not None:
+            after["profiles"] = [x for x in dict.fromkeys(profiles) if x]
+            if not after["profiles"]:
+                raise RungError("tick at least one profile", code="bad_request", status=400, field="profiles")
+        changed = {k: {"before": before[k], "after": after[k]} for k in before if before[k] != after[k]}
+        if not changed:
+            return self.project(name)
+        with self._tx() as c:
+            c.execute("UPDATE projects SET name=?, folder=?, test_command=?, profiles=?, last_activity=? WHERE pk=?",
+                      (after["name"], after["folder"], after["test_command"], _j(after["profiles"]), self.clock(),
+                       p["pk"]))
+            self._log(c, p["pk"], "project_changed", changed, actor.name)
+            if self.get_setting("last_project") == name:
+                c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_project', ?)", (_j(after["name"]),))
+        return self.project(after["name"])
+
+    def archive_project(self, name: str, actor=None) -> dict:
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human archives a project", code="forbidden", status=403)
+        p = self._project_row(name)
+        if p["archived_at"] is not None:
+            raise RungError(f"{name} is already archived")
+        if self._q1("SELECT 1 FROM runs WHERE project_pk=? AND status IN ('queued','running')", (p["pk"],)):
+            raise RungError(f"{name} has a running develop run; stop it first")
+        with self._tx() as c:
+            c.execute("UPDATE projects SET archived_at=? WHERE pk=?", (self.clock(), p["pk"]))
+            self._log(c, p["pk"], "project_archived", {}, actor.name)
+        return self.project(name)
+
+    def restore_project(self, name: str, actor=None) -> dict:
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human restores a project", code="forbidden", status=403)
+        p = self._project_row(name)
+        if p["archived_at"] is None:
+            raise RungError(f"{name} is not archived")
+        with self._tx() as c:
+            c.execute("UPDATE projects SET archived_at=NULL, last_activity=? WHERE pk=?", (self.clock(), p["pk"]))
+            self._log(c, p["pk"], "project_restored", {}, actor.name)
+        return self.project(name)
+
+    def delete_project(self, name: str, confirm: str, actor=None) -> dict:
+        """Remove the project's Rung data. The project folder is never touched."""
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human deletes a project", code="forbidden", status=403)
+        p = self._project_row(name)
+        if (confirm or "") != p["name"]:
+            raise RungError("type the project name to delete it", code="bad_request", status=400, field="confirm")
+        if self._q1("SELECT 1 FROM runs WHERE project_pk=? AND status IN ('queued','running')", (p["pk"],)):
+            raise RungError(f"{name} has a running develop run; stop it first")
+        with self._tx() as c:
+            c.execute("DELETE FROM projects WHERE pk=?", (p["pk"],))
+            self._log(c, None, "project_deleted", {"name": p["name"], "folder": p["folder"]}, actor.name)
+            if self.get_setting("last_project") == name:
+                c.execute("DELETE FROM settings WHERE key='last_project'")
+        return {"deleted": p["name"], "folder_kept": p["folder"], "current": self.current_project()}
+
+    # ------------------------------------------------------------------ retire and restore a need
+
+    def retire_need(self, project: str, rid: str, reason: str, actor=None) -> dict:
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human retires a need", code="forbidden", status=403)
+        self._check_writable(project)
+        n = self._rung_row(project, rid)
+        if n["kind"] != "need":
+            raise RungError(f"{rid} is not a need", code="bad_request", status=400)
+        if n["retired_at"] is not None:
+            raise RungError(f"{rid} is already retired")
+        reason = (reason or "").strip()
+        if not reason:
+            raise RungError("a reason is required", code="bad_request", status=400, field="reason")
+        sub = [n["pk"]] + [r["pk"] for r in self._descendants(n["pk"])]
+        marks = ",".join("?" * len(sub))
+        if self._q1(f"SELECT 1 FROM runs WHERE spec_pk IN ({marks}) AND status IN ('queued','running')", sub):
+            raise RungError(f"{rid} has a running develop run; stop it first")
+        with self._tx() as c:
+            c.execute("UPDATE rungs SET retired_at=?, retired_reason=?, retired_by=? WHERE pk=?",
+                      (self.clock(), reason[:500], actor.name, n["pk"]))
+            self._log(c, n["project_pk"], "need_retired", {"need": rid, "reason": reason[:500]}, actor.name)
+            self._touch_project(c, n["project_pk"])
+        return self.rung(project, rid)
+
+    def restore_need(self, project: str, rid: str, actor=None) -> dict:
+        """Statuses are never changed by retiring, so restoring brings back exactly what was there."""
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human restores a need", code="forbidden", status=403)
+        self._check_writable(project)
+        n = self._rung_row(project, rid)
+        if n["kind"] != "need" or n["retired_at"] is None:
+            raise RungError(f"{rid} is not a retired need")
+        with self._tx() as c:
+            c.execute("UPDATE rungs SET retired_at=NULL, retired_reason=NULL, retired_by=NULL WHERE pk=?", (n["pk"],))
+            self._log(c, n["project_pk"], "need_restored", {"need": rid}, actor.name)
+            self._touch_project(c, n["project_pk"])
+        return self.rung(project, rid)
+
+    # ------------------------------------------------------------------ onboarding
+
+    def onboarding(self) -> dict:
+        st = self.get_setting("onboarding")
+        any_project = self._q1("SELECT 1 FROM projects") is not None
+        return {"start": not any_project and not st.get("start_dismissed"),
+                "start_dismissed": bool(st.get("start_dismissed")),
+                "checklist_hidden": bool(st.get("checklist_hidden"))}
+
+    def set_onboarding(self, start_dismissed: bool | None = None, checklist_hidden: bool | None = None) -> dict:
+        st = self.get_setting("onboarding")
+        if start_dismissed is not None:
+            st["start_dismissed"] = bool(start_dismissed)
+        if checklist_hidden is not None:
+            st["checklist_hidden"] = bool(checklist_hidden)
+        self.set_setting("onboarding", st)
+        return self.onboarding()
+
+    def first_green(self, project: str) -> dict:
+        """The First green checklist, every tick computed from stored state."""
+        p = self._project_row(project)
+        gone = self._retired_pks(p["pk"])
+
+        def any_row(sql, args=()):
+            return any(r["pk"] not in gone for r in self._q(sql, (p["pk"], *args)))
+
+        done = {
+            "write_need": any_row("SELECT pk FROM rungs WHERE project_pk=? AND kind='need' AND status='approved'"),
+            "approve_requirements": any_row("SELECT pk FROM rungs WHERE project_pk=? AND kind='requirement' "
+                                            "AND status='approved'"),
+            "approve_specifications": any_row("SELECT pk FROM rungs WHERE project_pk=? AND kind='specification' "
+                                              "AND status='approved'"),
+            "approve_tests": any(r["pk"] not in gone and json.loads(r["data"] or "{}").get("tests_approved")
+                                 for r in self._q("SELECT pk, data FROM rungs WHERE project_pk=? AND kind='need'",
+                                                  (p["pk"],))),
+            "first_green": any_row("SELECT t.pk FROM executions e JOIN rungs t ON t.pk=e.test_pk WHERE t.project_pk=? "
+                                   "AND e.kind='command' AND e.status='pass'"),
+        }
+        items = [{"key": k, "label": label, "done": bool(done[k])} for k, label in CHECKLIST]
+        return {"items": items, "done": sum(1 for i in items if i["done"]), "total": len(items),
+                "hidden": bool(self.get_setting("onboarding").get("checklist_hidden"))}
+
+    # ------------------------------------------------------------------ sample project
+
+    def samples_dir(self) -> Path:
+        return Path(self.path).expanduser().resolve().parent / "samples"
+
+    def _is_sample(self, row) -> bool:
+        try:
+            folder = Path(row["folder"]).expanduser().resolve()
+        except (OSError, RuntimeError):
+            return False
+        return row["name"] == SAMPLE_NAME and folder.parent == self.samples_dir().resolve()
+
+    def create_sample(self, actor=None) -> dict:
+        """Copy the bundled synthetic sample into Rung's data folder and build its ladder through the
+        ordinary engine calls: one need, approved down to its command test, which has never run."""
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human creates the sample", code="forbidden", status=403)
+        if self._q1("SELECT 1 FROM projects WHERE name=?", (SAMPLE_NAME,)):
+            raise RungError(f"a project named {SAMPLE_NAME} exists", code="conflict", field="name")
+        folder = self.samples_dir() / SAMPLE_NAME
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(SAMPLE_SRC, folder, ignore=shutil.ignore_patterns("__pycache__"))
+        profiles = [p["name"] for p in self.profiles() if p["enabled"]] or ["default"]
+        self.create_project(SAMPLE_NAME, str(folder), SAMPLE_TEST, profiles)
+        self.create_need(SAMPLE_NAME, SAMPLE_NEED, actor)
+        self.add_requirement(SAMPLE_NAME, "N-1", SAMPLE_REQ, actor)
+        self.approve_requirements(SAMPLE_NAME, "N-1", actor)
+        self.write_spec(SAMPLE_NAME, "R-1", SAMPLE_SPEC, actor=actor, tags=["python", "tests"])
+        self.approve_drafted(SAMPLE_NAME, "N-1", actor)
+        self.add_test(SAMPLE_NAME, "S-1.1", {"type": "command", "command": SAMPLE_TEST}, actor, status="approved")
+        self.approve_tests(SAMPLE_NAME, "N-1", actor)
+        self.open_project(SAMPLE_NAME)
+        return self.project(SAMPLE_NAME)
+
+    def reset_sample(self, actor=None) -> dict:
+        """`hermes rung demo reset`: recreate the sample. Only a project that is the sample (its name and its
+        folder inside Rung's samples folder) is removed; any other project is never touched."""
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        row = self._q1("SELECT * FROM projects WHERE name=?", (SAMPLE_NAME,))
+        if row is not None:
+            if not self._is_sample(row):
+                raise RungError(f"the project named {SAMPLE_NAME} is not Rung's sample; rename it first",
+                                code="conflict", field="name")
+            self.delete_project(SAMPLE_NAME, SAMPLE_NAME, actor)
+        last = self.get_setting("last_project")
+        made = self.create_sample(actor)
+        if last and last != SAMPLE_NAME and self._q1("SELECT 1 FROM projects WHERE name=?", (last,)):
+            self.set_setting("last_project", last)
+        return made
+
+    # ------------------------------------------------------------------ need read-out
+
+    def readout(self, project: str, rid: str) -> dict:
+        """Intent, plan and delivered for one need, every value read from the store."""
+        from .core import RungError
+        n = self._rung_row(project, rid)
+        if n["kind"] != "need":
+            raise RungError(f"{rid} is not a need", code="bad_request", status=400)
+        plan, delivered = [], []
+        for req in self._children_rows(n["pk"]):
+            if req["status"] in ("proposed",):
+                continue
+            specs = []
+            proof, reasons = None, []
+            for s in self._children_rows(req["pk"]):
+                if s["status"] == "proposed":
+                    continue
+                tests = []
+                for t in self._children_rows(s["pk"]):
+                    if t["status"] == "proposed":
+                        continue
+                    data = json.loads(t["data"] or "{}")
+                    ttype = data.get("type", "command")
+                    result = self._test_result(t)
+                    seen = self._seen_failing(t)
+                    tests.append({"id": t["rid"], "type": ttype, "text": t["text"], "command": data.get("command", ""),
+                                  "status": t["status"], "result": result, "seen_failing": seen})
+                    if t["status"] not in ("approved", "stale"):
+                        continue
+                    counting = self._counting(t)
+                    if counting and counting[0]["status"] == "pass" and t["status"] == "approved" and ttype != "ai_judged":
+                        e = counting[0]
+                        cand = {"test": t["rid"], "n": e["n"], "status": "pass", "at": e["ended_at"] or e["started_at"],
+                                "carried_by": e["carried_by"], "seen_failing": seen, "kind": e["kind"]}
+                        if proof is None or cand["at"] > proof["at"]:
+                            proof = cand
+                    reasons.append({"stale": "stale", "fail": "failing", "error": "error", "pending": "manual pending",
+                                    "not_run": "not run", "running": "running"}.get(result, ""))
+                specs.append({"id": s["rid"], "text": s["text"], "status": s["status"], "tests": tests})
+            plan.append({"id": req["rid"], "text": req["text"], "status": req["status"], "specifications": specs})
+            coverage = self._req_coverage(req)
+            row = {"id": req["rid"], "text": req["text"], "coverage": coverage}
+            if coverage == "covered" and proof is not None:
+                row.update({"proven": True, "proof": proof, "reason": ""})
+            else:
+                why = "stale" if coverage == "stale" else "not approved" if coverage == "draft" else next(
+                    (r for r in ("failing", "error", "manual pending", "running", "not run") if r in reasons),
+                    "no specification" if not specs else "not run")
+                row.update({"proven": False, "proof": None, "reason": why})
+            delivered.append(row)
+        return {
+            "project": self._project_row(n["project_pk"])["name"],
+            "need": {"id": n["rid"], "text": n["text"], "version": n["version"], "status": n["status"],
+                     "approved_by": n["approved_by"], "approved_at": n["approved_at"],
+                     "retired": n["retired_at"] is not None, "retired_reason": n["retired_reason"]},
+            "plan": plan,
+            "delivered": delivered,
+            "proven": sum(1 for d in delivered if d["proven"]),
+            "total": len(delivered),
+        }
+
+    def readout_markdown(self, project: str, rid: str) -> str:
+        r = self.readout(project, rid)
+        need = r["need"]
+
+        def seen(v):
+            return "" if v is None else (" · Seen failing" if v else " · Not seen failing")
+
+        out = [f"# {need['id']} read-out", "", f"Project: {r['project']}", "", "## Intent", "",
+               f"{need['text']}", "", f"Version {need['version']}"]
+        if need["retired"]:
+            out += ["", f"Retired: {need['retired_reason']}"]
+        out += ["", "## Plan", ""]
+        for req in r["plan"]:
+            out.append(f"- {req['id']} {req['text']} ({req['status']})")
+            for s in req["specifications"]:
+                out.append(f"  - {s['id']} {s['text']} ({s['status']})")
+                for t in s["tests"]:
+                    what = t["command"] if t["type"] != "manual" else t["text"]
+                    out.append(f"    - {t['id']} {t['type']}: {what} ({t['result'].replace('_', ' ')}){seen(t['seen_failing'])}")
+        out += ["", "## Delivered", "", f"{r['proven']} of {r['total']} requirements proven", ""]
+        for d in r["delivered"]:
+            if d["proven"]:
+                p = d["proof"]
+                out.append(f"- {d['id']} {d['text']}: proven by {p['test']} #{p['n']} pass, carried by "
+                           f"{p['carried_by']}, at {_stamp(p['at'])}{seen(p['seen_failing'])}")
+            else:
+                out.append(f"- {d['id']} {d['text']}: not proven, {d['reason']}")
+        return "\n".join(out).replace("\u2014", "-") + "\n"
+
+    def export_readout(self, project: str, rid: str) -> dict:
+        """Write the read-out to Rung's data folder (never the project folder) and return its path."""
+        text = self.readout_markdown(project, rid)
+        folder = Path(self.path).expanduser().resolve().parent / "exports"
+        folder.mkdir(parents=True, exist_ok=True)
+        safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in project)
+        path = folder / f"{safe}-{rid}.md"
+        path.write_text(text, encoding="utf-8")
+        return {"path": str(path), "markdown": text}
+
+
+def _stamp(ts) -> str:
+    import time
+    if not ts:
+        return ""
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))

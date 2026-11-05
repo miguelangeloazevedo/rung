@@ -80,4 +80,4 @@ def test_reconcile_marks_dead_runner(seeded):
     run = e.start_run("csvtidy", "S-2.1")
     e.set_run(run["id"], status="running", pid=999999)
     assert e.reconcile_runs(lambda pid: False) == [run["id"]]
-    assert e.run(run["id"])["status"] == "interrupted"
+    assert e.run(run["id"])["status"] == "unknown"

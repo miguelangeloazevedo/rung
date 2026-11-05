@@ -21,9 +21,9 @@ def test_state_and_create_project(engine, tmp_path):
     st, body = call(svc, "POST", "/projects", {"name": "csvtidy", "folder": str(tmp_path), "test_command": "pytest",
                                                 "profiles": ["coder"]})
     assert st == 200 and body["name"] == "csvtidy"
-    st, body = call(svc, "POST", "/projects", {"name": "", "folder": str(tmp_path), "test_command": "pytest",
-                                                "profiles": ["coder"]})
-    assert st == 400
+    st, body = call(svc, "POST", "/projects", {"name": "", "folder": str(tmp_path / "missing"),
+                                                "test_command": "pytest", "profiles": ["coder"]})
+    assert st == 400 and body["field"] == "folder"
     st, body = call(svc, "GET", "/nope")
     assert st == 404
 

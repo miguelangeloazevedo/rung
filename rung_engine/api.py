@@ -48,7 +48,10 @@ def handle(svc: Service, method: str, path: str, body: Any = None, human: Actor 
         except NotFound as exc:
             return 404, {"detail": str(exc), "code": exc.code}
         except RungError as exc:
-            return exc.status, {"detail": str(exc), "code": exc.code}
+            out = {"detail": str(exc), "code": exc.code}
+            if getattr(exc, "field", None):
+                out["field"] = exc.field
+            return exc.status, out
         except ApiError as exc:
             return exc.status, {"detail": exc.detail, "code": exc.code}
         except (KeyError, TypeError, ValueError) as exc:

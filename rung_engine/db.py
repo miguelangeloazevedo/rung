@@ -5,7 +5,22 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Columns added after schema 1, applied to older stores by `migrate`. New stores get them from SCHEMA.
+MIGRATIONS = {
+    2: [
+        ("projects", "archived_at", "REAL"),
+        ("rungs", "retired_at", "REAL"),
+        ("rungs", "retired_reason", "TEXT"),
+        ("rungs", "retired_by", "TEXT"),
+        ("attempts", "reason", "TEXT NOT NULL DEFAULT ''"),
+    ],
+}
+
+
+class StoreTooNew(RuntimeError):
+    pass
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -181,7 +196,18 @@ CREATE TABLE IF NOT EXISTS defects (
     UNIQUE (project_pk, did)
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    pk          INTEGER PRIMARY KEY,
+    project_pk  INTEGER REFERENCES projects(pk) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    data        TEXT NOT NULL DEFAULT '{}',
+    by_name     TEXT NOT NULL,
+    at          REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS rungs_parent ON rungs(parent_pk);
+CREATE INDEX IF NOT EXISTS executions_run ON executions(run_pk, attempt);
+CREATE INDEX IF NOT EXISTS rungs_status ON rungs(project_pk, status);
 CREATE INDEX IF NOT EXISTS rungs_project ON rungs(project_pk, kind);
 CREATE INDEX IF NOT EXISTS executions_test ON executions(test_pk, n);
 CREATE INDEX IF NOT EXISTS runs_status ON runs(status);
@@ -201,9 +227,34 @@ def connect(path: str | Path) -> sqlite3.Connection:
         pass
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
-    conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),)
-    )
+    conn.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')")
     conn.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('seq', '0')")
     conn.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('rev', '0')")
+    migrate(conn)
     return conn
+
+
+def schema_version(conn: sqlite3.Connection) -> int:
+    return int(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0])
+
+
+def migrate(conn: sqlite3.Connection) -> int:
+    """Bring a store up to SCHEMA_VERSION, one version per transaction. A store written by a newer
+    release is refused rather than guessed at. Every store, new or old, takes the same path."""
+    have = schema_version(conn)
+    if have > SCHEMA_VERSION:
+        conn.close()
+        raise StoreTooNew(f"the store is schema {have}; this Rung reads up to {SCHEMA_VERSION}")
+    for version in range(have + 1, SCHEMA_VERSION + 1):
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for table, column, decl in MIGRATIONS.get(version, []):
+                cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+                if column not in cols:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+            conn.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(version),))
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    return SCHEMA_VERSION
