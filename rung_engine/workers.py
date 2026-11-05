@@ -12,6 +12,7 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -74,20 +75,32 @@ class HermesWorker:
         argv = [self.hermes_bin, "-p", ctx.profile, "chat", "-Q", "-q", ctx.prompt, "--max-turns", str(self.max_turns)]
         shown = f"hermes -p {ctx.profile} chat -Q -q <prompt> --max-turns {self.max_turns}"
         proc = subprocess.Popen(argv, cwd=str(ctx.folder), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL, env=scrubbed_env(), start_new_session=True, text=True)
+                                stdin=subprocess.DEVNULL, env=scrubbed_env(), start_new_session=True, text=True,
+                                errors="replace", bufsize=1)
         out_lines: list[str] = []
+        lock = threading.Lock()
+
+        def pump():
+            # Blocking line reads on a thread; the loop below only polls. (A non-blocking pipe read through
+            # a text wrapper fails as soon as no output is buffered.)
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                with lock:
+                    out_lines.append(line)
+
+        reader = threading.Thread(target=pump, daemon=True)
+        reader.start()
         cancelled = False
-        assert proc.stdout is not None
-        os.set_blocking(proc.stdout.fileno(), False)
+        seen = 0
         while True:
-            chunk = proc.stdout.read()
-            if chunk:
-                out_lines.append(chunk)
+            with lock:
+                n = len(out_lines)
+                text = "".join(out_lines)[-20000:] if n != seen else None
+            if text is not None:
+                seen = n
                 if ctx.on_output:
-                    ctx.on_output("".join(out_lines)[-20000:])
+                    ctx.on_output(text)
             if proc.poll() is not None:
-                rest = proc.stdout.read() or ""
-                out_lines.append(rest)
                 break
             if (ctx.should_cancel and ctx.should_cancel()) or time.time() > ctx.deadline:
                 cancelled = bool(ctx.should_cancel and ctx.should_cancel())
@@ -95,9 +108,14 @@ class HermesWorker:
                     os.killpg(proc.pid, signal.SIGTERM)
                 except Exception:
                     proc.kill()
-                proc.wait(timeout=10)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait(timeout=10)
                 break
             time.sleep(0.3)
+        reader.join(timeout=5)
         return WorkerResult(commands=[shown], output="".join(out_lines)[-20000:], exit_code=proc.returncode,
                             cancelled=cancelled)
 
