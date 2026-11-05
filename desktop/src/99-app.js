@@ -35,6 +35,7 @@ function StatusChip() {
       type: 'button',
       className: cx('px-1.5 text-[11px] mono font-medium', n ? 'text-needs' : 'text-muted'),
       'data-testid': 'rung-status-chip',
+      'aria-live': 'polite',
       onClick: () => navigate('home')
     }, `Rung: ${n} needs you`))
 }

@@ -286,5 +286,5 @@ function Loading() {
 
 function ErrorLine({ text }) {
   if (!text) return null
-  return h('div', { className: 'text-xs text-fail', 'data-testid': 'error' }, text)
+  return h('div', { className: 'text-xs text-fail', 'data-testid': 'error', role: 'alert' }, text)
 }

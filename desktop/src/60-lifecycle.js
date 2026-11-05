@@ -43,7 +43,7 @@ function Field({ label, error, children }) {
   return h('div', 'flex flex-col gap-1.5',
     h('span', 'text-xs font-medium text-muted', label),
     children,
-    error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error' }, error) : null)
+    error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', role: 'alert' }, error) : null)
 }
 
 const INPUT = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'

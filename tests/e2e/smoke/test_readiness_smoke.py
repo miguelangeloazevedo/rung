@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import harness as H
 from support import seed
@@ -79,8 +80,9 @@ def test_res07_sec03_worst_case_data_breaks_no_view(rung, page):
     e = rung.engine
     folder = rung.work / "worstcase"
     folder.mkdir(parents=True)
-    # 20 needs x 50 rungs: well over 1,000 rows in the tree, plus one empty project and one with a single need.
-    seed.seed_large(e, folder, name="worstcase", needs=20, reqs=16, executions=1200, text=_weird)
+    # 20 needs x 52 rungs: 1,040 rows in the tree, plus one empty project and one with a single need.
+    big = seed.seed_large(e, folder, name="worstcase", needs=20, reqs=17, executions=1200, text=_weird)
+    assert big["rungs"] > 1000
     empty = rung.work / "empty"
     empty.mkdir()
     e.create_project(folder=str(empty), test_command="true")
@@ -92,9 +94,19 @@ def test_res07_sec03_worst_case_data_breaks_no_view(rung, page):
     H.open_rung(page)
     H.wait_view(page, "home")
     page.locator(".rung [data-testid=tile-needs-you]").wait_for()
+    # The 1,040-row home with its full rail renders within two seconds of opening it.
+    page.evaluate("window.__rungNavigate('projects')")
+    H.wait_view(page, "projects")
+    t0 = time.monotonic()
+    page.evaluate("window.__rungNavigate('home')")
+    H.wait_until(lambda: page.locator(".rung [data-rung]").count() >= big["rungs"], timeout=10, msg="full rail")
+    assert time.monotonic() - t0 < 2.0, time.monotonic() - t0
     broken = {}
     for project in ("worstcase", "one", "empty"):
         e.open_project(project)
+        page.evaluate("window.__rungNavigate('home')")
+        H.wait_until(lambda: page.locator(".rung [data-testid=project-name]").first.inner_text() == project,
+                     msg=f"project {project}")
         for view, params in VIEWS:
             if project != "worstcase" and view not in ("home", "projects", "settings"):
                 continue
@@ -118,9 +130,12 @@ def test_res07_sec03_worst_case_data_breaks_no_view(rung, page):
     assert not broken, broken
     # The markup is on screen as the text it is.
     e.open_project("one")
+    page.evaluate("window.__rungNavigate('home')")
+    H.wait_until(lambda: page.locator(".rung [data-testid=project-name]").first.inner_text() == "one", msg="project one")
     page.evaluate("window.__rungNavigate('rung', {rid: 'N-1'})")
     H.wait_view(page, "rung")
-    H.wait_until(lambda: MARKUP in page.locator(".rung [data-testid=need-title]").inner_text(), msg="markup as text")
+    title = page.locator(".rung [data-testid=need-title]")
+    H.wait_until(lambda: MARKUP in title.inner_text(), msg=f"markup as text in {page.locator('.rung').first.inner_text()[:300]!r}")
 
 
 def test_tst07_run_once_from_the_test_view_and_return(rung, csvtidy, page):
