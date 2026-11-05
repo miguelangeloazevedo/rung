@@ -503,7 +503,7 @@ function TestView({ project, r }) {
 }
 
 function ExecRow({ test, x }) {
-  const dead = x.invalidated
+  const dead = x.invalidated && x.status === 'pass'
   if (dead) {
     return h('div', { className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] line-through text-dim cursor-pointer', 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
       h('div', 'flex items-center gap-2', h('span', 'w-1.5 h-1.5 rounded-full bg-dim'), h('span', null, execLine(x))),

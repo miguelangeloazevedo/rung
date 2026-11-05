@@ -751,7 +751,7 @@ function ExecList({ test, execs, limit }) {
   if (!rows.length) return h('div', 'bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] text-dim', 'No executions yet')
   return h('div', 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]',
     ...rows.map(x => {
-      const dead = x.invalidated
+      const dead = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; earlier fails stay failed
       const t = dead ? 'dim' : x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'pending' ? 'needs' : 'dim'
       return h('div', {
         key: x.n,
@@ -2046,7 +2046,7 @@ function TestView({ project, r }) {
 }
 
 function ExecRow({ test, x }) {
-  const dead = x.invalidated
+  const dead = x.invalidated && x.status === 'pass'
   if (dead) {
     return h('div', { className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] line-through text-dim cursor-pointer', 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
       h('div', 'flex items-center gap-2', h('span', 'w-1.5 h-1.5 rounded-full bg-dim'), h('span', null, execLine(x))),
