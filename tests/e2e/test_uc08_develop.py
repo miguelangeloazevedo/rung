@@ -4,7 +4,7 @@ import harness as H
 from support import seed
 
 
-def test_develop_until_green(rung, csvtidy, page):
+def test_run01_run02_run03_run09_develop_until_green(rung, csvtidy, page):
     e = rung.engine
     seed.seed_merge(e, csvtidy, upto="develop")
     H.configure_stubs(e, csvtidy, worker_delay=3.0)

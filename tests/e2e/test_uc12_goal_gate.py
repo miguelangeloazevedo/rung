@@ -56,7 +56,7 @@ def count(page, needle) -> int:
     return transcript(page).lower().count(needle.lower())
 
 
-def test_goal_gate(rung, csvtidy, page):
+def test_gte01_gte02_gte03_gte04_goal_gate(rung, csvtidy, page):
     e = rung.engine
     seed.seed_csvtidy(e, csvtidy)
     e.open_project("csvtidy")

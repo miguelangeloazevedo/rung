@@ -6,7 +6,7 @@ import harness as H
 from support import seed
 
 
-def test_failed_run(rung, csvtidy, page):
+def test_exe01_exe02_exe03_failed_run(rung, csvtidy, page):
     e = rung.engine
     seed.seed_csvtidy(e, csvtidy)
     e.open_project("csvtidy")

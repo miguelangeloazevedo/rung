@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import posixpath
 import string
 import threading
 import time
@@ -891,6 +892,11 @@ class Engine(LifecycleMixin):
         else:
             d["command"] = (fields.get("command", d.get("command", "")) or "").strip()
             d["folder"] = (fields.get("folder", d.get("folder", ".")) or ".").strip()
+            norm = posixpath.normpath(d["folder"].replace("\\", "/"))
+            if posixpath.isabs(norm) or norm == ".." or norm.startswith("../") or d["folder"].startswith("~"):
+                raise RungError("the folder is inside the project folder, for example . or tests",
+                                code="bad_request", status=400, field="folder")
+            d["folder"] = norm
             d["pass_rule"] = fields.get("pass_rule", d.get("pass_rule", {"kind": "exit_code", "value": 0}))
             d["timeout"] = int(fields.get("timeout", d.get("timeout", settings_timeout)))
             d["output_limit"] = int(fields.get("output_limit", d.get("output_limit", settings_limit)))
@@ -1137,8 +1143,11 @@ class Engine(LifecycleMixin):
                 return True
             return bool(should_cancel and should_cancel())
 
+        root = Path(p["folder"]).expanduser()
         if not folder.is_dir():
             res_exit, res_out, status = None, f"folder not found: {folder}", "error"
+        elif not folder.resolve().is_relative_to(root.resolve()):
+            res_exit, res_out, status = None, f"the test folder is outside the project folder: {folder}", "error"
         else:
             res = run_command(data.get("command", ""), folder, timeout=data.get("timeout", 120),
                               output_limit=data.get("output_limit", 64000), on_output=push,

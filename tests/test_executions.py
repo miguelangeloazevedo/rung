@@ -60,7 +60,7 @@ def test_ai_judged_never_releases(seeded):
     assert not chk["ok"] and any("AI judged" in b for b in chk["blockers"])
 
 
-def test_cancel_running_execution(seeded):
+def test_exe06_cancel_running_execution(seeded):
     e = seeded
     e.add_test("csvtidy", "S-1.1", {"type": "command", "command": "sleep 5", "timeout": 30}, status="approved")
     import threading

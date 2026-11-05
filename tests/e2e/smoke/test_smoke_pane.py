@@ -52,7 +52,7 @@ def test_data_survives_restart(rung, csvtidy):
 
 
 @pytest.mark.parametrize("theme", THEMES, ids=lambda t: "-".join(t))
-def test_theme_status_colours_distinct(rung, csvtidy, theme):
+def test_res06_theme_status_colours_distinct(rung, csvtidy, theme):
     seed.seed_demo(rung.engine, csvtidy)
     with H.desktop(theme=theme) as page:
         H.open_rung(page)
@@ -129,7 +129,7 @@ def _alive(pid):
         return False
 
 
-def test_cancel_running_loop(rung, csvtidy, page):
+def test_run04_cancel_running_loop(rung, csvtidy, page):
     e, run_id = _start_slow_run(rung, csvtidy, page, delay=30.0)
     pid = e.run(run_id)["pid"]
     assert pid and _alive(pid)

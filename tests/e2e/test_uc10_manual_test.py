@@ -7,7 +7,7 @@ from rung_engine import HUMAN, Actor, RungError
 from support import seed
 
 
-def test_manual_test(rung, csvtidy, page):
+def test_man01_man02_man03_manual_test(rung, csvtidy, page):
     e = rung.engine
     seed.seed_csvtidy(e, csvtidy)
     e.open_project("csvtidy")

@@ -39,7 +39,7 @@ def parts(text):
     return {b.split()[0]: int(b.split()[1]) for b in bits[1:]}
 
 
-def test_configure_agents(rung, csvtidy, page):
+def test_agt04_agt05_agt06_configure_agents(rung, csvtidy, page):
     e = rung.engine
     seed.seed_merge(e, csvtidy, upto="develop")
     H.open_rung(page)

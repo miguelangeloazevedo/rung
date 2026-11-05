@@ -10,7 +10,7 @@ def _ago_ok(text, ts):
     return text.strip() != "" and ts is not None
 
 
-def test_pick_project(rung, page):
+def test_prj03_prj04_pick_project(rung, page):
     e = rung.engine
     seed.seed_csvtidy(e, H.copy_fixture("csvtidy", rung.work))
     seed.seed_notes_sync(e, H.copy_fixture("notes-sync", rung.work))

@@ -222,7 +222,7 @@ function TreeNeed({ n, sel, hl }) {
   return h('div', 'flex flex-col gap-1.5 text-xs',
     h('div', { className: 'flex items-start gap-2 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
-      h('div', 'flex flex-col',
+      h('div', 'flex flex-col min-w-0',
         h('span', 'font-semibold text-fg', n.id),
         h('span', 'text-[11px] text-muted leading-tight', n.text))),
     reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)

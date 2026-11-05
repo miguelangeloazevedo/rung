@@ -21,7 +21,7 @@ def menu_rows(page, spec):
     return out
 
 
-def test_pick_agent(rung, csvtidy, page):
+def test_agt01_agt02_agt03_pick_agent(rung, csvtidy, page):
     e = rung.engine
     seed.seed_merge(e, csvtidy, upto="develop")
     e.save_profiles([dict(p, enabled=p["name"] != "researcher") for p in seed.PROFILES])

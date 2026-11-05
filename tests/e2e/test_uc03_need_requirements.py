@@ -19,7 +19,7 @@ def strip_steps(page):
             for i in range(steps.count())]
 
 
-def test_need_and_requirements(rung, csvtidy, page):
+def test_ned01_ned02_req01_req02_req03_req04_req05_need_and_requirements(rung, csvtidy, page):
     e = rung.engine
     seed.seed_csvtidy(e, csvtidy)
     e.open_project("csvtidy")

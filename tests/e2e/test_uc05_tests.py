@@ -10,7 +10,7 @@ def row(page, tid):
     return page.locator(f".rung [data-test=\"{tid}\"]")
 
 
-def test_tests_step(rung, csvtidy, page):
+def test_tst01_tst02_tst03_tst04_tst05_tests_step(rung, csvtidy, page):
     e = rung.engine
     seed.seed_merge(e, csvtidy, upto="tests")
     H.open_rung(page)

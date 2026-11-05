@@ -58,7 +58,7 @@ def test_cannot_send_twice_or_when_locked(seeded, svc):
         e.start_run("csvtidy", "S-2.1")
 
 
-def test_runner_process_and_cancel(seeded, tmp_path):
+def test_run04_runner_process_and_cancel(seeded, tmp_path):
     e = seeded
     e.add_test("csvtidy", "S-1.1", {"type": "command", "command": "sleep 20", "timeout": 60}, status="approved")
     svc = Service(e, log_dir=tmp_path / "logs")
