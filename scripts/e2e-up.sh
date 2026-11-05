@@ -70,6 +70,30 @@ compression:
   enabled: false
 YAML
 
+# 1b. A `coder` profile in the isolated home: same stub model, Rung enabled, and its CLI sessions
+# carry the todo and kanban toolsets (stage 3). It has no Rung store of its own, so its chats use
+# the root home's ladder (Round 8 of decisions.md).
+CODER="$HOME_DIR/profiles/coder"
+mkdir -p "$CODER/plugins"
+ln -sfn "$R" "$CODER/plugins/rung"
+cat > "$CODER/config.yaml" <<YAML
+model:
+  default: rung-stub
+  provider: custom
+  base_url: http://127.0.0.1:$STUB_PORT/v1
+  api_key: stub
+  context_length: 200000
+plugins:
+  enabled:
+    - rung
+platform_toolsets:
+  cli: [todo, kanban, terminal, file, rung]
+agent:
+  max_turns: 6
+compression:
+  enabled: false
+YAML
+
 # 2. Stub chat model.
 if ! curl -s -m 2 "http://127.0.0.1:$STUB_PORT/v1/models" >/dev/null; then
   nohup "$R/.venv/bin/python" "$R/tests/e2e/stub_model.py" --port "$STUB_PORT" >"$LOGS/stub-model.log" 2>&1 &

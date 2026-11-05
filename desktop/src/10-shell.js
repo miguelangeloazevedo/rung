@@ -107,6 +107,7 @@ function Header({ project, right, ro }) {
         onClick: () => navigate('projects')
       }, project)),
     h('div', 'flex items-center gap-2',
+      h(DockToggle),
       ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
       right === undefined && !ro
         ? h('button', {
@@ -115,6 +116,15 @@ function Header({ project, right, ro }) {
           onClick: () => navigate('need-new')
         }, 'New need')
         : ro ? null : right))
+}
+
+function DockToggle() {
+  const open = useValue($dockOpen)
+  return h('button', {
+    type: 'button', 'aria-pressed': open ? 'true' : 'false', 'data-testid': 'dock-toggle',
+    className: cx('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border', open ? 'bg-needs/10 text-needs border-needs/30' : 'bg-card border-line text-muted hover:text-fg'),
+    onClick: () => setDock(!open)
+  }, 'Dock')
 }
 
 function Tile({ label, value, of, t, hot, testid }) {
@@ -156,11 +166,11 @@ function Strip({ current, reached, need, done: doneList }) {
     const done = doneList ? !!doneList[i] && i !== current : i < current && i <= reached
     const on = i === current
     const locked = i > reached
-    if (i > 0) kids.push(h('div', { key: 'l' + i, className: cx('flex-1 h-[1px] mx-3', i <= Math.min(current, reached) ? 'bg-pass' : 'bg-line') }))
+    if (i > 0) kids.push(h('div', { key: 'l' + i, className: cx('flex-1 h-[1px] mx-2 min-w-2', i <= Math.min(current, reached) ? 'bg-pass' : 'bg-line') }))
     kids.push(h('div', {
       key: 's' + i,
-      className: cx('flex items-center gap-2', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
-      'data-step': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
+      className: cx('flex items-center gap-2 shrink-0 rs-step', on && 'rs-on', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
+      'data-step': name, title: name, 'aria-label': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
       onClick: () => {
         if (locked) return
         if (i === 0) navigate(need ? 'rung' : 'need-new', need ? { rid: need } : null)
@@ -172,7 +182,7 @@ function Strip({ current, reached, need, done: doneList }) {
       : on
         ? h('span', 'w-5 h-5 rounded-full border-2 border-needs bg-needs/10 text-needs flex items-center justify-center text-[10px] font-bold', String(i + 1))
         : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
-    h('span', { className: cx('text-xs', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
+    h('span', { className: cx('text-xs whitespace-nowrap rs-label', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
   })
   return h('div', { className: 'flex items-center justify-between bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
 }
@@ -183,7 +193,7 @@ function TreeTest({ n, sel }) {
   const t = tone(n)
   return h('div', {
     className: 'pl-3 ml-0.5 py-1 border-l border-line flex items-center gap-1.5 cursor-pointer',
-    'data-rung': n.id,
+    'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n),
     onClick: () => navigate('rung', { rid: n.id })
   },
   h(Dot, { t }),
@@ -196,7 +206,7 @@ function TreeSpec({ n, sel, hl }) {
   const tests = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
-    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -208,7 +218,7 @@ function TreeReq({ n, sel, hl }) {
   const t = tone(n)
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
-    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -238,7 +248,7 @@ function Allocation({ alloc }) {
       h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', `Allocation: ${alloc.spec}`),
       h('span', 'text-[11px] mono text-needs', lead)),
     alloc.human_only
-      ? h('div', 'text-[11px] text-muted', 'Manual tests only: a person carries this')
+      ? h('div', 'flex flex-col gap-2', h('div', 'text-[11px] text-muted', alloc.human_only_reason === 'marked' ? 'Human only' : 'Manual tests only: a person carries this'))
       : h('div', 'flex flex-col gap-2.5',
         ...rows.map((r, i) => i === 0
           ? h('div', { key: r.profile, className: 'flex flex-col gap-1 bg-btn p-2.5 rounded-[6px] border border-line', 'data-alloc': r.profile },
@@ -254,7 +264,8 @@ function Allocation({ alloc }) {
               h('span', 'text-muted', r.profile),
               h('span', 'text-muted mono', String(r.score))),
             h('div', 'w-full h-1 bg-well rounded-full overflow-hidden mt-0.5',
-              h('div', { className: 'h-full bg-dim rounded-full', style: { width: `${Math.min(100, r.score)}%` } }))))))
+              h('div', { className: 'h-full bg-dim rounded-full', style: { width: `${Math.min(100, r.score)}%` } }))))),
+    h(ExcludedList, { excluded: alloc.excluded, testid: 'rail-excluded' }))
 }
 
 function Rail({ tree, alloc, sel, retired }) {

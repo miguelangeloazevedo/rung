@@ -167,9 +167,10 @@ function Home({ project }) {
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing needs you'),
       proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro }))) : null),
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'running' },
-      h(SectionTitle, { dot: (d.running || []).length ? 'needs' : 'dim' }, 'Running'),
-      (d.running || []).length || (d.running_tests || []).length
+      h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length ? 'needs' : 'dim' }, 'Running'),
+      (d.running || []).length || (d.running_tests || []).length || (d.claims || []).length
         ? frag(...d.running.map(r => h(RunningRow, { key: r.id, run: r })),
+          ...(d.claims || []).map(c => h(ClaimRow, { key: 'c' + c.id, c })),
           ...(d.running_tests || []).map(x => h(Card, { key: x.test + x.n, className: 'p-3 flex items-center justify-between text-xs', onClick: () => navigate('exec', { test: x.test, n: x.n }) },
             h('span', 'text-fg mono', `${x.test} · execution #${x.n} · running ${dur(Date.now() / 1000 - x.started_at)}`),
             h('span', 'text-[11px] text-needs font-medium', 'in progress'))))
@@ -326,6 +327,24 @@ function Toggle({ on, onChange, testid, label }) {
   }, h('div', { className: cx('w-3 h-3 rounded-full', on ? 'bg-card' : 'bg-muted') }))
 }
 
+function SettingsExclusions({ project }) {
+  const q = useApi(project ? `/projects/${encodeURIComponent(project)}/exclusions` : null)
+  const d = q.data
+  if (!d) return null
+  const rows = Object.entries(d.profiles || {})
+  return h('section', { className: 'flex flex-col gap-3', 'data-testid': 'settings-exclusions' },
+    h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', `Excluded in ${d.project}`),
+    h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
+      ...rows.map(([name, list]) => h('div', { key: name, className: 'flex items-start justify-between gap-4 px-4 py-2.5 text-xs', 'data-profile': name },
+        h('span', 'mono text-fg font-medium shrink-0', name),
+        list.length
+          ? h('div', 'flex flex-col gap-1 items-end min-w-0',
+            ...list.map(x => h('div', { key: x.spec, className: 'flex items-center gap-2 min-w-0', 'data-excluded-spec': x.spec },
+              h('span', 'mono text-fg shrink-0', x.spec),
+              h('span', { className: 'text-muted truncate', title: x.reason, 'data-reason': x.reason }, x.reason))))
+          : h('span', 'text-dim', 'none')))))
+}
+
 function Settings({ project }) {
   const q = useApi('/settings')
   const onb = (useApi('/state').data || {}).onboarding
@@ -346,7 +365,7 @@ function Settings({ project }) {
     const kb = parseInt(String(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000)).replace(/[^\d]/g, ''), 10)
     const res = await post('/settings', {
       settings: { test_timeout: timeout || 120, output_limit: (kb || 64) * 1000, colours: s.colours },
-      profiles: draft.profiles.map(p => ({ ...p, cost: parseInt(p.cost, 10) || 0, max_runs: parseInt(p.max_runs, 10) || 1 }))
+      profiles: draft.profiles.map(p => ({ ...p, cost: parseInt(p.cost, 10) || 0, max_runs: parseInt(p.max_runs, 10) || 1, at_once: parseInt(p.at_once, 10) || 0 }))
     })
     if (!res.ok) return setErr(res.error)
     $colours.set(res.data.settings.colours)
@@ -368,15 +387,17 @@ function Settings({ project }) {
         h('table', 'w-full text-left border-collapse',
           h('thead', 'border-b border-line text-[11px] uppercase tracking-wider text-muted font-semibold bg-well/50',
             h('tr', null,
-              h('th', 'px-4 py-2.5 font-semibold', 'Profile'),
-              h('th', 'px-4 py-2.5 font-semibold', 'Tags'),
-              h('th', 'px-4 py-2.5 font-semibold w-24', 'Cost'),
-              h('th', 'px-4 py-2.5 font-semibold w-28', 'Max runs'),
-              h('th', 'px-4 py-2.5 font-semibold w-24 text-right', 'Enabled'))),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Profile'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Tags'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Cost'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap min-w-40', 'Tools'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Max runs'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'At once'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24 text-right', 'Enabled'))),
           h('tbody', 'text-xs divide-y divide-line',
             ...draft.profiles.map((p, i) => h('tr', { key: p.name, 'data-profile': p.name },
-              h('td', 'px-4 py-2.5 font-medium text-fg mono', p.name),
-              h('td', 'px-4 py-2.5',
+              h('td', 'px-3 py-2.5 font-medium text-fg mono whitespace-nowrap', p.name),
+              h('td', 'px-3 py-2.5',
                 h('div', 'flex items-center gap-1.5 flex-wrap',
                   ...p.labels.map(l => h('span', { key: l, className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-btn border border-line text-fg text-[11px]', 'data-label': l },
                     l, h('span', { className: 'text-muted cursor-pointer', 'aria-label': `Remove ${l}`, 'data-remove': l, onClick: () => setProf(i, { labels: p.labels.filter(x => x !== l) }) }, '×'))),
@@ -395,9 +416,16 @@ function Settings({ project }) {
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
-              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-4 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
+              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h(ChipList, {
+                items: p.tools || [], testid: 'tools', attr: 'data-tool', addLabel: `Add a tool to ${p.name}`,
+                onRemove: t => setProf(i, { tools: (p.tools || []).filter(x => x !== t) }),
+                onAdd: t => setProf(i, { tools: [...(p.tools || []), t] })
+              })),
+              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
+              h('td', 'px-3 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
+    project ? h(SettingsExclusions, { project }) : null,
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Status colours'),
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',

@@ -8,6 +8,10 @@ can call Rung tools without any paid model. Rules, on the last user message:
 - anything after a tool result               -> a short summary of the result
 - title requests                             -> the first words of the user message
 - goal judge requests                        -> {"done": true, ...}
+- "claim rung S-2.1" / "report rung S-2.1"   -> rung_claim / rung_report
+- "todo add t1: <text>" / "todo finish t2: <text>" -> todo_list, pending / completed (merge)
+- "todo done t1"                             -> todo_list completing t1 by id only (empty content)
+- "todo show", "kanban complete", "rung status" -> todo_list read, kanban_complete, rung_status
 - a user message containing "slowly"         -> "Working on it." after 8 seconds
 - anything else                              -> "OK."
 
@@ -71,6 +75,36 @@ def decide(body: dict) -> dict:
         call = _call(tools, "rung_run_tests", {"spec": m.group(1)})
         if call:
             return call
+    # Stage 3: claims, report, and the completion calls the done hook watches.
+    m = re.search(r"\b(claim|report) rung (S-\d+\.\d+)", last_user, re.I)
+    if m:
+        call = _call(tools, "rung_" + m.group(1).lower(), {"spec": m.group(2)})
+        if call:
+            return call
+    m = re.search(r"\btodo (add|finish) (\w+): (.+)", last_user, re.I)
+    if m:
+        status = "pending" if m.group(1).lower() == "add" else "completed"
+        call = _call(tools, "todo_list", {"todos": [{"id": m.group(2), "content": m.group(3).strip().splitlines()[0],
+                                                     "status": status}], "merge": True})
+        if call:
+            return call
+    m = re.search(r"\btodo done (\w+)\b", last_user, re.I)
+    if m:
+        call = _call(tools, "todo_list", {"todos": [{"id": m.group(1), "content": "", "status": "completed"}], "merge": True})
+        if call:
+            return call
+    if re.search(r"\btodo show\b", low):
+        call = _call(tools, "todo_list", {})
+        if call:
+            return call
+    if re.search(r"\bkanban complete\b", low):
+        call = _call(tools, "kanban_complete", {"summary": "Finished the date parsing work"})
+        if call:
+            return call
+    if re.search(r"\brung status\b", low):
+        call = _call(tools, "rung_status", {})
+        if call:
+            return call
     if "slowly" in low:
         # A goal turn that takes a while, so a goal control (`/goal gate add`) can arrive mid-turn.
         time.sleep(SLOW_SECONDS)
@@ -114,6 +148,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.rstrip("/").endswith("/models"):
             return self._json(200, {"object": "list", "data": [
                 {"id": "rung-stub", "object": "model", "owned_by": "rung", "context_length": 200000}]})
+        if self.path.rstrip("/").endswith("/count"):
+            return self._json(200, {"count": len(LOG)})
         if self.path.rstrip("/").endswith("/log"):
             return self._json(200, LOG[-50:])
         return self._json(200, {"ok": True})

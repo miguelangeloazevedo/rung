@@ -2,7 +2,7 @@
 import {
   host, atom, useValue, useQuery, queryClient, useTheme,
   hexToOklch, oklchToHex, maxChroma, hueDelta, contrastRatio, readableOn,
-  ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS
+  ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS, PANES_AREA, PALETTE_AREA
 } from '@hermes/plugin-sdk'
 import * as React from 'react'
 

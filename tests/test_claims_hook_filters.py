@@ -440,3 +440,72 @@ def test_alc10_specifications_of_a_goal2_store_require_nothing(seeded):
     sug = seeded.suggest("csvtidy", "S-2.1")
     assert sug["required_tools"] == [] and sug["independent"] is False and sug["marked_human_only"] is False
     assert sug["excluded"] == []
+
+
+def test_clm01_a_profile_without_a_store_claims_in_its_root_ladder(tmp_path, monkeypatch):
+    from rung_engine import host
+    root = tmp_path / "home"
+    coder_home = root / "profiles" / "coder"
+    (root / "plugin-data" / "rung").mkdir(parents=True)
+    coder_home.mkdir(parents=True)
+    shared = tmp_path / "elsewhere" / "rung.db"
+    (root / "plugin-data" / "rung" / "store").write_text(str(shared) + "\n")
+    monkeypatch.delenv("RUNG_STORE", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(coder_home))
+    monkeypatch.setattr(host, "hermes_home", lambda: coder_home)
+    monkeypatch.setattr(host, "_default_store", lambda: coder_home / "plugin-data" / "rung" / "rung.db")
+    assert host.store_path() == shared
+    # the root without a pointer: its own store, when there is one
+    (root / "plugin-data" / "rung" / "store").unlink()
+    assert host.store_path() == coder_home / "plugin-data" / "rung" / "rung.db"
+    (root / "plugin-data" / "rung" / "rung.db").write_bytes(b"")
+    assert host.store_path() == root / "plugin-data" / "rung" / "rung.db"
+    # a profile with its own store keeps it
+    own = coder_home / "plugin-data" / "rung"
+    own.mkdir(parents=True)
+    (own / "rung.db").write_bytes(b"")
+    assert host.store_path() == own / "rung.db"
+    # the root home itself is never redirected
+    monkeypatch.setattr(host, "hermes_home", lambda: root)
+    monkeypatch.setattr(host, "_default_store", lambda: root / "plugin-data" / "rung" / "rung.db")
+    assert host.store_path() == root / "plugin-data" / "rung" / "rung.db"
+
+
+def test_pne02_fresh_draft_of_an_approved_ai_spec_is_a_new_version(engine, csv_folder):
+    from rung_engine.service import Service
+    seed.seed_csvtidy(engine, csv_folder, with_history=False)
+    e = engine
+    e.set_setting("drafting", {"kind": "stub", "delay": 0.0, "profile": "coder"})
+    svc = Service(e, inline_runs=True)
+    # A person-written approved specification is edited, never redrafted.
+    with pytest.raises(RungError, match="written by you"):
+        e.mark_drafting("csvtidy", "S-2.1")
+    # R-2 switched to AI derives: S-2.1 can be redrafted.
+    e.approve_requirements("csvtidy", "N-1")
+    svc.set_authoring("csvtidy", "R-2", "ai", wait=True)
+    before = e.rung("csvtidy", "S-2.1")
+    assert before["status"] == "approved"
+    marked = svc.regenerate("csvtidy", "S-2.1")
+    assert marked["draft_state"] == "drafting" and marked["status"] == "draft"
+    assert marked["version"] == before["version"] + 1
+    svc.wait_idle()
+    after = e.rung("csvtidy", "S-2.1")
+    assert after["draft_state"] == "drafted" and after["drafted_by"] == "coder" and after["status"] == "draft"
+    hist = e.history("csvtidy", "S-2.1")
+    assert [v["version"] for v in hist][-2:] == [before["version"], before["version"] + 1]
+    assert hist[-2]["text"] == before["text"]
+    if after["text"] != before["text"]:
+        # approved text changed: the change is recorded and earlier results of its tests stop counting
+        ch = e.changes("csvtidy", "S-2.1")[0]
+        assert ch["before"] == before["text"] and ch["after"] == after["text"]
+        assert e.rung("csvtidy", "T-2.1a")["invalidated_by"] == "S-2.1 redrafted"
+    # Approving the fresh draft makes the coder its author (independence, ALC-04).
+    e.approve("csvtidy", "S-2.1")
+    sug = e.suggest("csvtidy", "S-2.1")
+    e.set_allocation("csvtidy", "S-2.1", independent=True)
+    sug = e.suggest("csvtidy", "S-2.1")
+    assert {"profile": "coder", "reason": "author of S-2.1"} in [{"profile": x["profile"], "reason": x["reason"]} for x in sug["excluded"]]
+    # Still drafting cannot be asked twice.
+    e.mark_drafting("csvtidy", "S-2.1")
+    with pytest.raises(RungError, match="still drafting"):
+        e.mark_drafting("csvtidy", "S-2.1")

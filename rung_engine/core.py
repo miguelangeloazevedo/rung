@@ -864,18 +864,46 @@ class Engine(LifecycleMixin, ClaimsMixin):
         return self._rung_dict(self._rung_by_pk(spec_pk)) if spec_pk else None
 
     @writes()
+    def ai_derived(self, project: str, spec_rid: str) -> bool:
+        """An AI-derived specification: drafted by an agent, or under a requirement in AI derives mode."""
+        r = self._rung_row(project, spec_rid)
+        if r["kind"] != "specification":
+            return False
+        if _l(r["data"], {}).get("author_role") == "agent":
+            return True
+        req = self._rung_by_pk(r["parent_pk"]) if r["parent_pk"] else None
+        return bool(req) and _l(req["data"], {}).get("authoring") == "ai"
+
     def mark_drafting(self, project: str, spec_rid: str, actor: Actor = HUMAN) -> dict:
-        """Ask the drafting provider for a new draft of an unapproved AI-derived specification."""
+        """Ask the drafting provider for a new draft of an AI-derived specification (SPC-05). An open
+        draft is drafted again in place; an approved one gets a new version waiting for approval, and
+        its approved version stays in its history."""
         if not actor.is_human:
             raise RungError("only a human asks for a new draft", code="forbidden", status=403)
         r = self._rung_row(project, spec_rid)
-        if r["kind"] != "specification" or r["status"] not in ("draft", "stale"):
+        if r["kind"] != "specification" or r["status"] not in ("draft", "stale", "approved"):
             raise RungError(f"{spec_rid} is not an open draft", code="refused")
         data = _l(r["data"], {})
+        if data.get("draft_state") == "drafting":
+            raise RungError(f"{spec_rid} is still drafting", code="locked")
+        fresh = r["status"] == "approved"
+        if fresh and not self.ai_derived(project, spec_rid):
+            raise RungError(f"{spec_rid} is written by you; edit it instead", code="refused")
         data["draft_state"] = "drafting"
         data.pop("draft_error", None)
         with self._tx() as c:
-            c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(data), r["pk"]))
+            if fresh:
+                self._still_version(c, r)
+                data["fresh_from"] = r["version"]
+                version = r["version"] + 1
+                now = self.clock()
+                c.execute("INSERT INTO rung_versions(rung_pk, version, text, detail, data, at, by_name, by_kind) "
+                          "VALUES (?,?,?,?,?,?,?,?)", (r["pk"], version, r["text"], r["detail"], _j(data), now,
+                                                       actor.name, actor.kind))
+                c.execute("UPDATE rungs SET data=?, version=?, status='draft', approved_by=NULL, approved_at=NULL, "
+                          "updated_at=? WHERE pk=?", (_j(data), version, now, r["pk"]))
+            else:
+                c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(data), r["pk"]))
             self._touch_project(c, r["project_pk"])
         return self.rung(project, spec_rid)
 
@@ -888,12 +916,23 @@ class Engine(LifecycleMixin, ClaimsMixin):
         self._require_drafting(r)
         data = _l(r["data"], {})
         data.update({"draft_state": "drafted", "author_role": "agent", "drafted_by": drafted_by})
+        fresh_from = data.pop("fresh_from", None)
         if tags is not None:
             data["tags"] = list(tags)
         if required_tags is not None:
             data["required_tags"] = list(required_tags)
         now = self.clock()
         with self._tx() as c:
+            if fresh_from is not None and text.strip() != r["text"]:
+                # A fresh draft of an approved specification changes approved text: what hangs below
+                # goes stale and the change is recorded, as for an edit.
+                seq = self._next_seq(c)
+                stale_rids = self._mark_downstream_stale(c, r, seq, f"{r['rid']} redrafted")
+                c.execute(
+                    "INSERT INTO changes(project_pk, rung_pk, seq, before_text, after_text, before_detail, "
+                    "after_detail, from_version, to_version, stale, at, by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (r["project_pk"], r["pk"], seq, r["text"], text.strip(), r["detail"], (detail or "").strip(),
+                     fresh_from, r["version"], _j(stale_rids), now, drafted_by))
             c.execute("UPDATE rungs SET text=?, detail=?, data=?, author_kind='agent', author_name=?, updated_at=? "
                       "WHERE pk=?", (text.strip(), (detail or "").strip(), _j(data), drafted_by, now, r["pk"]))
             c.execute("UPDATE rung_versions SET text=?, detail=?, data=? WHERE rung_pk=? AND version=?",
@@ -1561,7 +1600,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
             "SELECT * FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NULL ORDER BY num", (p["pk"],))]
         return {"project": self.project(project), "tiles": self.tiles(project), "needs_you": self.needs_you(project),
                 "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs,
-                "claims": self.claims(project)}
+                "claims": [{**c, "check": self.check(project, c["spec"])} for c in self.claims(project)]}
 
     # ------------------------------------------------------------------ allocation and picks
 

@@ -103,3 +103,12 @@ Closes what Round 2 decided and goals 1 and 2 did not build. Spec: `docs/use-cas
 | Human only | A specification is human only when you mark it so or when every test under it is manual. No profile is offered; every profile is listed as excluded: `human only`. `Send`, pick and `rung_claim` refuse. |
 | Showing exclusions | Develop lists every excluded profile with its reason under the ranking. Settings shows, per profile, the specifications of the open project it is excluded from, each with its reason. The engine, the API, the CLI and the tools refuse an excluded profile with the same reason; nothing bypasses a filter. |
 | Pane coverage | Flows tested only below the pane get pane walk-throughs: revert a change, fresh draft, cancel an execution, cancel a run, project form field errors, saving project settings. |
+
+## Round 8: which ladder a profile's chat uses (6 Nov 2026)
+
+Settled during the stage 3 build; Round 7 assumed it without saying it. Each Hermes profile runs its own backend, and Rung's store follows the active home, so a chat as `coder` would otherwise open `coder`'s own empty ladder and could never claim the work of the ladder that lists `coder` as a carrier.
+
+| Topic | Decision |
+| --- | --- |
+| Carrier ladder | A profile home with no Rung store of its own (no `plugin-data/rung/store` pointer and no `rung.db`) uses its root home's ladder: the root's pointer, else the root's store. Its chats claim, report and check there, and the done hook reads it. A develop run started as `hermes -p <profile>` lands in the ladder that sent it the same way. |
+| Own ladder | A profile that has its own store keeps it; `RUNG_STORE` still overrides everything. Nothing is copied or moved between stores. |

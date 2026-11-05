@@ -47,7 +47,7 @@ export default {
     CTX = ctx
     const style = document.createElement('style')
     style.setAttribute('data-rung', 'css')
-    style.textContent = RUNG_CSS + '\n@keyframes rung-pulse{50%{opacity:.5}}@keyframes rung-spin{to{transform:rotate(360deg)}}' +
+    style.textContent = RUNG_CSS + DOCK_CSS + '\n@keyframes rung-pulse{50%{opacity:.5}}@keyframes rung-spin{to{transform:rotate(360deg)}}' +
       '\n.rung{color:var(--r-fg);font-family:var(--dt-font-sans, system-ui, sans-serif)}.rung *,.rung *::before,.rung *::after{box-sizing:border-box;border-color:var(--r-line)}' +
       '\n.rung button{font:inherit;background:none;border-style:solid;border-width:0;cursor:pointer;color:inherit}.rung input,.rung textarea,.rung select{font:inherit;color:inherit}' +
       '\n.rung h1,.rung h2,.rung h3,.rung p{margin:0}.rung table{border-spacing:0}.rung [data-locked="1"]{cursor:not-allowed}' +
@@ -56,13 +56,16 @@ export default {
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)
     window.__rungNavigate = navigate
-    ctx.onDispose(() => { delete window.__rungNavigate })
+    window.__rungDock = setDock
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungDock })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },
       { id: 'nav', area: SIDEBAR_NAV_AREA, data: { path: ROUTE, label: 'Rung', codicon: 'list-ordered' } },
-      { id: 'chip', area: STATUSBAR_AREAS.left, order: 140, render: () => h(StatusChip) }
+      { id: 'chip', area: STATUSBAR_AREAS.left, order: 140, render: () => h(StatusChip) },
+      { id: 'dock-toggle', area: PALETTE_AREA, data: { label: 'Rung dock', keywords: ['rung', 'dock', 'ladder'], detail: () => ($dockOpen.get() ? 'on' : 'off'), detailVariant: 'state', run: () => setDock(!$dockOpen.get()) } }
     ])
+    bindDock(ctx)
     let last = -1
     const tick = async () => {
       try {

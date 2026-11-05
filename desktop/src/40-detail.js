@@ -31,6 +31,8 @@ function RungView(props) {
   const { project, rid } = props
   const q = useRung(project, rid)
   const r = q.data
+  const needId = r && (r.kind === 'need' ? r.id : r.path && r.path[0] && r.path[0].id)
+  useEffect(() => { noteNeed(project, needId) }, [project, needId])
   if (q.error) return h(Page, { project }, h(ErrorLine, { text: errText(q.error) }))
   if (!r) return h(Page, { project, sel: rid }, h(Loading))
   const p = { ...props, r }
@@ -324,7 +326,10 @@ function SpecView({ project, r, ret, need }) {
         h(ErrorLine, { text: err }),
         h('div', 'flex items-center gap-2 pt-3 border-t border-line',
           h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runTests }, 'Run tests'),
-          h(Btn, { testid: 'reopen', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Reopen'))))
+          h(Btn, { testid: 'reopen', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Reopen'),
+          r.ai_derived ? h(Btn, { testid: 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
+      h(ClaimsSection, { project, r, onErr: setErr }),
+      h(CarrierSection, { project, r, onErr: setErr }))
     return h(Page, { project, sel: r.id }, body)
   }
   // Approved or stale, not released (spec-s21)
@@ -340,12 +345,18 @@ function SpecView({ project, r, ret, need }) {
       h('div', 'flex items-center gap-2 pt-1 border-t border-line',
         h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs mt-3', r.status !== 'stale' && 'opacity-40 cursor-not-allowed'), 'data-testid': 'approve', 'data-locked': r.status !== 'stale' ? '1' : undefined, onClick: () => r.status === 'stale' && act(`${P(project)}/rungs/${r.id}/approve`) }, 'Approve'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'run-tests', onClick: runTests }, 'Run tests'),
-        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
-        h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'))),
+        a.human_only ? null : h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
+        h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'),
+        r.status === 'approved' && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
-    a.human_only ? null : h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
+    h(ClaimsSection, { project, r, onErr: setErr }),
+    a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
+      h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+        h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
+        h('span', 'text-[11px] text-fg font-medium', 'You')),
+      h(ExcludedList, { excluded: a.excluded })) : h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
         h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
         h('a', { className: 'text-[11px] text-needs font-medium cursor-pointer', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
@@ -354,7 +365,9 @@ function SpecView({ project, r, ret, need }) {
           ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { agent: s.profile }) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
           : shown.map((s, i) => h(ScoreCard, { key: s.profile, s, first: i === 0 }))),
         a.pick ? h('div', { className: 'text-[11px] text-muted', 'data-testid': 'picked-by' }, `picked by ${a.pick.picked_by === 'you' ? 'you' : a.pick.picked_by}`) : null,
-        !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null)))
+        !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null,
+        h(ExcludedList, { excluded: a.excluded }))),
+    h(CarrierSection, { project, r, onErr: setErr }))
   return h(Page, { project, sel: r.id }, body)
 }
 

@@ -320,6 +320,7 @@ def _rung(svc, human, body, project, rid):
         r["allocation"] = e.suggest(project, rid)
         r["runs"] = e.runs(project, rid)
         r["claims"] = e.claims(project, rid, open_only=False)
+        r["ai_derived"] = e.ai_derived(project, rid)
         ok, why = e.develop_available(project, rid)
         r["develop"] = {"available": ok, "blocked_by": why or None}
     if r["kind"] == "test":

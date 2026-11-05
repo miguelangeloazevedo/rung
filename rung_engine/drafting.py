@@ -146,7 +146,10 @@ def make_drafter(settings: dict, project: dict, hermes_bin: str = "hermes") -> D
     d = settings.get("drafting") or {}
     if d.get("kind") == "profile" and d.get("profile"):
         return ProfileDrafter(d["profile"], hermes_bin=hermes_bin)
-    return StubDrafter.for_project(project, d.get("stub_file", ""), d.get("delay", 0), d.get("fail", ""))
+    stub = StubDrafter.for_project(project, d.get("stub_file", ""), d.get("delay", 0), d.get("fail", ""))
+    if d.get("profile"):
+        stub.profile = str(d["profile"])  # the stub stands in for that profile: drafts are attributed to it
+    return stub
 
 
 def pause(drafter: Drafter):

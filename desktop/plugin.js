@@ -3,7 +3,7 @@
 import {
   host, atom, useValue, useQuery, queryClient, useTheme,
   hexToOklch, oklchToHex, maxChroma, hueDelta, contrastRatio, readableOn,
-  ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS
+  ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS, PANES_AREA, PALETTE_AREA
 } from '@hermes/plugin-sdk'
 import * as React from 'react'
 
@@ -104,6 +104,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .italic{font-style:italic}
 .rung .items-baseline{align-items:baseline}
 .rung .items-center{align-items:center}
+.rung .items-end{align-items:flex-end}
 .rung .items-start{align-items:flex-start}
 .rung .justify-between{justify-content:space-between}
 .rung .justify-center{justify-content:center}
@@ -119,6 +120,8 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .min-h-\\[180px\\]{min-height:180px}
 .rung .min-h-\\[300px\\]{min-height:300px}
 .rung .min-w-0{min-width:0}
+.rung .min-w-2{min-width:8px}
+.rung .min-w-40{min-width:160px}
 .rung .min-w-\\[280px\\]{min-width:280px}
 .rung .ml-0\\.5{margin-left:2px}
 .rung .ml-1{margin-left:4px}
@@ -128,7 +131,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .mt-1\\.5{margin-top:6px}
 .rung .mt-3{margin-top:12px}
 .rung .mt-4{margin-top:16px}
-.rung .mx-3{margin-left:12px;margin-right:12px}
+.rung .mx-2{margin-left:8px;margin-right:8px}
 .rung .no-underline{text-decoration:none}
 .rung .opacity-40{opacity:0.4}
 .rung .opacity-80{opacity:0.8}
@@ -222,7 +225,6 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .w-2\\.5{width:10px}
 .rung .w-20{width:80px}
 .rung .w-24{width:96px}
-.rung .w-28{width:112px}
 .rung .w-3{width:12px}
 .rung .w-32{width:128px}
 .rung .w-4{width:16px}
@@ -656,6 +658,7 @@ function Header({ project, right, ro }) {
         onClick: () => navigate('projects')
       }, project)),
     h('div', 'flex items-center gap-2',
+      h(DockToggle),
       ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
       right === undefined && !ro
         ? h('button', {
@@ -664,6 +667,15 @@ function Header({ project, right, ro }) {
           onClick: () => navigate('need-new')
         }, 'New need')
         : ro ? null : right))
+}
+
+function DockToggle() {
+  const open = useValue($dockOpen)
+  return h('button', {
+    type: 'button', 'aria-pressed': open ? 'true' : 'false', 'data-testid': 'dock-toggle',
+    className: cx('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border', open ? 'bg-needs/10 text-needs border-needs/30' : 'bg-card border-line text-muted hover:text-fg'),
+    onClick: () => setDock(!open)
+  }, 'Dock')
 }
 
 function Tile({ label, value, of, t, hot, testid }) {
@@ -705,11 +717,11 @@ function Strip({ current, reached, need, done: doneList }) {
     const done = doneList ? !!doneList[i] && i !== current : i < current && i <= reached
     const on = i === current
     const locked = i > reached
-    if (i > 0) kids.push(h('div', { key: 'l' + i, className: cx('flex-1 h-[1px] mx-3', i <= Math.min(current, reached) ? 'bg-pass' : 'bg-line') }))
+    if (i > 0) kids.push(h('div', { key: 'l' + i, className: cx('flex-1 h-[1px] mx-2 min-w-2', i <= Math.min(current, reached) ? 'bg-pass' : 'bg-line') }))
     kids.push(h('div', {
       key: 's' + i,
-      className: cx('flex items-center gap-2', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
-      'data-step': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
+      className: cx('flex items-center gap-2 shrink-0 rs-step', on && 'rs-on', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
+      'data-step': name, title: name, 'aria-label': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
       onClick: () => {
         if (locked) return
         if (i === 0) navigate(need ? 'rung' : 'need-new', need ? { rid: need } : null)
@@ -721,7 +733,7 @@ function Strip({ current, reached, need, done: doneList }) {
       : on
         ? h('span', 'w-5 h-5 rounded-full border-2 border-needs bg-needs/10 text-needs flex items-center justify-center text-[10px] font-bold', String(i + 1))
         : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
-    h('span', { className: cx('text-xs', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
+    h('span', { className: cx('text-xs whitespace-nowrap rs-label', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
   })
   return h('div', { className: 'flex items-center justify-between bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
 }
@@ -732,7 +744,7 @@ function TreeTest({ n, sel }) {
   const t = tone(n)
   return h('div', {
     className: 'pl-3 ml-0.5 py-1 border-l border-line flex items-center gap-1.5 cursor-pointer',
-    'data-rung': n.id,
+    'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n),
     onClick: () => navigate('rung', { rid: n.id })
   },
   h(Dot, { t }),
@@ -745,7 +757,7 @@ function TreeSpec({ n, sel, hl }) {
   const tests = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
-    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -757,7 +769,7 @@ function TreeReq({ n, sel, hl }) {
   const t = tone(n)
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
-    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -787,7 +799,7 @@ function Allocation({ alloc }) {
       h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', `Allocation: ${alloc.spec}`),
       h('span', 'text-[11px] mono text-needs', lead)),
     alloc.human_only
-      ? h('div', 'text-[11px] text-muted', 'Manual tests only: a person carries this')
+      ? h('div', 'flex flex-col gap-2', h('div', 'text-[11px] text-muted', alloc.human_only_reason === 'marked' ? 'Human only' : 'Manual tests only: a person carries this'))
       : h('div', 'flex flex-col gap-2.5',
         ...rows.map((r, i) => i === 0
           ? h('div', { key: r.profile, className: 'flex flex-col gap-1 bg-btn p-2.5 rounded-[6px] border border-line', 'data-alloc': r.profile },
@@ -803,7 +815,8 @@ function Allocation({ alloc }) {
               h('span', 'text-muted', r.profile),
               h('span', 'text-muted mono', String(r.score))),
             h('div', 'w-full h-1 bg-well rounded-full overflow-hidden mt-0.5',
-              h('div', { className: 'h-full bg-dim rounded-full', style: { width: `${Math.min(100, r.score)}%` } }))))))
+              h('div', { className: 'h-full bg-dim rounded-full', style: { width: `${Math.min(100, r.score)}%` } }))))),
+    h(ExcludedList, { excluded: alloc.excluded, testid: 'rail-excluded' }))
 }
 
 function Rail({ tree, alloc, sel, retired }) {
@@ -1007,9 +1020,10 @@ function Home({ project }) {
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing needs you'),
       proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro }))) : null),
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'running' },
-      h(SectionTitle, { dot: (d.running || []).length ? 'needs' : 'dim' }, 'Running'),
-      (d.running || []).length || (d.running_tests || []).length
+      h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length ? 'needs' : 'dim' }, 'Running'),
+      (d.running || []).length || (d.running_tests || []).length || (d.claims || []).length
         ? frag(...d.running.map(r => h(RunningRow, { key: r.id, run: r })),
+          ...(d.claims || []).map(c => h(ClaimRow, { key: 'c' + c.id, c })),
           ...(d.running_tests || []).map(x => h(Card, { key: x.test + x.n, className: 'p-3 flex items-center justify-between text-xs', onClick: () => navigate('exec', { test: x.test, n: x.n }) },
             h('span', 'text-fg mono', `${x.test} · execution #${x.n} · running ${dur(Date.now() / 1000 - x.started_at)}`),
             h('span', 'text-[11px] text-needs font-medium', 'in progress'))))
@@ -1166,6 +1180,24 @@ function Toggle({ on, onChange, testid, label }) {
   }, h('div', { className: cx('w-3 h-3 rounded-full', on ? 'bg-card' : 'bg-muted') }))
 }
 
+function SettingsExclusions({ project }) {
+  const q = useApi(project ? `/projects/${encodeURIComponent(project)}/exclusions` : null)
+  const d = q.data
+  if (!d) return null
+  const rows = Object.entries(d.profiles || {})
+  return h('section', { className: 'flex flex-col gap-3', 'data-testid': 'settings-exclusions' },
+    h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', `Excluded in ${d.project}`),
+    h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
+      ...rows.map(([name, list]) => h('div', { key: name, className: 'flex items-start justify-between gap-4 px-4 py-2.5 text-xs', 'data-profile': name },
+        h('span', 'mono text-fg font-medium shrink-0', name),
+        list.length
+          ? h('div', 'flex flex-col gap-1 items-end min-w-0',
+            ...list.map(x => h('div', { key: x.spec, className: 'flex items-center gap-2 min-w-0', 'data-excluded-spec': x.spec },
+              h('span', 'mono text-fg shrink-0', x.spec),
+              h('span', { className: 'text-muted truncate', title: x.reason, 'data-reason': x.reason }, x.reason))))
+          : h('span', 'text-dim', 'none')))))
+}
+
 function Settings({ project }) {
   const q = useApi('/settings')
   const onb = (useApi('/state').data || {}).onboarding
@@ -1186,7 +1218,7 @@ function Settings({ project }) {
     const kb = parseInt(String(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000)).replace(/[^\d]/g, ''), 10)
     const res = await post('/settings', {
       settings: { test_timeout: timeout || 120, output_limit: (kb || 64) * 1000, colours: s.colours },
-      profiles: draft.profiles.map(p => ({ ...p, cost: parseInt(p.cost, 10) || 0, max_runs: parseInt(p.max_runs, 10) || 1 }))
+      profiles: draft.profiles.map(p => ({ ...p, cost: parseInt(p.cost, 10) || 0, max_runs: parseInt(p.max_runs, 10) || 1, at_once: parseInt(p.at_once, 10) || 0 }))
     })
     if (!res.ok) return setErr(res.error)
     $colours.set(res.data.settings.colours)
@@ -1208,15 +1240,17 @@ function Settings({ project }) {
         h('table', 'w-full text-left border-collapse',
           h('thead', 'border-b border-line text-[11px] uppercase tracking-wider text-muted font-semibold bg-well/50',
             h('tr', null,
-              h('th', 'px-4 py-2.5 font-semibold', 'Profile'),
-              h('th', 'px-4 py-2.5 font-semibold', 'Tags'),
-              h('th', 'px-4 py-2.5 font-semibold w-24', 'Cost'),
-              h('th', 'px-4 py-2.5 font-semibold w-28', 'Max runs'),
-              h('th', 'px-4 py-2.5 font-semibold w-24 text-right', 'Enabled'))),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Profile'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Tags'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Cost'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap min-w-40', 'Tools'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Max runs'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'At once'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24 text-right', 'Enabled'))),
           h('tbody', 'text-xs divide-y divide-line',
             ...draft.profiles.map((p, i) => h('tr', { key: p.name, 'data-profile': p.name },
-              h('td', 'px-4 py-2.5 font-medium text-fg mono', p.name),
-              h('td', 'px-4 py-2.5',
+              h('td', 'px-3 py-2.5 font-medium text-fg mono whitespace-nowrap', p.name),
+              h('td', 'px-3 py-2.5',
                 h('div', 'flex items-center gap-1.5 flex-wrap',
                   ...p.labels.map(l => h('span', { key: l, className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-btn border border-line text-fg text-[11px]', 'data-label': l },
                     l, h('span', { className: 'text-muted cursor-pointer', 'aria-label': `Remove ${l}`, 'data-remove': l, onClick: () => setProf(i, { labels: p.labels.filter(x => x !== l) }) }, '×'))),
@@ -1235,9 +1269,16 @@ function Settings({ project }) {
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
-              h('td', 'px-4 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-4 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
+              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h(ChipList, {
+                items: p.tools || [], testid: 'tools', attr: 'data-tool', addLabel: `Add a tool to ${p.name}`,
+                onRemove: t => setProf(i, { tools: (p.tools || []).filter(x => x !== t) }),
+                onAdd: t => setProf(i, { tools: [...(p.tools || []), t] })
+              })),
+              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
+              h('td', 'px-3 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
+    project ? h(SettingsExclusions, { project }) : null,
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Status colours'),
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
@@ -1416,6 +1457,7 @@ function SuggestRow({ text, mark, onAccept, onDismiss, well }) {
 // ------------------------------------------------------------------ build router
 
 function Build({ project, need, step }) {
+  useEffect(() => { noteNeed(project, need) }, [project, need])
   const flowQ = useFlow(project, need)
   const flow = flowQ.data
   const idx = { need: 0, reqs: 1, specs: 2, tests: 3, develop: 4 }[step] ?? 1
@@ -1669,7 +1711,8 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
         onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
       },
       h('span', 'mono text-fg', sg.profile),
-      h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null)
+      h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null,
+    (a.excluded || []).length ? h('div', 'col-span-5 pt-2', h(ExcludedList, { excluded: a.excluded })) : null)
 }
 
 let CTX_PROFILES = {}
@@ -1736,6 +1779,8 @@ function RungView(props) {
   const { project, rid } = props
   const q = useRung(project, rid)
   const r = q.data
+  const needId = r && (r.kind === 'need' ? r.id : r.path && r.path[0] && r.path[0].id)
+  useEffect(() => { noteNeed(project, needId) }, [project, needId])
   if (q.error) return h(Page, { project }, h(ErrorLine, { text: errText(q.error) }))
   if (!r) return h(Page, { project, sel: rid }, h(Loading))
   const p = { ...props, r }
@@ -2029,7 +2074,10 @@ function SpecView({ project, r, ret, need }) {
         h(ErrorLine, { text: err }),
         h('div', 'flex items-center gap-2 pt-3 border-t border-line',
           h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runTests }, 'Run tests'),
-          h(Btn, { testid: 'reopen', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Reopen'))))
+          h(Btn, { testid: 'reopen', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Reopen'),
+          r.ai_derived ? h(Btn, { testid: 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
+      h(ClaimsSection, { project, r, onErr: setErr }),
+      h(CarrierSection, { project, r, onErr: setErr }))
     return h(Page, { project, sel: r.id }, body)
   }
   // Approved or stale, not released (spec-s21)
@@ -2045,12 +2093,18 @@ function SpecView({ project, r, ret, need }) {
       h('div', 'flex items-center gap-2 pt-1 border-t border-line',
         h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs mt-3', r.status !== 'stale' && 'opacity-40 cursor-not-allowed'), 'data-testid': 'approve', 'data-locked': r.status !== 'stale' ? '1' : undefined, onClick: () => r.status === 'stale' && act(`${P(project)}/rungs/${r.id}/approve`) }, 'Approve'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'run-tests', onClick: runTests }, 'Run tests'),
-        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
-        h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'))),
+        a.human_only ? null : h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
+        h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'),
+        r.status === 'approved' && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
-    a.human_only ? null : h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
+    h(ClaimsSection, { project, r, onErr: setErr }),
+    a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
+      h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+        h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
+        h('span', 'text-[11px] text-fg font-medium', 'You')),
+      h(ExcludedList, { excluded: a.excluded })) : h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
         h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
         h('a', { className: 'text-[11px] text-needs font-medium cursor-pointer', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
@@ -2059,7 +2113,9 @@ function SpecView({ project, r, ret, need }) {
           ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { agent: s.profile }) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
           : shown.map((s, i) => h(ScoreCard, { key: s.profile, s, first: i === 0 }))),
         a.pick ? h('div', { className: 'text-[11px] text-muted', 'data-testid': 'picked-by' }, `picked by ${a.pick.picked_by === 'you' ? 'you' : a.pick.picked_by}`) : null,
-        !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null)))
+        !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null,
+        h(ExcludedList, { excluded: a.excluded }))),
+    h(CarrierSection, { project, r, onErr: setErr }))
   return h(Page, { project, sel: r.id }, body)
 }
 
@@ -2334,6 +2390,107 @@ function TestEdit({ project, test, spec, ret, need }) {
       f.type === 'manual' ? null : h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'run-once', onClick: runOnce }, 'Run once'),
       h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] text-muted text-xs font-medium', onClick: done }, 'Cancel')))
   return h(Page, { project, sel: t ? t.id : s.id }, body)
+}
+
+// Rung desktop pane: what a specification asks of its carrier, excluded profiles, claims.
+
+function ChipList({ items, onRemove, onAdd, testid, addLabel, attr }) {
+  const [adding, setAdding] = useState(false)
+  const [text, setText] = useState('')
+  const done = () => { setAdding(false); setText('') }
+  return h('div', { className: 'flex items-center gap-1.5 flex-wrap', 'data-testid': testid },
+    ...items.map(t => h('span', { key: t, className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-btn border border-line text-fg text-[11px] mono', [attr]: t },
+      t, onRemove ? h('button', { type: 'button', className: 'text-muted hover:text-fg', 'aria-label': `Remove ${t}`, 'data-remove': t, onClick: () => onRemove(t) }, '×') : null)),
+    onAdd
+      ? adding
+        ? h('input', {
+          autoFocus: true, className: 'w-24 bg-well border border-line rounded px-1.5 py-0.5 text-[11px] text-fg mono outline-none',
+          value: text, 'aria-label': addLabel, 'data-testid': testid + '-input',
+          onChange: e => setText(e.target.value),
+          onBlur: done,
+          onKeyDown: e => {
+            if (e.key === 'Enter') {
+              const v = text.trim()
+              if (v && !items.includes(v)) onAdd(v)
+              done()
+            }
+            if (e.key === 'Escape') done()
+          }
+        })
+        : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': addLabel, 'data-testid': testid + '-add', onClick: () => setAdding(true) }, '+')
+      : null)
+}
+
+function ExcludedList({ excluded, testid }) {
+  if (!excluded || !excluded.length) return null
+  return h('div', { className: 'flex flex-col gap-1', 'data-testid': testid || 'excluded' },
+    h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Excluded'),
+    ...excluded.map(x => h('div', { key: x.profile, className: 'flex items-center justify-between gap-3 text-[11px] min-w-0', 'data-excluded': x.profile },
+      h('span', 'mono text-fg shrink-0', x.profile),
+      h('span', { className: 'text-muted truncate', title: x.reason, 'data-reason': x.reason }, x.reason))))
+}
+
+function CarrierSection({ project, r, onErr }) {
+  const a = r.allocation || {}
+  const tools = a.required_tools || []
+  const set = async body => {
+    const x = await post(`${P(project)}/specs/${r.id}/allocation`, body)
+    onErr(x.ok ? '' : x.error)
+  }
+  const row = (label, ctl) => h('div', 'flex items-center justify-between gap-3 text-xs', h('span', 'text-fg font-medium', label), ctl)
+  return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carrier' },
+    h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carrier')),
+    row('Required tools', h(ChipList, {
+      items: tools, testid: 'required-tools', attr: 'data-required-tool', addLabel: `Add a required tool to ${r.id}`,
+      onRemove: t => set({ required_tools: tools.filter(x => x !== t) }),
+      onAdd: t => set({ required_tools: [...tools, t] })
+    })),
+    row('Independent carrier', h(Toggle, { on: !!a.independent, testid: 'independent', label: `${r.id} independent carrier`, onChange: v => set({ independent: v }) })),
+    row('Human only', h('div', 'flex items-center gap-2',
+      a.human_only_reason === 'all tests manual' ? h('span', 'text-[11px] text-muted', 'all tests manual') : null,
+      h(Toggle, { on: !!a.marked_human_only, testid: 'human-only', label: `${r.id} human only`, onChange: v => set({ human_only: v }) }))))
+}
+
+const CLAIM_WORD = { open: 'open', reported: 'reported', released: 'released' }
+
+function claimLine(c) {
+  if (c.status === 'reported') return `reported · ${(c.proof || []).join(', ')}`
+  if (c.status === 'released') return `released by ${c.closed_by || 'you'}`
+  return 'open'
+}
+
+function ClaimsSection({ project, r, onErr }) {
+  const claims = r.claims || []
+  if (!claims.length) return null
+  const open = claims.some(c => c.status === 'open')
+  const release = async () => {
+    const x = await post(`${P(project)}/specs/${r.id}/claims/release`, {})
+    onErr(x.ok ? '' : x.error)
+  }
+  return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'claims' },
+    h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Claims'),
+      open ? h(Btn, { kind: 'small', testid: 'release-claim', onClick: release }, 'Release') : null),
+    h('div', 'flex flex-col gap-2',
+      ...claims.slice().reverse().map(c => h('div', { key: c.id, className: 'bg-well p-2.5 rounded-[6px] border border-line2 flex items-center justify-between gap-3 text-[11px] min-w-0', 'data-claim': c.id, 'data-status': c.status },
+        h('div', 'flex flex-col gap-0.5 min-w-0',
+          h('span', { className: 'mono text-fg truncate', title: `${c.profile} · ${c.chat}` }, `${c.profile} · ${c.chat}`),
+          h('span', 'text-muted mono', `${clock(c.opened_at)}${c.closed_at ? ' to ' + clock(c.closed_at) : ''}`)),
+        h('span', { className: cx('font-medium shrink-0', c.status === 'open' ? 'text-needs' : c.status === 'reported' ? 'text-pass' : 'text-muted'), 'data-testid': 'claim-state' }, claimLine(c))))))
+}
+
+function blockingRung(chk) {
+  const m = String(((chk && chk.blockers) || [])[0] || '').match(/[NRST]-\d+(?:\.\d+)?[a-z]?/)
+  return m ? m[0] : ''
+}
+
+function ClaimRow({ c }) {
+  const blocked = c.check && !c.check.ok
+  return h(Card, { className: 'p-3 flex items-center justify-between gap-3 text-xs', testid: 'running-claim', onClick: () => navigate('rung', { rid: c.spec }) },
+    h('span', { className: 'text-fg mono truncate', title: `${c.spec} · ${c.profile} · ${c.chat}` }, `${c.spec} · ${c.profile} · ${c.chat}`),
+    h('span', { className: cx('text-[11px] font-medium shrink-0', blocked ? 'text-fail' : 'text-pass') },
+      blocked ? `claimed · blocked by ${blockingRung(c.check)}` : 'claimed · check passes'))
 }
 
 // Rung desktop pane: runs, attempts, executions, defects.
@@ -3108,6 +3265,269 @@ Object.assign(VIEWS, {
   'project-settings': ProjectSettings
 })
 
+// Rung desktop pane: the dock, a compact companion beside the chat (PANES_AREA, right, collapsible).
+// Shows Needs you, Running, the current need's
+// ladder with a need picker, and Open Rung. Same data, status colours and labels as the full page.
+
+const DOCK_PANE = 'dock'
+const DOCK_KEY = 'rung.dock'
+const LAST_NEED_KEY = 'rung.lastNeed'
+
+function readJSON(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || '') || fallback } catch (_) { return fallback }
+}
+
+const $dockOpen = atom(readJSON(DOCK_KEY, false) === true)
+const $lastNeed = atom(readJSON(LAST_NEED_KEY, {}))
+
+function noteNeed(project, need) {
+  if (!project || !need || !/^N-\d+$/.test(need)) return
+  const cur = $lastNeed.get()
+  if (cur[project] === need) return
+  const next = { ...cur, [project]: need }
+  $lastNeed.set(next)
+  try { localStorage.setItem(LAST_NEED_KEY, JSON.stringify(next)) } catch (_) { /* private mode */ }
+}
+
+// The label a rung carries on the full page, shared by the rail (as data-label) and the dock.
+function rungLabel(n) {
+  if (!n) return ''
+  if (n.kind === 'test') return n.status === 'stale' ? 'stale' : resultWord(n.result)
+  if (n.status === 'stale') return 'stale'
+  if (n.status === 'draft' || n.status === 'proposed') return n.status
+  if (n.kind === 'specification') {
+    if (n.released) return 'released'
+    if ((n.blockers || []).some(b => /failed/.test(b))) return 'failing'
+    return 'open'
+  }
+  if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'not covered'
+  return n.status || ''
+}
+
+function liveKids(n) {
+  return (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
+}
+
+function needOf(tree, rid) {
+  for (const n of tree || []) {
+    const stack = [n]
+    while (stack.length) {
+      const x = stack.pop()
+      if (x.id === rid) return n.id
+      stack.push(...(x.children || []))
+    }
+  }
+  return null
+}
+
+const ITEM_BADGE = { stale: 'stale', proposed: 'proposed', approval: 'pending', error: 'error', needs_input: 'needs_input' }
+
+function openItem(i) {
+  if (i.type === 'error') return navigate('exec', { test: i.id, n: i.n })
+  if (i.type === 'needs_input') return navigate('run', { run: i.run })
+  return navigate('rung', { rid: i.id })
+}
+
+function DockSection({ id, title, count, tone: t, children }) {
+  return h('section', { className: 'dk-sec', 'aria-labelledby': id, 'data-testid': 'dock-' + id.split('-')[1] },
+    h('h3', { id, className: 'dk-h' },
+      h(Dot, { t: t || 'dim' }), h('span', null, title),
+      count == null ? null : h('span', { className: 'dk-count mono', 'data-testid': 'dock-count' }, String(count))),
+    children)
+}
+
+function DockEmpty({ label, action, onAction }) {
+  return h('div', { className: 'dk-empty', 'data-testid': 'dock-empty' },
+    h('span', null, label),
+    action ? h('button', { type: 'button', className: 'dk-btn', onClick: onAction }, action) : null)
+}
+
+function DockNeedRow({ i, path }) {
+  const label = `${i.id} ${i.text || ''}`
+  const meta = i.type === 'approval' ? `#${i.n} recorded by ${i.recorder || 'you'}`
+    : i.type === 'error' ? `#${i.n} ${i.reason || ''}`.trim()
+      : i.type === 'proposed' && i.proposer ? `by ${i.proposer}${i.source_chat ? ' · ' + i.source_chat : ''}` : ''
+  return h('button', { type: 'button', className: 'dk-row', title: label, 'data-testid': 'dock-item', 'data-item': i.id, onClick: () => openItem(i) },
+    h('span', 'dk-row-top',
+      h('span', { className: cx('mono dk-id', i.type === 'proposed' ? 'text-needs' : 'text-fg') }, i.id),
+      h(Badge, { status: ITEM_BADGE[i.type] || i.type, small: true }),
+      path ? h('span', { className: 'dk-path mono truncate', title: path }, path) : null),
+    i.text ? h('span', { className: 'dk-text truncate', title: i.text }, i.text) : null,
+    meta ? h('span', { className: 'dk-meta mono truncate', title: meta }, meta) : null)
+}
+
+function DockRunRow({ run }) {
+  useTick(1000)
+  const last = run.attempts[run.attempts.length - 1]
+  const n = last ? last.n : 1
+  const secs = run.started_at ? Date.now() / 1000 - run.started_at : 0
+  const meta = `${run.profile} · attempt ${n} of ${run.max_attempts}`
+  return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => navigate('run', { run: run.id }) },
+    h('span', 'dk-row-top',
+      h('span', 'mono dk-id text-fg', run.spec),
+      h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'run'),
+      h('span', { className: 'dk-path mono', 'data-testid': 'dock-elapsed' }, dur(secs))),
+    h('span', { className: 'dk-meta mono truncate', title: meta }, meta),
+    h('span', { className: 'dk-bar', role: 'progressbar', 'aria-label': `${run.spec} attempts`, 'aria-valuemin': 0, 'aria-valuemax': run.max_attempts, 'aria-valuenow': n },
+      h('span', { style: { width: `${Math.round(100 * n / Math.max(1, run.max_attempts))}%` } })))
+}
+
+function DockClaimRow({ c }) {
+  useTick(15000)
+  const blocked = c.check && !c.check.ok
+  const meta = `${c.profile} · ${c.chat}`
+  return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => navigate('rung', { rid: c.spec }) },
+    h('span', 'dk-row-top',
+      h('span', 'mono dk-id text-fg', c.spec),
+      h('span', 'dk-chip', 'claimed'),
+      h('span', 'dk-path mono', ago(c.opened_at))),
+    h('span', { className: 'dk-meta mono truncate', title: meta }, meta),
+    h('span', 'dk-meta mono', 'check: ',
+      h('span', { className: blocked ? 'text-fail' : 'text-pass' }, blocked ? `blocked by ${blockingRung(c.check)}` : 'passes')))
+}
+
+function DockTree({ nodes, depth, cur }) {
+  return h('ul', { className: cx('dk-tr', depth && 'dk-tr-sub'), role: depth ? 'group' : 'tree', 'aria-label': depth ? undefined : 'Ladder' },
+    ...nodes.map(n => {
+      const kids = n.kind === 'test' ? [] : liveKids(n)
+      const t = tone(n)
+      const label = rungLabel(n)
+      return h('li', { key: n.id, role: 'treeitem', 'aria-expanded': kids.length ? 'true' : undefined },
+        h('button', {
+          type: 'button', className: cx('dk-tr-row', cur === n.id && 'dk-tr-cur'), title: `${n.id} ${n.text || ''}`.trim(),
+          'data-rung': n.id, 'data-tone': t, 'data-label': label, onClick: () => navigate('rung', { rid: n.id })
+        },
+        h(Dot, { t }),
+        h('span', { className: cx('mono dk-tr-id', cur === n.id ? 'text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        n.kind !== 'test' && n.text ? h('span', { className: cx('dk-tr-text truncate', t === 'dim' && 'text-dim'), title: n.text }, n.text) : null,
+        label ? h('span', { className: cx('dk-tr-label mono', TONE_TEXT[t] || 'text-muted') }, label) : null),
+        kids.length ? h(DockTree, { nodes: kids, depth: (depth || 0) + 1, cur }) : null)
+    }))
+}
+
+function DockProject({ project }) {
+  const q = useApi(`/projects/${encodeURIComponent(project)}/home`, { live: true })
+  const last = useValue($lastNeed)[project]
+  const d = q.data
+  if (!d) {
+    return h('div', 'dk-body', q.error ? h(DockEmpty, { label: errText(q.error) }) : h(DockEmpty, { label: 'Loading' }))
+  }
+  const tree = (d.tree || []).filter(n => n.status !== 'dismissed')
+  const items = d.needs_you || []
+  const runs = d.running || []
+  const claims = d.claims || []
+  const ids = tree.map(n => n.id)
+  const firstHot = items.map(i => needOf(tree, i.id)).find(Boolean)
+  const need = (last && ids.includes(last) && last) || firstHot || ids[0]
+  const node = tree.find(n => n.id === need)
+  const hl = d.allocation && d.allocation.spec
+  const pathOf = i => {
+    const nd = needOf(tree, i.id)
+    return nd && nd !== i.id ? nd : ''
+  }
+  const n = d.tiles ? d.tiles.needs_you : items.length
+  return h('div', 'dk-body',
+    h(DockSection, { id: 'dk-needs', title: 'Needs you', count: n, tone: n ? 'needs' : 'dim' },
+      items.length ? frag(...items.map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i) })))
+        : h(DockEmpty, { label: 'Nothing needs you' })),
+    h(DockSection, { id: 'dk-running', title: 'Running', count: runs.length + claims.length, tone: runs.length + claims.length ? 'needs' : 'dim' },
+      runs.length + claims.length
+        ? frag(...runs.map(r => h(DockRunRow, { key: 'r' + r.id, run: r })), ...claims.map(c => h(DockClaimRow, { key: 'c' + c.id, c })))
+        : h(DockEmpty, { label: 'Nothing running' })),
+    h(DockSection, { id: 'dk-ladder', title: 'Ladder', tone: 'dim' },
+      tree.length
+        ? frag(
+          h('label', { className: 'sr-only', htmlFor: 'rung-dock-need' }, 'Need'),
+          h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
+            ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
+          node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
+        : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => navigate('need-new') })))
+}
+
+function Dock() {
+  const st = useApi('/state').data
+  const project = st && st.current
+  return h(Root, { className: 'h-full w-full min-w-0 overflow-hidden' },
+    h('div', { className: 'dk', 'data-testid': 'rung-dock' },
+      st && project
+        ? h('header', 'dk-head',
+          h('span', { className: 'dk-project truncate', title: project, 'data-testid': 'dock-project' }, project),
+          h('button', { type: 'button', className: 'dk-btn', 'aria-label': `Open Rung on ${project}`, 'data-testid': 'dock-open', onClick: () => navigate('home') }, 'Open Rung',
+            h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, h('path', { d: 'M6 3h7v7M13 3 6 10M3 6v7h7' }))))
+        : null,
+      !st ? h('div', 'dk-body', h(DockEmpty, { label: 'Loading' }))
+        : project ? h(DockProject, { project })
+          : h('div', 'dk-body', h(DockEmpty, { label: 'No project', action: 'Open Rung', onAction: () => navigate('home') }))))
+}
+
+const DOCK_CSS = `
+.rung .dk{height:100%;width:100%;max-width:100%;overflow:hidden;display:flex;flex-direction:column;background:var(--r-card);min-width:0;font-size:13px;line-height:1.4}
+.rung .dk-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;border-bottom:1px solid var(--r-line)}
+.rung .dk-project{font-size:14px;font-weight:600;letter-spacing:-0.01em;color:var(--r-fg)}
+.rung .dk-body{flex:1;overflow-y:auto;padding:12px 12px 24px;display:flex;flex-direction:column;gap:24px;min-width:0}
+.rung .dk-sec{display:flex;flex-direction:column;gap:8px;min-width:0}
+.rung .dk-h{margin:0 4px;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--r-muted)}
+.rung .dk-count{margin-left:auto;font-size:11px;letter-spacing:0;color:var(--r-muted)}
+.rung .dk-row{box-sizing:border-box;width:100%;display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:3px;padding:8px 10px;border:1px solid var(--r-line2);border-radius:6px;background:var(--r-btn);cursor:pointer;min-width:0;transition:background-color 140ms cubic-bezier(.16,1,.3,1)}
+.rung .dk-row:hover{background:var(--r-btnh)}
+.rung .dk-row:active{background:var(--r-line)}
+.rung .dk-row-top{display:flex;align-items:center;gap:6px;min-width:0}
+.rung .dk-id{font-size:12px;font-weight:600;flex:none}
+.rung .dk-path{margin-left:auto;font-size:11px;color:var(--r-muted);flex:none;max-width:40%}
+.rung .dk-text{font-size:12px;color:var(--r-fg2)}
+.rung .dk-meta{font-size:11px;color:var(--r-muted)}
+.rung .dk-chip{font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;border:1px solid var(--r-line2);color:var(--r-muted);flex:none}
+.rung .dk-bar{display:block;height:3px;margin-top:4px;border-radius:2px;background:var(--r-well);overflow:hidden}
+.rung .dk-bar>span{display:block;height:100%;background:var(--r-needs);border-radius:2px}
+.rung .dk-empty{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border:1px solid var(--r-line);border-radius:6px;font-size:12px;color:var(--r-muted);min-width:0}
+.rung .dk-btn{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;font-size:12px;font-weight:500;color:var(--r-fg);border:1px solid var(--r-line2)!important;border-radius:4px;white-space:nowrap;flex:none}
+.rung .dk-btn:hover{background:var(--r-btnh)}
+.rung .dk-btn svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.rung .dk-select{width:100%;max-width:100%;text-overflow:ellipsis;padding:6px 8px;font-size:12px;font-weight:500;color:var(--r-fg);background:var(--r-btn);border:1px solid var(--r-line2);border-radius:6px;min-width:0}
+.rung .dk-tr{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px;min-width:0}
+.rung .dk-tr-sub{margin-left:10px;padding-left:8px;border-left:1px solid var(--r-line2)}
+.rung .dk-tr-row{box-sizing:border-box;width:100%;display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;cursor:pointer;min-width:0;text-align:left}
+.rung .dk-tr-row:hover{background:var(--r-btnh)}
+.rung .dk-tr-cur{background:color-mix(in srgb, var(--r-needs) 8%, transparent)}
+.rung .dk-tr-id{font-size:11px;font-weight:600;flex:none}
+.rung .dk-tr-text{font-size:11px;color:var(--r-muted)}
+.rung .dk-tr-label{margin-left:auto;font-size:11px;flex:none}
+.rung .dk .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.rung .dk-row:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
+.rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
+.rung [data-testid=main]{container-type:inline-size}
+@container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
+`
+
+function setDock(open) {
+  $dockOpen.set(!!open)
+  try { localStorage.setItem(DOCK_KEY, JSON.stringify(!!open)) } catch (_) { /* private mode */ }
+}
+
+// Summon-only, like the Desktop's own logs pane: the pane exists while the dock is on, and the choice persists.
+function bindDock(ctx) {
+  let off = null
+  const sync = open => {
+    if (open && !off) {
+      off = ctx.register({
+        id: DOCK_PANE, area: PANES_AREA, title: 'Rung',
+        data: {
+          placement: 'right', collapsible: true, dock: { pane: 'workspace', pos: 'right' },
+          width: '288px', minWidth: '237px', maxWidth: '360px', tabTitleText: () => 'Rung'
+        },
+        render: () => h(Dock)
+      })
+      try { host.revealPane && host.revealPane('rung:' + DOCK_PANE) } catch (_) { /* older desktops */ }
+    } else if (!open && off) {
+      off()
+      off = null
+    }
+  }
+  sync($dockOpen.get())
+  const unsub = $dockOpen.listen(sync)
+  ctx.onDispose(() => { unsub(); if (off) off() })
+}
+
 // Rung desktop pane: router, status bar chip, registration.
 
 function App() {
@@ -3157,7 +3577,7 @@ export default {
     CTX = ctx
     const style = document.createElement('style')
     style.setAttribute('data-rung', 'css')
-    style.textContent = RUNG_CSS + '\n@keyframes rung-pulse{50%{opacity:.5}}@keyframes rung-spin{to{transform:rotate(360deg)}}' +
+    style.textContent = RUNG_CSS + DOCK_CSS + '\n@keyframes rung-pulse{50%{opacity:.5}}@keyframes rung-spin{to{transform:rotate(360deg)}}' +
       '\n.rung{color:var(--r-fg);font-family:var(--dt-font-sans, system-ui, sans-serif)}.rung *,.rung *::before,.rung *::after{box-sizing:border-box;border-color:var(--r-line)}' +
       '\n.rung button{font:inherit;background:none;border-style:solid;border-width:0;cursor:pointer;color:inherit}.rung input,.rung textarea,.rung select{font:inherit;color:inherit}' +
       '\n.rung h1,.rung h2,.rung h3,.rung p{margin:0}.rung table{border-spacing:0}.rung [data-locked="1"]{cursor:not-allowed}' +
@@ -3166,13 +3586,16 @@ export default {
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)
     window.__rungNavigate = navigate
-    ctx.onDispose(() => { delete window.__rungNavigate })
+    window.__rungDock = setDock
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungDock })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },
       { id: 'nav', area: SIDEBAR_NAV_AREA, data: { path: ROUTE, label: 'Rung', codicon: 'list-ordered' } },
-      { id: 'chip', area: STATUSBAR_AREAS.left, order: 140, render: () => h(StatusChip) }
+      { id: 'chip', area: STATUSBAR_AREAS.left, order: 140, render: () => h(StatusChip) },
+      { id: 'dock-toggle', area: PALETTE_AREA, data: { label: 'Rung dock', keywords: ['rung', 'dock', 'ladder'], detail: () => ($dockOpen.get() ? 'on' : 'off'), detailVariant: 'state', run: () => setDock(!$dockOpen.get()) } }
     ])
+    bindDock(ctx)
     let last = -1
     const tick = async () => {
       try {

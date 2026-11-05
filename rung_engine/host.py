@@ -1,7 +1,9 @@
 """Where Rung keeps its store inside Hermes, and the one Service per process.
 
-The store follows the active Hermes home (`<home>/plugin-data/rung/rung.db`), so every profile
-has its own ladder. `RUNG_STORE` overrides it for scripts and tests.
+The store follows the active Hermes home (`<home>/plugin-data/rung/rung.db`), so every home can
+have its own ladder. A profile with no Rung store of its own is a carrier of its root home's ladder
+and uses that one, so a chat or a develop run as `coder` claims and checks the work it was sent
+(Round 8 of decisions.md). `RUNG_STORE` overrides it for scripts and tests.
 """
 
 from __future__ import annotations
@@ -27,18 +29,38 @@ def hermes_home() -> Path:
         return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 
 
+def _pointed(data_dir: Path) -> Path | None:
+    """The store named in `<data_dir>/store` (one line), else `<data_dir>/rung.db` when it exists."""
+    try:
+        target = (data_dir / "store").read_text().strip()
+    except OSError:
+        target = ""
+    if target:
+        return Path(target).expanduser()
+    db = data_dir / "rung.db"
+    return db if db.is_file() else None
+
+
+def _root_home(home: Path) -> Path | None:
+    return home.parent.parent if home.parent.name == "profiles" else None
+
+
 def store_path() -> Path:
-    """RUNG_STORE, else the path written in `<plugin-data>/rung/store` (one line), else the default."""
+    """RUNG_STORE; else this home's pointer or store; else, for a profile without either, its root
+    home's pointer or store; else this home's default store."""
     env = os.environ.get("RUNG_STORE")
     if env:
         return Path(env).expanduser()
     default = _default_store()
-    pointer = default.parent / "store"
-    try:
-        target = pointer.read_text().strip()
-    except OSError:
-        target = ""
-    return Path(target).expanduser() if target else default
+    own = _pointed(default.parent)
+    if own is not None:
+        return own
+    root = _root_home(hermes_home())
+    if root is not None:
+        shared = _pointed(root / "plugin-data" / "rung")
+        if shared is not None:
+            return shared
+    return default
 
 
 def _default_store() -> Path:

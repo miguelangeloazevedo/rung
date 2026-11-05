@@ -139,6 +139,7 @@ function SuggestRow({ text, mark, onAccept, onDismiss, well }) {
 // ------------------------------------------------------------------ build router
 
 function Build({ project, need, step }) {
+  useEffect(() => { noteNeed(project, need) }, [project, need])
   const flowQ = useFlow(project, need)
   const flow = flowQ.data
   const idx = { need: 0, reqs: 1, specs: 2, tests: 3, develop: 4 }[step] ?? 1
@@ -392,7 +393,8 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
         onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
       },
       h('span', 'mono text-fg', sg.profile),
-      h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null)
+      h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null,
+    (a.excluded || []).length ? h('div', 'col-span-5 pt-2', h(ExcludedList, { excluded: a.excluded })) : null)
 }
 
 let CTX_PROFILES = {}
