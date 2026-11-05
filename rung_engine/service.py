@@ -98,7 +98,12 @@ class Service:
                                      got.get("required_tags", []),
                                      drafted_by=getattr(d, "profile", "drafting"))
         except Exception as exc:
-            self.engine.fail_draft(project, spec_rid, str(exc))
+            if getattr(exc, "code", None) == "not_drafting":
+                return  # the specification stopped being drafted meanwhile; a late draft is dropped
+            try:
+                self.engine.fail_draft(project, spec_rid, str(exc))
+            except RungError:
+                pass
 
     def support(self, project: str, req_rid: str, draft: str = "") -> str:
         req = self.engine.rung(project, req_rid)
@@ -147,11 +152,15 @@ class Service:
         log = self.log_dir / f"run-{run['id']}.log"
         env = dict(os.environ)
         env["PYTHONPATH"] = str(PLUGIN_ROOT) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
-        with open(log, "ab") as fh:
-            proc = subprocess.Popen([self.python, "-m", "rung_engine.runner", "--db", self.engine.path,
-                                     "--run", str(run["id"]), "--hermes", self.hermes_bin],
-                                    cwd=str(PLUGIN_ROOT), stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                    env=env, start_new_session=True)
+        try:
+            with open(log, "ab") as fh:
+                proc = subprocess.Popen([self.python, "-m", "rung_engine.runner", "--db", self.engine.path,
+                                         "--run", str(run["id"]), "--hermes", self.hermes_bin],
+                                        cwd=str(PLUGIN_ROOT), stdout=fh, stderr=subprocess.STDOUT,
+                                        stdin=subprocess.DEVNULL, env=env, start_new_session=True)
+        except OSError as exc:
+            self.engine.interrupt_run(run["id"], f"the runner could not start: {exc}", attempts=("queued", "running"))
+            raise RungError(f"the runner could not start: {exc}", code="error", status=500)
         # Reap the runner when it ends, so a finished run never lingers as a zombie of this process.
         threading.Thread(target=proc.wait, name=f"rung-reap-{run['id']}", daemon=True).start()
         self.engine.set_run(run["id"], pid=proc.pid, log_path=str(log))

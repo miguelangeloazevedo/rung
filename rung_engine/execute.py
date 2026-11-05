@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import difflib
 import hashlib
 import os
@@ -74,15 +75,24 @@ def run_command(
     lock = threading.Lock()
 
     def reader():
+        # Bounded reads: memory never grows past the limit, and what is kept is a true prefix of the output,
+        # even when one line is longer than the whole limit.
         assert proc.stdout is not None
-        for raw in iter(proc.stdout.readline, b""):
-            line = raw.decode("utf-8", "replace")
+        fd = proc.stdout.fileno()
+        dec = codecs.getincrementaldecoder("utf-8")("replace")
+        while True:
+            raw = os.read(fd, 65536)
+            text = dec.decode(raw, final=not raw)
             with lock:
-                if size[0] + len(line) > output_limit:
+                room = output_limit - size[0]
+                if len(text) > room:
                     truncated[0] = True
-                    continue
-                chunks.append(line)
-                size[0] += len(line)
+                    text = text[:max(room, 0)]
+                if text:
+                    chunks.append(text)
+                    size[0] += len(text)
+            if not raw:
+                break
         proc.stdout.close()
 
     t = threading.Thread(target=reader, daemon=True)

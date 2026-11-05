@@ -26,6 +26,13 @@ KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
 PARENT_KIND = {v: k for k, v in CHILD_KIND.items()}
 TEST_TYPES = ("command", "manual", "ai_judged")
+QUEUED_GRACE_S = 30  # a runner marks its run running within seconds of being started
+# A change to any of these makes a test a different test: its earlier results stop counting.
+TEST_SEMANTIC = ("type", "command", "folder", "pass_rule", "steps")
+
+
+def _is_int(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) or isinstance(v, str) and v.strip().lstrip("-").isdigit()
 DEFECT_CATEGORIES = ("Implementation", "Specification", "Requirement", "Test")
 GATING_TYPES = ("command", "manual")
 FINAL_EXEC = ("pass", "fail")
@@ -558,6 +565,10 @@ class Engine(LifecycleMixin):
         if not s or s["status"] != "open":
             raise NotFound(f"no open suggestion {suggestion_id}")
         made = None
+        if accept and s["target"] == "edit":
+            # The same path as a person's edit: a new version, a change record and staleness below.
+            r = self._rung_by_pk(s["parent_pk"])
+            self.edit(project, r["rid"], detail=(r["detail"] + "\n" if r["detail"] else "") + s["text"], actor=actor)
         with self._tx() as c:
             c.execute("UPDATE suggestions SET status = ? WHERE pk = ?", ("accepted" if accept else "dismissed", s["pk"]))
             if accept and s["target"] == "requirement":
@@ -565,10 +576,6 @@ class Engine(LifecycleMixin):
                 pk = self._insert_rung(c, p["pk"], "requirement", parent, s["text"], "", "draft",
                                        Actor("agent", "drafting"), data={"origin": "suggested"})
                 made = pk
-            elif accept and s["target"] == "edit":
-                r = c.execute("SELECT * FROM rungs WHERE pk = ?", (s["parent_pk"],)).fetchone()
-                detail = (r["detail"] + "\n" if r["detail"] else "") + s["text"]
-                c.execute("UPDATE rungs SET detail = ?, updated_at = ? WHERE pk = ?", (detail, self.clock(), r["pk"]))
         return self._rung_dict(self._rung_by_pk(made)) if made else None
 
     # ------------------------------------------------------------------ edit, approve, staleness
@@ -598,6 +605,10 @@ class Engine(LifecycleMixin):
             raise RungError("text is required", code="bad_request", status=400)
         changed = (new_text != r["text"]) or (new_detail != r["detail"])
         data_changed = new_data != _l(r["data"], {})
+        old_data = _l(r["data"], {})
+        semantic = r["kind"] == "test" and any(old_data.get(k) != new_data.get(k) for k in TEST_SEMANTIC)
+        if semantic:
+            self._validate_test(new_text, new_data)
         now = self.clock()
         stale_rids: list[str] = []
         with self._tx() as c:
@@ -620,6 +631,9 @@ class Engine(LifecycleMixin):
                     (r["project_pk"], r["pk"], seq, r["text"], new_text, r["detail"], new_detail, r["version"],
                      version, _j(stale_rids), now, actor.name),
                 )
+            if semantic and c.execute("SELECT 1 FROM executions WHERE test_pk = ?", (r["pk"],)).fetchone():
+                new_data["invalidated_by"] = f"{rid} edited"
+                c.execute("UPDATE rungs SET valid_from = ? WHERE pk = ?", (self._next_seq(c), r["pk"]))
             if approve:
                 status, ab, at = "approved", actor.name, now
             elif changed or data_changed:
@@ -819,6 +833,7 @@ class Engine(LifecycleMixin):
         r = self._rung_row(project, spec_rid)
         if r["kind"] != "specification":
             raise RungError(f"{spec_rid} is not a specification", code="bad_request", status=400)
+        self._require_drafting(r)
         data = _l(r["data"], {})
         data.update({"draft_state": "drafted", "author_role": "agent", "drafted_by": drafted_by})
         if tags is not None:
@@ -836,10 +851,17 @@ class Engine(LifecycleMixin):
 
     def fail_draft(self, project: str, spec_rid: str, reason: str) -> None:
         r = self._rung_row(project, spec_rid)
+        self._require_drafting(r)
         data = _l(r["data"], {})
         data.update({"draft_state": "failed", "draft_error": reason[:500]})
         with self._tx() as c:
             c.execute("UPDATE rungs SET data=? WHERE pk=?", (_j(data), r["pk"]))
+
+    @staticmethod
+    def _require_drafting(r) -> None:
+        """A drafting result lands only on a specification that is being drafted: never over approved text."""
+        if _l(r["data"], {}).get("draft_state") != "drafting":
+            raise RungError(f"{r['rid']} is not being drafted", code="not_drafting", status=409)
 
     @writes()
     def write_spec(self, project: str, req_rid: str, text: str, detail: str = "", actor: Actor = HUMAN,
@@ -889,6 +911,14 @@ class Engine(LifecycleMixin):
             raise RungError("a command test needs a command", code="bad_request", status=400)
         if t == "manual" and not [s for s in data.get("steps", []) if str(s).strip()]:
             raise RungError("a manual test needs steps", code="bad_request", status=400)
+        if t != "manual":
+            rule = data.get("pass_rule")
+            kind = rule.get("kind") if isinstance(rule, dict) else None
+            ok = kind == "exit_code" and _is_int(rule.get("value", 0)) or \
+                kind == "output_contains" and isinstance(rule.get("value"), str) and rule["value"] != ""
+            if not ok:
+                raise RungError("the pass rule is an exit code (a whole number) or text the output contains",
+                                code="bad_request", status=400, field="pass_rule")
 
     def _test_data(self, project_row, spec_row, fields: dict, base: dict | None = None) -> dict:
         d = dict(base or {})
@@ -953,19 +983,9 @@ class Engine(LifecycleMixin):
             auto_old = old.get("command") or ""
             text = r["text"] if r["text"] and r["text"] != auto_old else (
                 data.get("command") or ("Manual: " + "; ".join(data.get("steps", []))[:120]))
-        # A different command or type makes earlier results of this test stop counting.
-        old = _l(r["data"], {})
-        semantic = any(old.get(k) != data.get(k) for k in ("type", "command", "folder", "pass_rule", "steps"))
-        out = self.edit(project, test_rid, text=text, actor=actor, data=data, approve=False,
-                        expect_version=r["version"])
-        if semantic and self._q1("SELECT 1 FROM executions WHERE test_pk = ?", (r["pk"],)):
-            with self._tx() as c:
-                seq = self._next_seq(c)
-                d = _l(self._rung_by_pk(r["pk"])["data"], {})
-                d["invalidated_by"] = f"{test_rid} edited"
-                c.execute("UPDATE rungs SET valid_from=?, data=? WHERE pk=?", (seq, _j(d), r["pk"]))
-            out = self.rung(project, test_rid)
-        return out
+        # edit() makes earlier results stop counting when the command, type, folder, pass rule or steps change.
+        return self.edit(project, test_rid, text=text, actor=actor, data=data, approve=False,
+                         expect_version=r["version"])
 
     @writes()
     def approve_tests(self, project: str, need_rid: str, actor: Actor = HUMAN) -> None:
@@ -1146,6 +1166,8 @@ class Engine(LifecycleMixin):
         p = self._project_row(t["project_pk"])
         folder = Path(p["folder"]).expanduser() / data.get("folder", ".")
         e = self._q1("SELECT * FROM executions WHERE test_pk = ? AND n = ?", (t["pk"], n))
+        if e is None:
+            raise NotFound(f"{test_rid} has no execution {n}")
 
         def push(text):
             with self._tx() as c:
@@ -1709,6 +1731,11 @@ class Engine(LifecycleMixin):
             if not r["pid"] or not alive(r["pid"]):
                 self.interrupt_run(r["pk"], "the runner process ended")
                 out.append(r["pk"])
+        # A queued run whose runner died before starting, or never got one, would block its specification forever.
+        for r in self._q("SELECT * FROM runs WHERE status='queued'"):
+            if (r["pid"] and not alive(r["pid"])) or (not r["pid"] and self.clock() - r["created_at"] > QUEUED_GRACE_S):
+                self.interrupt_run(r["pk"], "the runner never started", attempts=("queued", "running"))
+                out.append(r["pk"])
         return out
 
     def command_tests(self, project: str, spec_rid: str) -> list[dict]:
@@ -1730,6 +1757,8 @@ class Engine(LifecycleMixin):
         title = (title or "").strip()
         if not title:
             raise RungError("title is required", code="bad_request", status=400)
+        if any(not _is_int(n) for n in executions or []):
+            raise RungError("executions are numbers such as 3", code="bad_request", status=400, field="executions")
         ns = sorted({int(n) for n in executions or []})
         if not ns:
             raise RungError("link at least one execution", code="bad_request", status=400)
