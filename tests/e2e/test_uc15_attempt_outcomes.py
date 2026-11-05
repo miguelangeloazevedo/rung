@@ -61,7 +61,7 @@ def test_run05_run06_run07_run08_attempt_outcomes(rung, csvtidy, page):
     H.wait_view(page, "home")
     item = page.locator(".rung [data-testid=needs-you-item]").filter(has_text="Needs input")
     H.wait_until(lambda: item.count() == 1, msg="Needs input in Needs you")
-    chip, tile, items = H.needs_you_counts(page)
+    chip, tile, items = H.agreed_needs_you(page)
     assert chip == tile == items
     plan(csvtidy, 1, {"outcome": "unknown"})
     H.button(page, "Run again", item.first).click()

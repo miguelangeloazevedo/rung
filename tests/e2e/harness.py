@@ -189,6 +189,13 @@ def needs_you_counts(page) -> tuple[int, int, int]:
     return int(chip.split()[1]), int(tile), items
 
 
+def agreed_needs_you(page, timeout: float = 5) -> tuple[int, int, int]:
+    """The chip, the tile and the list once the pane has settled: they must agree within a moment."""
+    wait_until(lambda: len(set(needs_you_counts(page))) == 1, timeout=timeout,
+               msg="chip, tile and Needs you list agree")
+    return needs_you_counts(page)
+
+
 def wait_until(fn, timeout: float = 20, every: float = 0.25, msg: str = "condition"):
     end = time.time() + timeout
     last = None

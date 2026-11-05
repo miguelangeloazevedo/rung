@@ -124,6 +124,10 @@ function RunningRow({ run }) {
 function Home({ project }) {
   const q = useApi(`/projects/${project}/home`, { live: true })
   const d = q.data
+  // Home polls itself; the status bar chip follows the change ticker. Refetch the chip as soon as Home sees a
+  // different Needs you count, so the two never show different numbers.
+  const ny = d && d.tiles ? d.tiles.needs_you : null
+  useEffect(() => { if (ny != null) queryClient.invalidateQueries({ queryKey: ['rung', '/state'] }) }, [ny])
   if (!d) {
     return h(Frame, {
       main: q.error

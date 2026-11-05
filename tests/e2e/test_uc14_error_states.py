@@ -86,7 +86,7 @@ def test_exe04_command_that_cannot_start_is_error(rung, csvtidy, page):
     H.wait_view(page, "home")
     item = page.locator(".rung [data-testid=needs-you-item]").filter(has_text="T-1.1a")
     H.wait_until(lambda: item.count() == 1 and "Error" in item.first.inner_text(), msg="Error in Needs you")
-    chip, tile, items = H.needs_you_counts(page)
+    chip, tile, items = H.agreed_needs_you(page)
     assert chip == tile == items
     assert page.locator(".rung [data-testid=tile-failing-value]").inner_text() == "0"
     # 3. Fix the cause and run again: a new execution, the Error stays in history.

@@ -27,7 +27,7 @@ def test_ned03_ned04_retire_and_restore(rung, csvtidy, page):
     H.wait_view(page, "home")
     # N-2 and its rungs leave the home, tiles, Needs you and the gate; the count matches everywhere.
     H.wait_until(lambda: "N-2" not in page.locator(".rung [data-testid=rail]").inner_text(), msg="N-2 gone from rail")
-    chip, tile, items = H.needs_you_counts(page)
+    chip, tile, items = H.agreed_needs_you(page)
     assert chip == tile == items
     assert all("N-2" not in t and "R-4" not in t for t in page.locator(".rung [data-testid=needs-you-item]").all_inner_texts())
     assert e.tiles("csvtidy")["requirements"] == 3

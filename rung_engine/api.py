@@ -26,6 +26,18 @@ def route(method: str, pattern: str):
     return deco
 
 
+def _flag(body: dict, key: str, required: bool = False) -> bool:
+    """A yes or no field: true or false only, so the text "false" never approves anything."""
+    if key not in body or body[key] is None:
+        if required:
+            raise ApiError(400, f"{key} is required", "bad_request")
+        return False
+    v = body[key]
+    if not isinstance(v, bool):
+        raise ApiError(400, f"{key} is true or false", "bad_request")
+    return v
+
+
 class ApiError(Exception):
     def __init__(self, status: int, detail: str, code: str = "error"):
         super().__init__(detail)
@@ -55,7 +67,7 @@ def handle(svc: Service, method: str, path: str, body: Any = None, human: Actor 
             return exc.status, out
         except ApiError as exc:
             return exc.status, {"detail": exc.detail, "code": exc.code}
-        except (KeyError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             return 400, {"detail": f"bad request: {exc}", "code": "bad_request"}
     return 404, {"detail": f"no route {method} {path}", "code": "not_found"}
 
@@ -336,9 +348,9 @@ def _create_need(svc, human, body, project):
 
 @route("POST", "/projects/{project}/rungs/{rid}/edit")
 def _edit(svc, human, body, project, rid):
+    # Text and detail only: a rung's data (gates, draft state, a test's command) changes through its own route.
     return svc.engine.edit(project, rid, text=body.get("text"), detail=body.get("detail"), actor=human,
-                           approve=bool(body.get("approve")), data=body.get("data"),
-                           expect_version=body.get("version"))
+                           approve=_flag(body, "approve"), expect_version=body.get("version"))
 
 
 @route("POST", "/projects/{project}/rungs/{rid}/approve")
@@ -415,7 +427,7 @@ def _suggest_edits(svc, human, body, project, rid):
 
 @route("POST", "/projects/{project}/suggestions/{sid}")
 def _resolve_suggestion(svc, human, body, project, sid):
-    made = svc.engine.resolve_suggestion(project, int(sid), bool(_need(body, "accept")), human)
+    made = svc.engine.resolve_suggestion(project, int(sid), _flag(body, "accept", required=True), human)
     return {"made": made}
 
 
@@ -435,7 +447,7 @@ def _changes(svc, human, body, project):
 @route("POST", "/projects/{project}/specs/{rid}/tests")
 def _add_test(svc, human, body, project, rid):
     fields = dict(body.get("fields") or body)
-    return svc.engine.add_test(project, rid, fields, human, status="approved" if body.get("accept") else "draft")
+    return svc.engine.add_test(project, rid, fields, human, status="approved" if _flag(body, "accept") else "draft")
 
 
 @route("POST", "/projects/{project}/tests/{rid}")
@@ -447,7 +459,7 @@ def _edit_test(svc, human, body, project, rid):
 
 @route("POST", "/projects/{project}/tests/{rid}/run")
 def _run_test(svc, human, body, project, rid):
-    n = svc.run_test(project, rid, carried_by="engine", once_by=human if body.get("once") else None)
+    n = svc.run_test(project, rid, carried_by="engine", once_by=human if _flag(body, "once") else None)
     return {"n": n}
 
 
