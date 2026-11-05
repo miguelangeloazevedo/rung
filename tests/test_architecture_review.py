@@ -59,6 +59,8 @@ def test_a2_a_draft_command_never_runs(seeded):
     with pytest.raises(RungError):
         svc.run_test("csvtidy", t["id"], once_by=Actor("agent", "coder"))
     assert call(svc, "POST", f"/projects/csvtidy/tests/{t['id']}/run", {"once": True})[0] == 200
+    svc.wait_idle()
+    assert seeded.executions("csvtidy", t["id"])[0]["status"] == "pass"
 
 
 @pytest.mark.parametrize("code", [126, 127])
