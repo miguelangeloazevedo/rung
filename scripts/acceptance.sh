@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rung v1 acceptance. Frozen: see docs/acceptance.md. Exit 0 only when UC01 to UC12 all pass.
+# Rung acceptance. Frozen: see docs/acceptance.md. Exit 0 only when UC01 to UC22 all pass.
 set -u
 cd "$(dirname "$0")/.."
 PY="${RUNG_PY:-.venv/bin/python}"
@@ -15,7 +15,7 @@ if ! curl -s -m 3 http://127.0.0.1:9222/json/version >/dev/null; then
 fi
 
 pass=0
-for n in 01 02 03 04 05 06 07 08 09 10 11 12; do
+for n in $(seq -w 1 22); do
   files=(tests/e2e/test_uc${n}_*.py)
   if [ ! -e "${files[0]}" ]; then
     echo "UC${n} FAIL: no tests/e2e/test_uc${n}_*.py"
@@ -54,5 +54,5 @@ PYEOF
   fi
 done
 
-echo "ACCEPTANCE: ${pass}/12"
-[ "$pass" -eq 12 ]
+echo "ACCEPTANCE: ${pass}/22"
+[ "$pass" -eq 22 ]

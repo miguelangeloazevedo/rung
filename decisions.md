@@ -62,3 +62,25 @@ Rule: nothing employer- or customer-related in this repo. Generic examples and s
 | Agent proposals | Agent-proposed rungs appear under Needs you as Proposed with `Accept` and `Dismiss`. |
 | Needs you | One global count, identical on every view (status bar and tile). |
 | Out of v1 | Project archive and delete, need delete, AI-generation and test-launch error states. |
+
+## Round 5: reinforcement before extensive testing (5 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Onboarding | Structural only, no tooltips or tour. First run shows a start screen: `Try the sample project`, `New project`, dismiss. The sample project is created only when asked; dismissing creates no sample data. A `First green` checklist in labels ticks from real state, is dismissible and can be shown again from Settings. Empty states carry one primary action. The project form only requires the folder; name, test command and profiles are pre-filled, visible and editable. |
+| Back in scope | Error states for AI drafting and test launch (reason, retry, a way forward, never a dead end); project archive, restore and delete (delete removes Rung data only, never the folder); retire and restore a need (kept in history, its rungs leave every active view and count); keyboard and screen-reader support to WCAG 2.2 AA. |
+| Evidence honesty | Attempt outcomes beyond pass and fail: Needs input (with a reason, enters Needs you), No change, Unknown (the worker vanished without a result, never read as pass or fail), Partial (a missing capability is filed as proposed rungs instead of being built inside the attempt). Command tests show whether they were seen failing before their first pass. Each need has a read-out: intent, plan, delivered, with every requirement paired to the execution that proves it, exportable as markdown. |
+| Not adopted | Binding a pass to the commit it ran on (code drift staleness). |
+| New views | Start screen, read-out, error states, archive and retire use the approved Attention design language and existing pane components; no separate mock round. Miguel reviews them during extensive testing. |
+
+## Round 6: what well-loved Hermes plugins do (5 Nov 2026)
+
+Reviewed: the most-starred Hermes-native catalog plugins, the official and labs plugins, and Desktop-pane and workflow plugins.
+
+| Topic | Decision |
+| --- | --- |
+| Honest states | Already in Round 5: Error, Unknown, Needs input, unavailable data shown as such, never invented. |
+| Low-commitment path | Already in Round 5: the sample project, opt-in. |
+| Install guide | Copyable steps, each ending in a check that shows it worked, with `hermes rung doctor` last. States what Rung writes and where, and that it sends nothing off the machine. |
+| README (after the run) | One outcome line, demo GIF above the fold, two-command install, screenshots, how it works in one diagram, safety and data, limits, changelog. Not in stage 2. |
+| Not adopted | Multilingual README, hosted trial, telemetry. |
