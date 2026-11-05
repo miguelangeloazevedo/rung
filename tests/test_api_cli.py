@@ -47,7 +47,9 @@ def test_home_and_rung_views(seeded):
     st, home = call(svc, "GET", "/projects/csvtidy/home")
     assert st == 200
     assert home["tiles"]["needs_you"] == len(home["needs_you"])
-    assert home["allocation"] is not None
+    assert home["allocation"] is None  # every specification is released: nothing to allocate (home-notes.html)
+    st, focused = call(svc, "GET", "/projects/csvtidy/home", {"focus": "T-2.1a"})
+    assert st == 200 and focused["allocation"]["spec"] == "S-2.1"
     st, s = call(svc, "GET", "/projects/csvtidy/rungs/S-2.1")
     assert st == 200 and s["kind"] == "specification" and s["path"][0]["id"] == "N-1"
     assert [c["id"] for c in s["children"]] == ["T-2.1a", "T-2.1b"]

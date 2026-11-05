@@ -117,7 +117,7 @@ def _allocation_focus(svc, project, focus=None):
         for n in e.tree(project):
             for r in n["children"]:
                 for s in r["children"]:
-                    if s["status"] in ("approved", "stale"):
+                    if s["status"] in ("approved", "stale") and not s.get("released"):  # nothing to allocate once done
                         spec = s["id"]
                         break
                 if spec:

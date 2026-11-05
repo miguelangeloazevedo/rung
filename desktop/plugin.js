@@ -765,7 +765,7 @@ function ExecList({ test, execs, limit }) {
       h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
       dead
         ? h('span', 'text-[10px] no-underline text-dim italic', `invalidated by ${String(x.invalidated_by || 'an upstream edit').replace(/ edited$/, ' edit')}`)
-        : h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, x.status === 'pass' ? 'passed' : x.status === 'fail' ? 'failed' : x.status))
+        : h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
     }))
 }
 
@@ -897,7 +897,7 @@ function Home({ project }) {
         h('div', 'flex items-center gap-2.5', h(Dot, { t: 'pass' }),
           h('span', 'text-xs font-medium text-fg', s.id), h('span', 'text-xs text-muted', s.text)),
         h('span', 'text-xs font-medium text-pass flex items-center gap-1',
-          'Pass')))) : null,
+          s.tests.length === 1 ? `${s.tests[0].id} pass` : 'Pass')))) : null,  // home.html names a lone test; home-notes.html says Pass
     (d.draft || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'draft' },
       h(SectionTitle, { dot: 'dim' }, 'Draft'),
       ...d.draft.map(r => h(Card, { key: r.id, className: 'p-3 flex items-center justify-between text-dim', onClick: () => navigate('rung', { rid: r.id }) },
