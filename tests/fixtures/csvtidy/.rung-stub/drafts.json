@@ -1,0 +1,86 @@
+{
+  "requirements": {
+    "Merge two CSV exports by a shared key": [
+      "Match rows by a chosen key column",
+      "Report keys found in only one file",
+      "Keep the first file's column order"
+    ],
+    "Merge two or more CSV exports by a shared key": [
+      "Match rows by a chosen key column",
+      "Report keys found in only one file",
+      "Keep the first file's column order"
+    ]
+  },
+  "more_requirements": {
+    "Merge two CSV exports by a shared key": [
+      "Warn when the key column has duplicates"
+    ]
+  },
+  "specifications": {
+    "Match rows by a chosen key column": {
+      "text": "Join on --key with a hash map",
+      "detail": "Index the second file by the key column, walk the first file in order.",
+      "tags": [
+        "python",
+        "cli"
+      ]
+    },
+    "Report keys found in only one file": {
+      "text": "Print unmatched keys to stderr",
+      "detail": "Collect keys missing on either side and print them after the merge.",
+      "tags": [
+        "python",
+        "cli"
+      ]
+    },
+    "Keep the first file's column order": {
+      "text": "Preserve column order from the first file",
+      "tags": [
+        "python"
+      ]
+    },
+    "Never drop a row without reporting it": {
+      "text": "Count dropped rows and print the count to stderr",
+      "tags": [
+        "python",
+        "cli"
+      ]
+    }
+  },
+  "support": {
+    "Keep the first file's column order": "Columns from the second file follow, in their own order, after the first file's columns."
+  },
+  "tests": {
+    "Join on --key with a hash map": [
+      {
+        "type": "command",
+        "command": "pytest tests/test_merge.py::test_join_key"
+      }
+    ],
+    "Print unmatched keys to stderr": [
+      {
+        "type": "command",
+        "command": "pytest tests/test_merge.py::test_unmatched"
+      }
+    ],
+    "Preserve column order from the first file": [
+      {
+        "type": "manual",
+        "text": "Manual: compare header rows of input and output",
+        "steps": [
+          "Merge samples/a.csv and samples/b.csv",
+          "Compare the header rows of input and output"
+        ]
+      }
+    ]
+  },
+  "edits": {
+    "Report keys found in only one file": [
+      "Print each unmatched key with the file it came from"
+    ],
+    "Never drop a row without reporting it": [
+      "Report dropped rows by line number",
+      "Fail with exit code 2 when any row is dropped"
+    ]
+  }
+}
