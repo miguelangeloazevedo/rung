@@ -258,7 +258,7 @@ function StepSpecs({ project, need, flow }) {
               h('div', 'flex items-center gap-2 text-xs min-w-0',
                 h('span', 'mono text-muted', s.text ? `${s.id} ${s.text}` : s.id),
                 draftBadge(s) ? h(Badge, { status: draftBadge(s), small: true }) : null,
-                s.draft_state === 'failed' && s.draft_error ? h('span', { className: 'text-[11px] text-muted truncate', 'data-testid': 'draft-error' }, s.draft_error) : null),
+                s.draft_state === 'failed' && s.draft_error ? h('span', { className: 'text-[11px] text-muted truncate', 'data-testid': 'draft-error', title: s.draft_error }, s.draft_error) : null),
               s.draft_state === 'drafting' ? null
                 : s.draft_state === 'failed' && !s.text
                   ? h('div', 'flex items-center gap-2 shrink-0',

@@ -200,7 +200,7 @@ function TreeSpec({ n, sel, hl }) {
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
-        h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted') }, sub))),
+        h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted'), title: typeof sub === 'string' ? sub : undefined }, sub))),
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
 }
 

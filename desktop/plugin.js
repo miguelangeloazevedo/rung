@@ -747,7 +747,7 @@ function TreeSpec({ n, sel, hl }) {
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
-        h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted') }, sub))),
+        h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted'), title: typeof sub === 'string' ? sub : undefined }, sub))),
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
 }
 
@@ -1529,7 +1529,7 @@ function StepSpecs({ project, need, flow }) {
               h('div', 'flex items-center gap-2 text-xs min-w-0',
                 h('span', 'mono text-muted', s.text ? `${s.id} ${s.text}` : s.id),
                 draftBadge(s) ? h(Badge, { status: draftBadge(s), small: true }) : null,
-                s.draft_state === 'failed' && s.draft_error ? h('span', { className: 'text-[11px] text-muted truncate', 'data-testid': 'draft-error' }, s.draft_error) : null),
+                s.draft_state === 'failed' && s.draft_error ? h('span', { className: 'text-[11px] text-muted truncate', 'data-testid': 'draft-error', title: s.draft_error }, s.draft_error) : null),
               s.draft_state === 'drafting' ? null
                 : s.draft_state === 'failed' && !s.text
                   ? h('div', 'flex items-center gap-2 shrink-0',
@@ -2824,7 +2824,7 @@ function ErrorCard({ project, item, ro }) {
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'error' }), h('span', 'mono text-muted', `${item.id} #${item.n}`)),
       h('span', 'text-sm text-fg', item.text),
-      item.reason ? h('span', { className: 'text-[11px] mono text-muted truncate', 'data-testid': 'error-reason' }, item.reason) : null),
+      item.reason ? h('span', { className: 'text-[11px] mono text-muted truncate', 'data-testid': 'error-reason', title: item.reason }, item.reason) : null),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'small', testid: 'open-error', onClick: () => navigate('exec', { test: item.id, n: item.n }) }, 'Open'),
       ro ? null : h(Btn, { kind: 'small', onClick: () => navigate('rung', { rid: item.id }) }, 'Open test')))
@@ -2891,7 +2891,7 @@ function ReadOut({ project, need }) {
               h('span', null, h('span', 'mono text-fg', s.id), ' ', h('span', 'text-muted', s.text)),
               h(Badge, { status: s.status, small: true })),
             ...s.tests.map(t => h('div', { key: t.id, className: 'pl-3 border-l border-line flex items-center justify-between text-[11px]', 'data-plan-test': t.id },
-              h('span', 'mono text-muted truncate', `${t.id} · ${t.type === 'manual' ? t.text : t.command}`),
+              h('span', { className: 'mono text-muted truncate', title: t.type === 'manual' ? t.text : t.command }, `${t.id} · ${t.type === 'manual' ? t.text : t.command}`),
               h('span', 'flex items-center gap-1.5', h(SeenFailing, { value: t.seen_failing, small: true }),
                 h(Badge, { status: t.status === 'stale' ? 'stale' : t.result, small: true })))))))))
         : h(Well, { className: 'text-xs text-dim' }, 'No requirements')),
@@ -2941,7 +2941,7 @@ function RetiredBar({ project, r }) {
   return h('div', { className: 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs', 'data-testid': 'retired-bar' },
     h('div', 'flex items-center gap-2 min-w-0',
       h(Badge, { status: 'retired' }),
-      h('span', { className: 'text-fg truncate', 'data-testid': 'retired-reason' }, r.retired_reason || ''),
+      h('span', { className: 'text-fg truncate', 'data-testid': 'retired-reason', title: r.retired_reason || '' }, r.retired_reason || ''),
       r.retired_at ? h('span', 'mono text-[11px] text-muted', dayClock(r.retired_at)) : null),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
@@ -2952,9 +2952,9 @@ function Retired({ project }) {
   const q = useApi(`${P(project)}/retired`, { live: true })
   const rows = q.data || []
   const main = frag(
-    h('header', 'flex items-center justify-between',
-      h('h1', 'text-xl font-bold tracking-tight text-fg', 'Retired needs'),
-      h(Btn, { onClick: () => navigate('home') }, 'Back')),
+    h('header', 'flex flex-col gap-4',
+      h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
+      h('h2', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Retired needs')),
     h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'retired-list' },
       q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No retired needs') : null,
       ...rows.map(n => h(Card, { key: n.id, className: 'p-4 flex items-center justify-between', testid: 'retired-row', onClick: () => navigate('rung', { rid: n.id }) },
@@ -3042,7 +3042,7 @@ function ProjectSettings({ project }) {
       events.length
         ? h('div', 'bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] flex flex-col gap-1',
           ...events.map((e, i) => h('div', { key: i, className: 'flex items-center justify-between text-fg' },
-            h('span', 'truncate', Object.entries(e.data).map(([k, v]) => `${k.replace('_', ' ')}: ${[].concat(v.before).join(', ')} > ${[].concat(v.after).join(', ')}`).join(' · ')),
+            (() => { const t = Object.entries(e.data).map(([k, v]) => `${k.replace('_', ' ')}: ${[].concat(v.before).join(', ')} > ${[].concat(v.after).join(', ')}`).join(' · '); return h('span', { className: 'truncate', title: t }, t) })(),
             h('span', 'text-muted shrink-0', `${e.by} · ${dayClock(e.at)}`))))
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'No changes')),
     h('section', { className: 'flex items-center gap-2 pt-2', 'data-testid': 'project-danger' },
