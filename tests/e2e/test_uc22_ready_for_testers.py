@@ -84,7 +84,7 @@ def test_rdy01_rdy03_gte08_install_on_a_clean_home(tmp_path, rung, page):
     folder = seed.copy_fixture("csvtidy", work)
     from rung_engine import Engine
     eng = Engine(str(store))
-    eng.create_project(folder=str(folder), test_command="pytest")
+    eng.create_project(folder=str(folder), test_command="pytest", profiles=["default"])
     eng.close()
     def hermes(*a, answer=""):
         return subprocess.run([HERMES_BIN, *a], env=env, input=answer, capture_output=True, text=True, timeout=180)
