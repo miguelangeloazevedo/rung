@@ -86,7 +86,8 @@ def test_rdy01_rdy03_gte08_install_on_a_clean_home(tmp_path, rung, page):
     eng = Engine(str(store))
     eng.create_project(folder=str(folder), test_command="pytest")
     eng.close()
-    hermes = lambda *a: subprocess.run([HERMES_BIN, *a], env=env, capture_output=True, text=True, timeout=180)  # noqa: E731
+    def hermes(*a, answer=""):
+        return subprocess.run([HERMES_BIN, *a], env=env, input=answer, capture_output=True, text=True, timeout=180)
     ok = hermes("rung", "doctor")
     assert ok.returncode == 0, ok.stdout + ok.stderr
     for name in ("python", "store folder", "store", "schema", "project csvtidy folder", "desktop pane", "hermes"):
@@ -99,7 +100,7 @@ def test_rdy01_rdy03_gte08_install_on_a_clean_home(tmp_path, rung, page):
     H.open_rung(page)
     H.wait_view(page, "start")
     # RDY-03: uninstalling leaves Hermes working and keeps Rung's data.
-    un = hermes("plugins", "uninstall", "rung")
+    un = hermes("plugins", "uninstall", "rung", answer="y\n")
     assert un.returncode == 0, un.stdout + un.stderr
     assert not plugin.exists()
     assert hermes("--version").returncode == 0
