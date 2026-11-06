@@ -112,3 +112,18 @@ Settled during the stage 3 build; Round 7 assumed it without saying it. Each Her
 | --- | --- |
 | Carrier ladder | A profile home with no Rung store of its own (no `plugin-data/rung/store` pointer and no `rung.db`) uses its root home's ladder: the root's pointer, else the root's store. Its chats claim, report and check there, and the done hook reads it. A develop run started as `hermes -p <profile>` lands in the ladder that sent it the same way. |
 | Own ladder | A profile that has its own store keeps it; `RUNG_STORE` still overrides everything. Nothing is copied or moved between stores. |
+
+## Round 9: the hackathon submission (6 Nov 2026)
+
+Entry rules (Nous announcement, 4 Nov): a PR adding `plugin-catalog/<name>.yaml` to `NousResearch/hermes-agent`, a demo on X under 90 s tagging @NousResearch that shows the plugin working, then the form (plugin title, description, email, Discord username, X post link, PR link). The form can go in as soon as the PR is open. Judged on usefulness, reliability, polish and creativity. Due 11 Nov, 17:00 EST (23:00 Brussels).
+
+| Topic | Decision |
+| --- | --- |
+| Hermes version | Rung was built and tested on Hermes v0.22.5. v0.23.0 (5 Nov) is what judges and catalog CI run. Test and fix on v0.23.0 in an isolated checkout and Desktop build next to Miguel's own install, rerun all acceptance and readiness there, then declare `requires_hermes: ">=0.23.0"` in plugin.yaml and in the catalog entry. |
+| Demo video | Who makes it and how: decided when we get there, probably Tue 10 Nov. |
+| Demo story | The done gate first: an agent claims a specification, tries to mark it done, the hook blocks it naming the failing test, the agent fixes the code, the test passes, the report goes through, and the dock updates live. Then about 20 s from need to release. |
+| Public repo | This repo stays private and unchanged, renamed `rung-dev`. The public repo `github.com/miguelangeloazevedo/rung` is generated from it by a repeatable scrub script (git filter-repo). The script is deterministic, so a re-run for a release only appends new commits and a catalog pin stays valid. |
+| Catalog PR | Opens as soon as the public repo, the README and the v0.23.0 pass exist (aim Sun 8 Nov). The open PR's pin moves if fixes land later. The form can go in once the PR is open. |
+| Listing | The catalog has no regulatory, SDLC or development-practice category (the vocabulary is desktop, memory, platform, web, tools, voice, automation, models, general), so: category `desktop`, title Rung, a 2:1 banner and up to 6 screenshots from the real Desktop with synthetic demo data, README rendered on the listing page. |
+
+Open: who makes the demo video and how (Tue 10 Nov); narration.
