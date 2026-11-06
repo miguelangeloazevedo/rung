@@ -18,9 +18,12 @@ from pathlib import Path
 
 WATCHED = frozenset({"rung_report", "kanban_complete", "todo_list"})
 
-# Per session: todo id -> (content, status), as seen in that session's todo_list calls. In memory only:
-# the hook never writes. Bounded so a long-lived process cannot grow it without limit.
-_TODOS: dict[str, dict[str, tuple[str, str]]] = {}
+# Per session: todo id -> what that id has carried in the session's todo_list calls: every content it was
+# given (an id that once named a specification keeps counting, whatever it says later) and the content
+# it had when it was last let through as completed. In memory only: the hook never writes. Bounded so a
+# long-lived process cannot grow it without limit.
+_TODOS: dict[str, dict[str, dict]] = {}
+_MAX_TEXTS = 20
 _TODOS_LOCK = threading.Lock()
 _MAX_SESSIONS = 500
 
@@ -33,15 +36,16 @@ def _store() -> Path | None:
         return None
 
 
-def _session_claims(session_id: str, store: Path | None = None) -> list[dict]:
-    """Open claims of the session with their checks, from a read-only view of the store."""
+def _session_claims(session_id: str, store: Path | None = None) -> tuple[list[dict], str]:
+    """Open claims of the session with their checks, and the open project (what a tool call without a
+    project acts on), from a read-only view of the store."""
     path = store if store is not None else _store()
     if path is None or not Path(path).is_file():
-        return []
+        return [], ""
     from .core import Engine
     eng = Engine(path, readonly=True)
     try:
-        return eng.session_claims(session_id)
+        return eng.session_claims(session_id), eng.current_project() or ""
     finally:
         eng.close()
 
@@ -62,7 +66,17 @@ def _todo_items(args) -> list[dict]:
     return [t for t in todos if isinstance(t, dict)] if isinstance(todos, list) else []
 
 
-def _remember(session_id: str, items: list[dict], statuses: bool) -> None:
+def _content(t: dict) -> str:
+    c = t.get("content")
+    return c.strip() if isinstance(c, str) else ""
+
+
+def _completed(t: dict) -> bool:
+    return str(t.get("status", "")).strip().lower() == "completed"
+
+
+def _remember(session_id: str, items: list[dict], allowed: bool) -> None:
+    """Record the contents each id carried; when the call was let through, also what it completed."""
     with _TODOS_LOCK:
         if session_id not in _TODOS and len(_TODOS) >= _MAX_SESSIONS:
             _TODOS.pop(next(iter(_TODOS)))
@@ -71,28 +85,30 @@ def _remember(session_id: str, items: list[dict], statuses: bool) -> None:
             tid = str(t.get("id", "")).strip()
             if not tid:
                 continue
-            content, status = seen.get(tid, ("", ""))
-            if isinstance(t.get("content"), str) and t["content"].strip():
-                content = t["content"]
-            if statuses and isinstance(t.get("status"), str):
-                status = t["status"].strip().lower()
-            seen[tid] = (content, status)
+            rec = seen.setdefault(tid, {"texts": [], "done": None})
+            text = _content(t)
+            if text and text not in rec["texts"]:
+                rec["texts"] = (rec["texts"] + [text])[-_MAX_TEXTS:]
+            if allowed:
+                rec["done"] = (text or (rec["done"] or "")) if _completed(t) else None
 
 
 def _completing(session_id: str, items: list[dict]) -> list[tuple[str, str]]:
-    """(id, text) of each item this call moves to completed, text being its id plus every content seen."""
+    """(id, text) of each item this call declares completed, text being its id, its content now and
+    every content the id carried earlier in the session. An item re-sent completed with the same content
+    it had when it was let through declares nothing new and is left out."""
     with _TODOS_LOCK:
-        seen = dict(_TODOS.get(session_id, {}))
+        seen = {k: {"texts": list(v["texts"]), "done": v["done"]} for k, v in _TODOS.get(session_id, {}).items()}
     out = []
     for t in items:
-        if str(t.get("status", "")).strip().lower() != "completed":
+        if not _completed(t):
             continue
         tid = str(t.get("id", "")).strip()
-        before = seen.get(tid, ("", ""))
-        if before[1] == "completed":
-            continue  # already completed earlier: rewriting it declares nothing new
-        text = " ".join(x for x in (tid, t.get("content") if isinstance(t.get("content"), str) else "", before[0]) if x)
-        out.append((tid, text))
+        rec = seen.get(tid, {"texts": [], "done": None})
+        now = _content(t)
+        if rec["done"] is not None and now in ("", rec["done"]):
+            continue
+        out.append((tid, " ".join(x for x in [tid, now, *rec["texts"]] if x)))
     return out
 
 
@@ -103,17 +119,20 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
     items = _todo_items(args) if tool_name == "todo_list" else []
     completing: list[tuple[str, str]] = []
     if tool_name == "todo_list":
-        _remember(session_id, items, statuses=False)
-        completing = _completing(session_id, items)
+        completing = _completing(session_id, items)  # judged on what the session held before this call
         if not completing:
-            _remember(session_id, items, statuses=True)
+            _remember(session_id, items, allowed=True)
             return None
-    claims = _session_claims(session_id, store)
+    claims, current = _session_claims(session_id, store)
     failing = [c for c in claims if not c["check"].get("ok")]
     block = None
     if tool_name == "rung_report":
+        from .claims import canonical_rid
         spec = args.get("spec") if isinstance(args, dict) else None
-        hit = [c for c in failing if c["spec"] == spec and (not args.get("project") or c["project"] == args.get("project"))]
+        spec = canonical_rid(spec) if isinstance(spec, str) else spec
+        project = args.get("project") if isinstance(args, dict) and isinstance(args.get("project"), str) \
+            and args.get("project").strip() else current  # the project the tool itself will act on
+        hit = [c for c in failing if c["spec"] == spec and c["project"] == project]
         block = _message(hit[0]) if hit else None
     elif tool_name == "kanban_complete":
         block = _message(failing[0]) if failing else None
@@ -123,8 +142,7 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
             if hit:
                 block = _message(hit[0])
                 break
-        if block is None:
-            _remember(session_id, items, statuses=True)
+        _remember(session_id, items, allowed=block is None)
     return block
 
 

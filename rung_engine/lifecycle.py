@@ -68,19 +68,20 @@ class LifecycleMixin:
         p = self._project_row(name)
         before = {"name": p["name"], "folder": p["folder"], "test_command": p["test_command"],
                   "profiles": json.loads(p["profiles"] or "[]")}
+        from .core import _profile_list, _text_field
         after = dict(before)
         if new_name is not None:
-            after["name"] = new_name.strip()
+            after["name"] = _text_field(new_name, "name")
             self._check_name(after["name"], p["pk"])
         if folder is not None:
-            after["folder"] = folder.strip()
+            after["folder"] = _text_field(folder, "folder")
             self._check_folder(after["folder"])
         if test_command is not None:
-            after["test_command"] = test_command.strip()
+            after["test_command"] = _text_field(test_command, "test_command")
             if not after["test_command"]:
                 raise RungError("test command is required", code="bad_request", status=400, field="test_command")
         if profiles is not None:
-            after["profiles"] = [x for x in dict.fromkeys(profiles) if x]
+            after["profiles"] = _profile_list(profiles)
             if not after["profiles"]:
                 raise RungError("tick at least one profile", code="bad_request", status=400, field="profiles")
         changed = {k: {"before": before[k], "after": after[k]} for k in before if before[k] != after[k]}
@@ -110,6 +111,11 @@ class LifecycleMixin:
         if self._q1(f"SELECT 1 FROM executions e JOIN rungs t ON t.pk = e.test_pk WHERE e.status = 'running' AND "
                     f"{'t.project_pk = ?' if pks is None else 't.pk IN (' + ','.join('?' * len(pks)) + ')'}", args):
             raise RungError(f"{what} has a test running; wait for it first")
+        # An open claim is work in flight too: in a read-only ladder its chat could never report it and
+        # the done hook would hold that chat's completions for good.
+        if self._q1(f"SELECT 1 FROM claims WHERE status = 'open' AND "
+                    f"{'project_pk = ?' if pks is None else 'spec_pk IN (' + ','.join('?' * len(pks)) + ')'}", args):
+            raise RungError(f"{what} has an open claim; release it first")
 
     def archive_project(self, name: str, actor=None) -> dict:
         from .core import HUMAN, RungError

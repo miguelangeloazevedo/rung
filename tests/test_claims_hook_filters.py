@@ -321,7 +321,7 @@ def test_alc04_independent_carrier_excludes_authors(seeded):
     e.propose("csvtidy", "S-2.1", "test", "pytest tests/test_dates.py", "reviewer")
     e.set_allocation("csvtidy", "S-2.1", independent=True)
     sug = e.suggest("csvtidy", "S-2.1")
-    assert {"profile": "reviewer", "reason": "author of S-2.1"} in sug["excluded"]
+    assert {"profile": "reviewer", "reason": "author of T-2.1c"} in sug["excluded"]  # the test it proposed
     assert "coder" in [s["profile"] for s in sug["suggestions"]]
     # the drafting profile of an AI-derived specification is an author too
     e.approve("csvtidy", "R-3", HUMAN)

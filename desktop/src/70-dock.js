@@ -33,7 +33,7 @@ function rungLabel(n) {
     if ((n.blockers || []).some(b => /failed/.test(b))) return 'failing'
     return 'open'
   }
-  if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'not covered'
+  if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'open'
   return n.status || ''
 }
 

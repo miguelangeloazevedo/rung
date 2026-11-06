@@ -16,6 +16,7 @@ def call(svc, method, path, body=None):
 
 def test_state_and_create_project(engine, tmp_path):
     svc = Service(engine, inline_runs=True)
+    engine.sync_profiles(["coder"])  # what the host does with the Hermes profiles before serving
     st, body = call(svc, "GET", "/state")
     assert st == 200 and body["projects"] == [] and body["current"] is None
     st, body = call(svc, "POST", "/projects", {"name": "csvtidy", "folder": str(tmp_path), "test_command": "pytest",

@@ -1214,11 +1214,17 @@ function Settings({ project }) {
   const colours = draft.settings.colours || {}
   const save = async () => {
     const s = draft.settings
-    const timeout = parseInt(String(s.test_timeout).replace(/[^\d]/g, ''), 10)
-    const kb = parseInt(String(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000)).replace(/[^\d]/g, ''), 10)
+    // What the field shows, as a number when it is one; anything else goes as typed and the route
+    // refuses it on that field, so nothing is saved that the form did not show.
+    const num = (v, unit) => {
+      const t = String(v == null ? '' : v).trim().replace(unit || /$^/, '').trim()
+      return /^\d+$/.test(t) ? parseInt(t, 10) : t
+    }
+    const timeout = num(s.test_timeout, /\s*s$/i)
+    const kb = num(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000), /\s*kb$/i)
     const res = await post('/settings', {
-      settings: { test_timeout: timeout || 120, output_limit: (kb || 64) * 1000, colours: s.colours },
-      profiles: draft.profiles.map(p => ({ ...p, cost: parseInt(p.cost, 10) || 0, max_runs: parseInt(p.max_runs, 10) || 1, at_once: parseInt(p.at_once, 10) || 0 }))
+      settings: { test_timeout: timeout, output_limit: typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
+      profiles: draft.profiles.map(p => ({ ...p, cost: num(p.cost), max_runs: num(p.max_runs), at_once: num(p.at_once) }))
     })
     if (!res.ok) return setErr(res.error)
     $colours.set(res.data.settings.colours)
@@ -1802,7 +1808,7 @@ function NeedView({ project, r }) {
   const ro = !!r.read_only
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
-  const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : 'approved'
+  const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
   const save = async approve => {
     const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve, version: base == null ? r.version : base })
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
@@ -2060,7 +2066,7 @@ function SpecView({ project, r, ret, need }) {
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'approve', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/approve`, {}, () => backTo(ret, need, () => navigate('rung', { rid: r.id }))()) }, 'Approve'),
-        h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate')))
+        r.ai_derived ? h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate') : null))
     return h(Page, { project, sel: r.id }, body)
   }
   // Released (spec-s11)
@@ -3317,7 +3323,7 @@ function rungLabel(n) {
     if ((n.blockers || []).some(b => /failed/.test(b))) return 'failing'
     return 'open'
   }
-  if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'not covered'
+  if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'open'
   return n.status || ''
 }
 

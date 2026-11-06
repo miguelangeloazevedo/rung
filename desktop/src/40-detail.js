@@ -54,7 +54,7 @@ function NeedView({ project, r }) {
   const ro = !!r.read_only
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
-  const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : 'approved'
+  const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
   const save = async approve => {
     const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve, version: base == null ? r.version : base })
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
@@ -312,7 +312,7 @@ function SpecView({ project, r, ret, need }) {
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'approve', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/approve`, {}, () => backTo(ret, need, () => navigate('rung', { rid: r.id }))()) }, 'Approve'),
-        h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate')))
+        r.ai_derived ? h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate') : null))
     return h(Page, { project, sel: r.id }, body)
   }
   // Released (spec-s11)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from .claims import canonical_rid
 from .core import RungError
 
 STATUS = {
@@ -86,6 +87,7 @@ REPORT = {
 }
 
 SCHEMAS = [STATUS, PROPOSE, CHECK, RUN_TESTS, CLAIM, REPORT]
+
 
 
 def _svc():
@@ -204,13 +206,13 @@ def check(args, **kw):
         return svc.engine.check_all(p)
     if not args.get("spec"):
         raise RungError("spec or all is required", code="bad_request", status=400, field="spec")
-    return svc.engine.check(p, _arg(args, "spec"))
+    return svc.engine.check(p, canonical_rid(_arg(args, "spec")))
 
 
 def run_tests(args, **kw):
     svc = _svc()
     p = _project(svc, args)
-    spec = _arg(args, "spec")
+    spec = canonical_rid(_arg(args, "spec"))
     out = []
     for t in svc.engine.command_tests(p, spec):
         r = svc.engine.run_test(p, t["id"], carried_by=_proposer())
@@ -222,7 +224,7 @@ def run_tests(args, **kw):
 def claim(args, session_id="", user_task="", **kw):
     svc = _svc()
     p = _project(svc, args)
-    spec = _arg(args, "spec")
+    spec = canonical_rid(_arg(args, "spec"))
     if not session_id:
         raise RungError("rung_claim needs a chat session", code="bad_request", status=400)
     c = svc.engine.claim(p, spec, session_id, _source_chat(session_id, user_task), _proposer())
@@ -233,7 +235,7 @@ def claim(args, session_id="", user_task="", **kw):
 def report(args, session_id="", **kw):
     svc = _svc()
     p = _project(svc, args)
-    spec = _arg(args, "spec")
+    spec = canonical_rid(_arg(args, "spec"))
     c = svc.engine.report(p, spec, session_id)
     return {"reported": c["spec"], "project": c["project"], "proof": c["proof"],
             "note": "Reported done. This is not an approval."}

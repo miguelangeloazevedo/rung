@@ -135,6 +135,48 @@ def _l(s, default=None):
 NAME_RX = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 
+def _int_field(value, field: str, lo: int, hi: int) -> int:
+    """A whole number from lo to hi; text, decimals and true/false are refused on that field."""
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        raise RungError(f"{field.replace('_', ' ')} must be {lo} to {hi}", code="bad_request", status=400, field=field)
+    return value
+
+
+# The settings a person changes, with their ranges. Other keys (drafting, worker, onboarding, colours,
+# last_project) keep their own shape: an object, or a project name.
+_SETTING_RANGES = {"test_timeout": (1, 86400), "output_limit": (1000, 50_000_000), "run_timeout_min": (1, 1440)}
+
+
+def _setting_value(key, value):
+    if key not in DEFAULT_SETTINGS:
+        raise RungError(f"unknown setting {key}", code="bad_request", status=400, field=str(key))
+    if key in _SETTING_RANGES:
+        return _int_field(value, key, *_SETTING_RANGES[key])
+    if key == "last_project":
+        if value is not None and not isinstance(value, str):
+            raise RungError("last project is a project name", code="bad_request", status=400, field=key)
+        return value
+    if not isinstance(value, dict):
+        raise RungError(f"{key} is an object", code="bad_request", status=400, field=key)
+    return value
+
+
+def _text_field(value, field: str) -> str:
+    """A form's text field, trimmed. Not sent is empty; anything but text is refused on that field."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise RungError(f"{field.replace('_', ' ')} is text", code="bad_request", status=400, field=field)
+    return value.strip()
+
+
+def _profile_list(values) -> list[str]:
+    """The profiles ticked on a form: a list of names, without duplicates or blanks."""
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        raise RungError("profiles is a list of profile names", code="bad_request", status=400, field="profiles")
+    return [v for v in dict.fromkeys(x.strip() for x in values) if v]
+
+
 def _clean_names(values, what: str) -> list[str]:
     """Toolset names: text, trimmed, no duplicates, letters digits and _ . : - only."""
     out = []
@@ -146,7 +188,7 @@ def _clean_names(values, what: str) -> list[str]:
             continue
         if not NAME_RX.match(v):
             raise RungError(f"{v[:40]!r} is not a {what} name", code="bad_request", status=400, field=what + "s")
-        if v not in out:
+        if v.lower() not in {x.lower() for x in out}:
             out.append(v)
     return out
 
@@ -228,8 +270,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         return {k: self.get_setting(k) for k in DEFAULT_SETTINGS}
 
     def set_setting(self, key: str, value):
-        if key not in DEFAULT_SETTINGS:
-            raise RungError(f"unknown setting {key}", code="bad_request", status=400)
+        value = _setting_value(key, value)
         with self._tx() as c:
             c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)", (key, _j(value)))
 
@@ -270,40 +311,64 @@ class Engine(LifecycleMixin, ClaimsMixin):
                 "at_once": r["at_once"]}
 
     def save_profiles(self, rows: list[dict]) -> None:
-        """Save several profiles at once (the settings Save button)."""
+        """Save several profiles at once. A field a row leaves out keeps the profile's current value."""
+        clean = self._clean_profiles(rows)
+        with self._tx() as c:
+            self._write_profiles(c, clean)
+
+    def save_settings(self, settings: dict | None, profiles: list[dict] | None = None) -> None:
+        """The settings Save button: every value is checked first, then all of it is saved in one
+        transaction, so a refused field saves nothing."""
+        if settings is not None and not isinstance(settings, dict):
+            raise RungError("settings is an object", code="bad_request", status=400, field="settings")
+        values = {k: _setting_value(k, v) for k, v in (settings or {}).items()}
+        clean = self._clean_profiles(profiles) if profiles is not None else []
+        with self._tx() as c:
+            for k, v in values.items():
+                c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)", (k, _j(v)))
+            self._write_profiles(c, clean)
+
+    def _clean_profiles(self, rows) -> list[tuple]:
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise RungError("profiles is a list of profiles", code="bad_request", status=400, field="profiles")
         clean = []
         for row in rows:
-            name = str(row.get("name", "")).strip()
-            if not name:
-                raise RungError("profile name missing", code="bad_request", status=400)
-            labels = [str(x).strip() for x in row.get("labels", []) if str(x).strip()]
-            labels = list(dict.fromkeys(labels))
-            cost = int(row.get("cost", 5))
-            max_runs = int(row.get("max_runs", 5))
-            if not 0 <= cost <= 10:
-                raise RungError("cost must be 0 to 10", code="bad_request", status=400)
-            if not 1 <= max_runs <= 50:
-                raise RungError("max runs must be 1 to 50", code="bad_request", status=400)
+            name = row.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise RungError("profile name missing", code="bad_request", status=400, field="name")
+            name = name.strip()
             old = self._q1("SELECT * FROM profiles WHERE name=?", (name,))
+            od = self._profile_dict(old) if old else {"labels": [], "cost": 5, "max_runs": 5, "enabled": True,
+                                                       "at_once": 2}
+            labels = row.get("labels", od["labels"])
+            if not isinstance(labels, list) or not all(isinstance(x, str) for x in labels):
+                raise RungError("labels is a list of text", code="bad_request", status=400, field="labels")
+            labels = list(dict.fromkeys(x.strip() for x in labels if x.strip()))
+            cost = _int_field(row.get("cost", od["cost"]), "cost", 0, 10)
+            max_runs = _int_field(row.get("max_runs", od["max_runs"]), "max_runs", 1, 50)
+            at_once = _int_field(row.get("at_once", od["at_once"]), "at_once", 1, 10)
+            enabled = row.get("enabled", od["enabled"])
+            if not isinstance(enabled, bool):
+                raise RungError("enabled is true or false", code="bad_request", status=400, field="enabled")
             if "tools" in row and row["tools"] is not None:
                 if not isinstance(row["tools"], list):
                     raise RungError("tools is a list of toolset names", code="bad_request", status=400, field="tools")
                 tools = _clean_names(row["tools"], "tool")
             else:  # not sent: keep what the profile has, or pre-fill a new one from Hermes
                 tools = _l(old["tools"], []) if old else self._source_tools(name)
-            at_once = row.get("at_once", old["at_once"] if old else 2)
-            if isinstance(at_once, bool) or not isinstance(at_once, int) or not 1 <= at_once <= 10:
-                raise RungError("at once must be 1 to 10", code="bad_request", status=400, field="at_once")
-            clean.append((name, _j(labels), cost, max_runs, 1 if row.get("enabled", True) else 0, _j(tools), at_once))
-        with self._tx() as c:
-            for name, labels, cost, max_runs, enabled, tools, at_once in clean:
-                c.execute(
-                    "INSERT INTO profiles(name, labels, cost, max_runs, enabled, tools, at_once) VALUES (?,?,?,?,?,?,?) "
-                    "ON CONFLICT(name) DO UPDATE SET labels=excluded.labels, cost=excluded.cost, "
-                    "max_runs=excluded.max_runs, enabled=excluded.enabled, tools=excluded.tools, "
-                    "at_once=excluded.at_once",
-                    (name, labels, cost, max_runs, enabled, tools, at_once),
-                )
+            clean.append((name, _j(labels), cost, max_runs, 1 if enabled else 0, _j(tools), at_once))
+        return clean
+
+    @staticmethod
+    def _write_profiles(c, clean: list[tuple]) -> None:
+        for row in clean:
+            c.execute(
+                "INSERT INTO profiles(name, labels, cost, max_runs, enabled, tools, at_once) VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET labels=excluded.labels, cost=excluded.cost, "
+                "max_runs=excluded.max_runs, enabled=excluded.enabled, tools=excluded.tools, "
+                "at_once=excluded.at_once",
+                row,
+            )
 
     # ------------------------------------------------------------------ projects
 
@@ -311,12 +376,14 @@ class Engine(LifecycleMixin, ClaimsMixin):
                        profiles: list[str] | None = None) -> dict:
         """Only the folder is required. Name, test command and profiles default from it (project_defaults)
         and every value stays the caller's to change. Errors name the field they belong to."""
-        folder = (folder or "").strip()
+        name, folder, test_command = (_text_field(v, f) for v, f in
+                                      ((name, "name"), (folder, "folder"), (test_command, "test_command")))
         self._check_folder(folder)
         defaults = self.project_defaults(folder)
-        name = (name or "").strip() or defaults["name"]
-        test_command = (test_command or "").strip() or defaults["test_command"]
-        profiles = [p for p in dict.fromkeys(profiles or []) if p] or defaults["profiles"]
+        name = name or defaults["name"]
+        test_command = test_command or defaults["test_command"]
+        # Not sent: the enabled profiles. Sent: exactly what was ticked, so an empty list is refused.
+        profiles = defaults["profiles"] if profiles is None else _profile_list(profiles)
         self._check_name(name)
         if not test_command:
             raise RungError("test command is required", code="bad_request", status=400, field="test_command")
@@ -358,9 +425,10 @@ class Engine(LifecycleMixin, ClaimsMixin):
         if len(name) > 80 or "/" in name or name.strip() != name:
             raise RungError("a name is up to 80 characters, without a slash", code="bad_request", status=400,
                             field="name")
-        row = self._q1("SELECT pk FROM projects WHERE name = ?", (name,))
-        if row and row["pk"] != current_pk:
-            raise RungError(f"a project named {name} exists", code="conflict", field="name")
+        # Names differing only in case read as one in the picker: refuse them as a duplicate too.
+        row = self._q1("SELECT pk, name FROM projects WHERE name = ? COLLATE NOCASE AND pk IS NOT ?", (name, current_pk))
+        if row:
+            raise RungError(f"a project named {row['name']} exists", code="conflict", field="name")
 
     def _project_row(self, name_or_pk):
         if isinstance(name_or_pk, int):
@@ -802,7 +870,14 @@ class Engine(LifecycleMixin, ClaimsMixin):
         if not x:
             raise NotFound(f"no change {change_id}")
         rid = self._rid_of(x["rung_pk"])
-        return self.edit(project, rid, text=x["before_text"], detail=x["before_detail"], actor=actor, approve=True)
+        r = self._rung_row(project, rid)
+        if (r["text"], r["detail"]) != (x["after_text"], x["after_detail"]):
+            # A later change landed on top: reverting this one would silently undo that one too.
+            raise RungError(f"{rid} changed again after this change; revert the later change first", code="conflict")
+        # The earlier text was approved; it stays approved only if the rung still is. A rung that went stale
+        # from above stays stale: its parent changed since that text was approved.
+        return self.edit(project, rid, text=x["before_text"], detail=x["before_detail"], actor=actor,
+                         approve=r["status"] == "approved")
 
     def change_for(self, project: str, rid: str) -> dict | None:
         """The upstream change that made this rung stale (the latest change above it)."""
@@ -863,7 +938,6 @@ class Engine(LifecycleMixin, ClaimsMixin):
                         c.execute("UPDATE rungs SET data = ? WHERE pk = ?", (_j(sd), s["pk"]))
         return self._rung_dict(self._rung_by_pk(spec_pk)) if spec_pk else None
 
-    @writes()
     def ai_derived(self, project: str, spec_rid: str) -> bool:
         """An AI-derived specification: drafted by an agent, or under a requirement in AI derives mode."""
         r = self._rung_row(project, spec_rid)
@@ -886,11 +960,13 @@ class Engine(LifecycleMixin, ClaimsMixin):
         data = _l(r["data"], {})
         if data.get("draft_state") == "drafting":
             raise RungError(f"{spec_rid} is still drafting", code="locked")
-        fresh = r["status"] == "approved"
-        if fresh and not self.ai_derived(project, spec_rid):
+        if not self.ai_derived(project, spec_rid):
             raise RungError(f"{spec_rid} is written by you; edit it instead", code="refused")
+        fresh = r["status"] == "approved"
         data["draft_state"] = "drafting"
         data.pop("draft_error", None)
+        if r["status"] != "draft":
+            data.pop("fresh_from", None)  # an earlier fresh draft that was approved since is over
         with self._tx() as c:
             if fresh:
                 self._still_version(c, r)
@@ -916,14 +992,16 @@ class Engine(LifecycleMixin, ClaimsMixin):
         self._require_drafting(r)
         data = _l(r["data"], {})
         data.update({"draft_state": "drafted", "author_role": "agent", "drafted_by": drafted_by})
-        fresh_from = data.pop("fresh_from", None)
+        # Kept until the specification is approved again: a second fresh draft of the same open version
+        # still counts as a change of approved text.
+        fresh_from = data.get("fresh_from")
         if tags is not None:
             data["tags"] = list(tags)
         if required_tags is not None:
             data["required_tags"] = list(required_tags)
         now = self.clock()
         with self._tx() as c:
-            if fresh_from is not None and text.strip() != r["text"]:
+            if fresh_from is not None and (text.strip(), (detail or "").strip()) != (r["text"], r["detail"]):
                 # A fresh draft of an approved specification changes approved text: what hangs below
                 # goes stale and the change is recorded, as for an edit.
                 seq = self._next_seq(c)
@@ -935,8 +1013,10 @@ class Engine(LifecycleMixin, ClaimsMixin):
                      fresh_from, r["version"], _j(stale_rids), now, drafted_by))
             c.execute("UPDATE rungs SET text=?, detail=?, data=?, author_kind='agent', author_name=?, updated_at=? "
                       "WHERE pk=?", (text.strip(), (detail or "").strip(), _j(data), drafted_by, now, r["pk"]))
-            c.execute("UPDATE rung_versions SET text=?, detail=?, data=? WHERE rung_pk=? AND version=?",
-                      (text.strip(), (detail or "").strip(), _j(data), r["pk"], r["version"]))
+            # The version's words are the drafting profile's, whoever asked for them.
+            c.execute("UPDATE rung_versions SET text=?, detail=?, data=?, by_name=?, by_kind='agent' "
+                      "WHERE rung_pk=? AND version=?",
+                      (text.strip(), (detail or "").strip(), _j(data), drafted_by, r["pk"], r["version"]))
             self._touch_project(c, r["project_pk"])
         return self._rung_dict(self._rung_by_pk(r["pk"]))
 
@@ -1604,38 +1684,38 @@ class Engine(LifecycleMixin, ClaimsMixin):
 
     # ------------------------------------------------------------------ allocation and picks
 
-    def _profile_facts(self, name: str) -> allocation.ProfileFacts:
+    def _profile_facts(self, name: str, ignore_claim: int | None = None) -> allocation.ProfileFacts:
         prof = self.profile(name)
         running = self._q1("SELECT COUNT(*) FROM runs WHERE profile=? AND status IN ('queued','running')", (name,))[0]
         total = self._q1("SELECT COUNT(*) FROM executions WHERE carried_by=? AND kind='command' AND status IN "
                          "('pass','fail','error')", (name,))[0]
         completed = self._q1("SELECT COUNT(*) FROM executions WHERE carried_by=? AND kind='command' AND status IN "
                              "('pass','fail')", (name,))[0]
-        claims = self._q1("SELECT COUNT(*) FROM claims WHERE profile=? AND status='open'", (name,))[0]
+        claims = self._q1("SELECT COUNT(*) FROM claims WHERE profile=? AND status='open' AND pk IS NOT ?",
+                          (name, ignore_claim))[0]
         return allocation.ProfileFacts(name=name, labels=tuple(prof["labels"]), cost=prof["cost"],
                                        enabled=prof["enabled"], running=running, completed=completed, total=total,
                                        tools=tuple(prof["tools"]), at_once=int(prof["at_once"]), claims=claims)
 
-    def _authors(self, s) -> set[str]:
-        """Every profile that wrote this specification or one of its tests: the agent author of any
-        version, the drafting profile, the proposer."""
-        names = set()
+    def _authors(self, s) -> dict[str, list[str]]:
+        """Every profile that wrote this specification or one of its tests (the agent author of any
+        version, the drafting profile, the proposer), each with the rungs it wrote."""
+        out: dict[str, list[str]] = {}
+
+        def add(name, rid):
+            if name and rid not in out.setdefault(name, []):
+                out[name].append(rid)
         rows = [s] + [t for t in self._children_rows(s["pk"]) if t["status"] != "dismissed"]
         for r in rows:
-            if r["author_kind"] == "agent" and r["author_name"]:
-                names.add(r["author_name"])
-            if r["proposer"]:
-                names.add(r["proposer"])
-            d = _l(r["data"], {})
-            if d.get("drafted_by"):
-                names.add(d["drafted_by"])
+            if r["author_kind"] == "agent":
+                add(r["author_name"], r["rid"])
+            add(r["proposer"], r["rid"])
+            add(_l(r["data"], {}).get("drafted_by"), r["rid"])
             for v in self._q("SELECT by_name, by_kind, data FROM rung_versions WHERE rung_pk=?", (r["pk"],)):
-                if v["by_kind"] == "agent" and v["by_name"]:
-                    names.add(v["by_name"])
-                vd = _l(v["data"], {})
-                if vd.get("drafted_by"):
-                    names.add(vd["drafted_by"])
-        return names
+                if v["by_kind"] == "agent":
+                    add(v["by_name"], r["rid"])
+                add(_l(v["data"], {}).get("drafted_by"), r["rid"])
+        return out
 
     def _needs_of(self, s) -> tuple[allocation.Needs, str]:
         """What a specification asks of its carrier, and why it is human only ('' when it is not)."""
@@ -1647,17 +1727,19 @@ class Engine(LifecycleMixin, ClaimsMixin):
         elif tests and all(_l(t["data"], {}).get("type") == "manual" for t in tests):
             why_human = "all tests manual"
         independent = bool(data.get("independent"))
+        authors = self._authors(s) if independent else {}
         needs = allocation.Needs(
             spec=s["rid"], required_tags=tuple(data.get("required_tags", []) or ()),
             required_tools=tuple(data.get("required_tools", []) or ()), independent=independent,
-            authors=frozenset(self._authors(s)) if independent else frozenset(), human_only=bool(why_human))
+            authors=frozenset(authors), human_only=bool(why_human),
+            authored=tuple((n, rid) for n, rids in authors.items() for rid in rids))
         return needs, why_human
 
     def _project_facts(self, p) -> list[allocation.ProfileFacts]:
         names = [n for n in _l(p["profiles"], []) if self._q1("SELECT 1 FROM profiles WHERE name=?", (n,))]
         return [self._profile_facts(n) for n in names]
 
-    def exclusion(self, project: str, spec_rid: str, profile: str) -> str:
+    def exclusion(self, project: str, spec_rid: str, profile: str, ignore_claim: int | None = None) -> str:
         """Why a profile may not carry a specification ('' when it may). The one check behind pick, Send,
         start run, the API, the CLI and rung_claim."""
         s = self._rung_row(project, spec_rid)
@@ -1665,7 +1747,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         if profile not in _l(p["profiles"], []) or not self._q1("SELECT 1 FROM profiles WHERE name=?", (profile,)):
             return f"not a profile of {p['name']}"
         needs, _ = self._needs_of(s)
-        return "; ".join(allocation.reasons(self._profile_facts(profile), needs))
+        return "; ".join(allocation.reasons(self._profile_facts(profile, ignore_claim), needs))
 
     def exclusions(self, project: str) -> dict:
         """Per profile of the project, the specifications it is excluded from, each with its reason."""
@@ -1767,10 +1849,10 @@ class Engine(LifecycleMixin, ClaimsMixin):
         self._require_develop(project, s)
         if self._q1("SELECT 1 FROM runs WHERE spec_pk=? AND status IN ('queued','running')", (s["pk"],)):
             raise RungError(f"{spec_rid} is already running", code="conflict")
-        cmd_tests = [t for t in self._children_rows(s["pk"]) if t["status"] == "approved" and
-                     _l(t["data"], {}).get("type") == "command"]
-        if not cmd_tests:
-            raise RungError(f"{spec_rid} has no accepted command test to develop against", code="locked")
+        held = self._q1("SELECT chat, profile FROM claims WHERE spec_pk=? AND status='open' LIMIT 1", (s["pk"],))
+        if held is not None:
+            raise RungError(f"{spec_rid} is held by {held['chat'] or 'a chat'} ({held['profile']}); release the claim "
+                            "first", code="conflict")
         sug = self.suggest(project, spec_rid)
         picked_by = "suggestion"
         if profile:
@@ -1788,6 +1870,12 @@ class Engine(LifecycleMixin, ClaimsMixin):
         else:
             why = "; ".join(f"{x['profile']} {x['reason']}" for x in sug["excluded"])
             raise RungError(f"no eligible profile for {spec_rid}" + (f" ({why})" if why else ""), code="locked")
+        # After the filters, so a specification whose tests are all manual names the same reason (human only)
+        # here as everywhere else.
+        cmd_tests = [t for t in self._children_rows(s["pk"]) if t["status"] == "approved" and
+                     _l(t["data"], {}).get("type") == "command"]
+        if not cmd_tests:
+            raise RungError(f"{spec_rid} has no accepted command test to develop against", code="locked")
         prof = self.profile(profile)
         worker = self.get_setting("worker")
         timeout_s = int(self.get_setting("run_timeout_min")) * 60

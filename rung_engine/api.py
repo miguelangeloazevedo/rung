@@ -72,6 +72,25 @@ def handle(svc: Service, method: str, path: str, body: Any = None, human: Actor 
     return 404, {"detail": f"no route {method} {path}", "code": "not_found"}
 
 
+def _int_path(value, field: str) -> int:
+    """A number in the path; anything else is a 400 naming it."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    raise RungError(f"{field} is a number", code="bad_request", status=400, field=field)
+
+
+def _known_profiles(svc, names) -> None:
+    """The pane offers only the profiles Rung lists; a name it does not list is refused, not created."""
+    if not isinstance(names, list):
+        return  # absent, or wrong-typed: the engine names the field
+    known = {p["name"] for p in svc.engine.profiles()}
+    unknown = [n for n in names if isinstance(n, str) and n.strip() and n.strip() not in known]
+    if unknown:
+        raise RungError(f"no profile {unknown[0]}", code="bad_request", status=400, field="profiles")
+
+
 def _need(body, key):
     if key not in body:
         raise ApiError(400, f"{key} is required", "bad_request")
@@ -105,8 +124,9 @@ def _state(svc, human, body):
 @route("POST", "/projects")
 def _create_project(svc, human, body):
     """Only the folder is required; the rest fill in from it (POST /projects/defaults shows the values)."""
+    _known_profiles(svc, body.get("profiles"))
     return svc.engine.create_project(body.get("name", ""), body.get("folder", ""), body.get("test_command", ""),
-                                     list(body.get("profiles") or []))
+                                     body.get("profiles"))
 
 
 @route("POST", "/projects/defaults")
@@ -121,6 +141,7 @@ def _archived(svc, human, body):
 
 @route("POST", "/projects/{project}/update")
 def _update_project(svc, human, body, project):
+    _known_profiles(svc, body.get("profiles"))
     return svc.engine.update_project(project, new_name=body.get("name"), folder=body.get("folder"),
                                      test_command=body.get("test_command"),
                                      profiles=body.get("profiles"), actor=human)
@@ -494,8 +515,11 @@ def _execution(svc, human, body, project, rid, n):
 
 @route("POST", "/projects/{project}/tests/{rid}/executions/{n}/cancel")
 def _cancel_exec(svc, human, body, project, rid, n):
-    svc.engine.cancel_execution(project, rid, int(n))
-    return svc.engine.execution(project, rid, int(n))
+    x = svc.engine.execution(project, rid, _int_path(n, "n"))
+    if x["status"] != "running":
+        raise RungError(f"{rid} #{x['n']} is not running ({x['status']})", code="not_running")
+    svc.engine.cancel_execution(project, rid, x["n"])
+    return svc.engine.execution(project, rid, x["n"])
 
 
 @route("POST", "/projects/{project}/tests/{rid}/record")
@@ -577,7 +601,10 @@ def _run(svc, human, body, run_id):
 
 @route("POST", "/runs/{run_id}/cancel")
 def _cancel_run(svc, human, body, run_id):
-    return svc.cancel(int(run_id))
+    r = svc.engine.run(_int_path(run_id, "run"))
+    if r["status"] not in ("queued", "running"):
+        raise RungError(f"run {r['id']} is not running ({r['status']})", code="not_running")
+    return svc.cancel(r["id"])
 
 
 @route("GET", "/projects/{project}/check/{rid}")
@@ -600,10 +627,10 @@ def _settings(svc, human, body):
 
 @route("POST", "/settings")
 def _save_settings(svc, human, body):
-    for k, v in (body.get("settings") or {}).items():
-        svc.engine.set_setting(k, v)
-    if "profiles" in body:
-        svc.engine.save_profiles(list(body["profiles"]))
+    profiles = body.get("profiles") if "profiles" in body else None
+    if isinstance(profiles, list):  # Settings lists the profiles Rung has; it never creates one
+        _known_profiles(svc, [p.get("name") for p in profiles if isinstance(p, dict)])
+    svc.engine.save_settings(body.get("settings"), profiles)
     return {"settings": svc.engine.settings(), "profiles": svc.engine.profiles()}
 
 

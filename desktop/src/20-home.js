@@ -361,11 +361,17 @@ function Settings({ project }) {
   const colours = draft.settings.colours || {}
   const save = async () => {
     const s = draft.settings
-    const timeout = parseInt(String(s.test_timeout).replace(/[^\d]/g, ''), 10)
-    const kb = parseInt(String(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000)).replace(/[^\d]/g, ''), 10)
+    // What the field shows, as a number when it is one; anything else goes as typed and the route
+    // refuses it on that field, so nothing is saved that the form did not show.
+    const num = (v, unit) => {
+      const t = String(v == null ? '' : v).trim().replace(unit || /$^/, '').trim()
+      return /^\d+$/.test(t) ? parseInt(t, 10) : t
+    }
+    const timeout = num(s.test_timeout, /\s*s$/i)
+    const kb = num(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000), /\s*kb$/i)
     const res = await post('/settings', {
-      settings: { test_timeout: timeout || 120, output_limit: (kb || 64) * 1000, colours: s.colours },
-      profiles: draft.profiles.map(p => ({ ...p, cost: parseInt(p.cost, 10) || 0, max_runs: parseInt(p.max_runs, 10) || 1, at_once: parseInt(p.at_once, 10) || 0 }))
+      settings: { test_timeout: timeout, output_limit: typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
+      profiles: draft.profiles.map(p => ({ ...p, cost: num(p.cost), max_runs: num(p.max_runs), at_once: num(p.at_once) }))
     })
     if (!res.ok) return setErr(res.error)
     $colours.set(res.data.settings.colours)

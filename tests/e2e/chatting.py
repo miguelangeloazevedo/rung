@@ -58,9 +58,19 @@ def new_session(page) -> None:
     time.sleep(0.5)
 
 
+def _no_composer(page, where: str, exc: Exception) -> AssertionError:
+    shot = Path(os.environ.get("TMPDIR", "/tmp")) / f"rung-chat-{int(time.time())}.png"
+    page.screenshot(path=str(shot))
+    return AssertionError(f"no composer {where}: now at {route(page)!r}, "
+                          f"page {page.evaluate('document.body.innerText')[:400]!r}, screenshot {shot}")
+
+
 def chat(page, text: str) -> None:
     box = page.locator(COMPOSER).first
-    box.wait_for(timeout=30000)
+    try:
+        box.wait_for(timeout=30000)
+    except Exception as exc:
+        raise _no_composer(page, f"to send {text!r}", exc) from exc
     box.click()
     page.keyboard.type(text)
     page.keyboard.press("Enter")

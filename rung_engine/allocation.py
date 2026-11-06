@@ -59,6 +59,8 @@ class Needs:
     independent: bool = False
     authors: frozenset = frozenset()
     human_only: bool = False
+    # (profile, rung id) for each author: the rung a reason names, the specification or one of its tests.
+    authored: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass
@@ -102,11 +104,14 @@ def reasons(p: ProfileFacts, needs: Needs) -> list[str]:
     missing = [t for t in dict.fromkeys(needs.required_tags or ()) if t and t not in set(p.labels)]
     if missing:
         out.append("missing tag " + ", ".join(missing))
-    missing = [t for t in dict.fromkeys(needs.required_tools or ()) if t and t not in set(p.tools)]
+    have = {t.lower() for t in p.tools}  # toolset names compare without case: Terminal is terminal
+    missing = [t for t in dict.fromkeys(needs.required_tools or ()) if t and t.lower() not in have]
     if missing:
         out.append("missing tool " + ", ".join(missing))
     if needs.independent and p.name in needs.authors:
-        out.append(f"author of {needs.spec}")
+        # One id (`author of <id>`): the specification when the profile wrote it, else the first test it wrote.
+        wrote = [rid for name, rid in needs.authored if name == p.name]
+        out.append("author of " + (needs.spec if needs.spec in wrote or not wrote else wrote[0]))
     if p.load >= max(1, int(p.at_once)):
         out.append(f"at capacity {p.load} of {int(p.at_once)}")
     return out
