@@ -122,6 +122,10 @@ def default_profile(page) -> None:
     UC26) and stops midway would otherwise leave the Desktop on it, and later chats would run as that
     profile."""
     other = "button[aria-pressed=true][aria-label]:not([aria-label^='Switch to']):not([aria-label^='Show all'])"
+    try:  # the profile rail renders after a reload; read it once it is there
+        page.locator("[data-slot=profile-rail]").first.wait_for(state="attached", timeout=30000)
+    except Exception:
+        pass
     names = page.evaluate("""(sel) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label'))""", other)
     profiles = [n for n in names if n and (HOME / "profiles" / n).is_dir()]
     if not profiles:
@@ -150,6 +154,9 @@ def open_rung(page, fresh: bool = True):
     if fresh:
         page.evaluate("location.hash = '#/'")
         reload(page)
+        # A reload restores the profile the Desktop stored last, which can be one an earlier test
+        # switched to and back from: return to default again so chats stay the default profile's.
+        default_profile(page)
     dismiss_toasts(page)
     nav = page.get_by_role("link", name="Rung", exact=True)
     if not nav.count():
