@@ -527,6 +527,7 @@ function Root({ children, className }) {
 function tone(node) {
   if (!node) return 'dim'
   const st = node.status
+  if (node.kind === 'specification' && (node.draft_state === 'failed' || node.draft_state === 'drafting')) return 'needs'  // as the Draft failed and Drafting badges
   if (st === 'stale') return 'stale'
   if (st === 'draft' || st === 'proposed' || st === 'dismissed') return 'dim'
   if (node.kind === 'test') {
@@ -1233,7 +1234,7 @@ function Settings({ project }) {
     const timeout = num(s.test_timeout, /\s*s$/i)
     const kb = num(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000), /\s*kb$/i)
     const res = await post('/settings', {
-      settings: { test_timeout: timeout, output_limit: typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
+      settings: { test_timeout: timeout, output_limit: s.output_limit_label == null ? s.output_limit : typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
       profiles: draft.profiles.map(p => ({ ...p, cost: num(p.cost), max_runs: num(p.max_runs), at_once: num(p.at_once) }))
     })
     if (!res.ok) {
@@ -2058,12 +2059,14 @@ function SpecView({ project, r, ret, need }) {
   const develop = () => act(`${P(project)}/specs/${r.id}/send`, {}, d => navigate('run', { run: d.id }))
   const headline = h('div', 'flex items-center justify-between',
     pathCrumbs(r, r.status === 'approved' && r.released ? 'text-fg' : 'text-needs'),
-    r.released ? h(Badge, { status: 'covered' }) : tests.length || r.status === 'stale' ? h(Badge, { status: r.status }) : h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-btn text-muted border border-line', 'No tests'))
+    r.draft_state === 'failed' ? h(Badge, { status: 'draft_failed' }) : r.draft_state === 'drafting' ? h(Badge, { status: 'drafting' })
+      : r.released ? h(Badge, { status: 'released' }) : tests.length || r.status === 'stale' ? h(Badge, { status: r.status }) : h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-btn text-muted border border-line', 'No tests'))
   // Unapproved AI draft (spec-s31)
   if (r.status === 'draft') {
     const lines = String(r.detail || '').split('\n').map(x => x.replace(/^[-*]\s*/, '').trim()).filter(Boolean)
     const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'spec' },
-      h('div', 'flex flex-col gap-2', headline, h('h2', 'text-base font-semibold text-fg', r.draft_state === 'drafting' ? 'Drafting' : r.text)),
+      h('div', 'flex flex-col gap-2', headline, h('h2', 'text-base font-semibold text-fg', r.draft_state === 'drafting' ? 'Drafting' : r.text),
+        r.draft_state === 'failed' ? h('p', { className: 'text-xs text-needs', 'data-testid': 'draft-error' }, r.draft_error || 'Draft failed') : null),
       h('div', 'flex flex-col gap-1.5 pt-2 border-t border-line',
         h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Authoring'),
         h(Seg, { big: true, options: [['ai', 'AI derives'], ['human', 'I write, AI supports']], value: r.author_role === 'human' ? 'human' : 'ai', testid: 'authoring', onChange: v => (v === 'human' ? navigate('spec-edit', { spec: r.id, ret, need }) : act(`${P(project)}/rungs/${r.parent}/authoring`, { mode: 'ai' })) })),
@@ -3335,6 +3338,8 @@ function noteNeed(project, need) {
 function rungLabel(n) {
   if (!n) return ''
   if (n.kind === 'test') return n.status === 'stale' ? 'stale' : resultWord(n.result)
+  if (n.kind === 'specification' && n.draft_state === 'failed') return 'draft failed'
+  if (n.kind === 'specification' && n.draft_state === 'drafting') return 'drafting'
   if (n.status === 'stale') return 'stale'
   if (n.status === 'draft' || n.status === 'proposed') return n.status
   if (n.kind === 'specification') {

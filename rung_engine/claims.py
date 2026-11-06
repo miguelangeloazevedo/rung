@@ -27,9 +27,24 @@ def normalise(text: str) -> str:
     dash and hyphen character read as `-`."""
     import unicodedata
     text = unicodedata.normalize("NFKC", text).translate(_DASHES)
-    # Invisible format characters (zero-width space and joiners, soft hyphen, BOM) are dropped: an id
-    # with one inside reads the same to a person.
-    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    # Characters with no glyph are dropped: format characters (zero-width space and joiners, soft
+    # hyphen, BOM) and the rest of Unicode's Default_Ignorable_Code_Point set (variation selectors, the
+    # combining grapheme joiner, Mongolian selectors, Hangul fillers, tags). An id with one inside reads
+    # the same to a person.
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf" and not _ignorable(ord(ch)))
+
+
+_IGNORABLE = ((0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x2060, 0x206F),
+              (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3),
+              (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF))
+
+
+def _ignorable(cp: int) -> bool:
+    return any(lo <= cp <= hi for lo, hi in _IGNORABLE)
+
+
+def _canon(rid):
+    return canonical_rid(rid) if isinstance(rid, str) else rid
 
 
 def rids_in(text: str) -> list[str]:
@@ -93,6 +108,7 @@ class ClaimsMixin:
         return out
 
     def claim(self, project: str, spec_rid: str, session_id: str, chat: str, profile: str) -> dict:
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         from .core import RungError
         if not isinstance(session_id, str) or not session_id.strip():
             raise RungError("a claim needs a chat session", code="bad_request", status=400, field="session")
@@ -148,6 +164,7 @@ class ClaimsMixin:
     def report(self, project: str, spec_rid: str, session_id: str) -> dict:
         """A session declares its claimed specification done. Refused while the check fails; the claim
         then stays open. A report is never an approval."""
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         from .core import RungError
         # Check and close in one write transaction: no execution can land, and no person can release the
         # claim, between the check that passed and the claim closing as reported.
@@ -160,6 +177,13 @@ class ClaimsMixin:
                             "LIMIT 1", (s["pk"], session_id or ""))
             if mine is None:
                 raise RungError(f"this chat holds no open claim on {spec_rid}; claim it first", code="no_claim")
+            # Independence holds at the report too: a holder who wrote one of the spec's tests while it
+            # held the claim is now an author, and an author does not report an independent spec done.
+            why = self.exclusion(project, spec_rid, mine["profile"], ignore_claim=mine["pk"])
+            wrote = [x for x in why.split("; ") if x.startswith("author of ")]
+            if wrote:
+                raise RungError(f"{spec_rid} needs an independent carrier and {mine['profile']} is now the "
+                                f"{wrote[0]}", code="excluded")
             chk = self.check(project, spec_rid)
             if not chk["ok"]:
                 raise RungError(f"{spec_rid} is not released: " + "; ".join(chk["blockers"]), code="not_released")

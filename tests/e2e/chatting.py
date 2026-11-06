@@ -39,6 +39,10 @@ def use_profile(page, name: str) -> None:
             page.locator(sel).first.click()
         H.wait_until(lambda: page.locator(sel).first.get_attribute("aria-pressed") == "true", timeout=60,
                      msg=f"profile {name} active")
+    # A profile already active from an earlier test is not switched, so nothing leaves the Rung view:
+    # go to the chat home either way before waiting for its composer.
+    if not page.locator(COMPOSER).count():
+        page.evaluate("location.hash = '#/'")
     page.locator(COMPOSER).first.wait_for(timeout=60000)
     H.wait_until(lambda: not waking(page), timeout=120, msg=f"{name} backend up")
 

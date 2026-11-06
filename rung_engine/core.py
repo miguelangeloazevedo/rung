@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import allocation, db
 from .execute import context_line, git_commit, run_command
-from .claims import ClaimsMixin
+from .claims import ClaimsMixin, _canon
 from .lifecycle import LifecycleMixin
 
 KINDS = ("need", "requirement", "specification", "test")
@@ -381,7 +381,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         enabled = row.get("enabled", od["enabled"])
         if not isinstance(enabled, bool):
             raise RungError("enabled is true or false", code="bad_request", status=400, field="enabled")
-        if "tools" in row and row["tools"] is not None:
+        if "tools" in row:
             if not isinstance(row["tools"], list):
                 raise RungError("tools is a list of toolset names", code="bad_request", status=400, field="tools")
             tools = _clean_names(row["tools"], "tool")
@@ -1571,6 +1571,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
 
     def check(self, project: str, rid: str) -> dict:
         """The goal gate. Pure engine computation; never calls a model."""
+        rid = _canon(rid)  # one id form at every door, echoed back as stored
         r = self._rung_row(project, rid)
         if r["kind"] != "specification":
             raise RungError(f"{rid} is not a specification", code="bad_request", status=400)
@@ -1693,6 +1694,9 @@ class Engine(LifecycleMixin, ClaimsMixin):
         running = self._q1("SELECT COUNT(*) FROM runs WHERE project_pk=? AND status IN ('queued','running')", (p["pk"],))[0]
         running += self._q1("SELECT COUNT(*) FROM executions e JOIN rungs r ON r.pk=e.test_pk WHERE r.project_pk=? "
                             "AND e.status='running' AND e.run_pk IS NULL", (p["pk"],))[0]
+        # Open claims are work in flight too (DCK-04): the picker, the dock and home count the same set.
+        running += self._q1("SELECT COUNT(*) FROM claims c JOIN rungs s ON s.pk=c.spec_pk WHERE s.project_pk=? "
+                            "AND c.status='open'", (p["pk"],))[0]
         return {"covered": covered, "requirements": len(reqs), "stale": stale, "failing": failing,
                 "needs_you": len(self.needs_you(project)), "running": running, "last_activity": p["last_activity"],
                 "archived": p["archived_at"] is not None}
@@ -1811,6 +1815,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
     def exclusion(self, project: str, spec_rid: str, profile: str, ignore_claim: int | None = None) -> str:
         """Why a profile may not carry a specification ('' when it may). The one check behind pick, Send,
         start run, the API, the CLI and rung_claim."""
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         s = self._rung_row(project, spec_rid)
         p = self._project_row(s["project_pk"])
         if profile not in _l(p["profiles"], []) or not self._q1("SELECT 1 FROM profiles WHERE name=?", (profile,)):
@@ -1842,6 +1847,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
                        actor: Actor = HUMAN) -> dict:
         """What a specification asks of its carrier: required tools, an independent carrier, human only.
         A person's setting; it changes no text, makes no new version and stales nothing."""
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         if not actor.is_human:
             raise RungError("only a human sets what a specification requires", code="forbidden", status=403)
         s = self._rung_row(project, spec_rid)
@@ -1870,6 +1876,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         return self.suggest(project, spec_rid)
 
     def suggest(self, project: str, spec_rid: str) -> dict:
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         s = self._rung_row(project, spec_rid)
         if s["kind"] != "specification":
             raise RungError(f"{spec_rid} is not a specification", code="bad_request", status=400)
@@ -1896,6 +1903,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
 
     @writes()
     def pick(self, project: str, spec_rid: str, profile: str, actor: Actor = HUMAN) -> dict:
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         if not actor.is_human:
             raise RungError("only a human picks a carrier", code="forbidden", status=403)
         s = self._rung_row(project, spec_rid)
@@ -1914,6 +1922,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         """Create a develop run for a specification. The caller launches the runner process. Every check
         and the insert run in one write transaction, so another process cannot start a second run, claim
         the specification or fill the profile's At once in between."""
+        spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         if profile is not None and not isinstance(profile, str):
             raise RungError("agent is a profile name", code="bad_request", status=400, field="agent")
         with self._tx() as c:

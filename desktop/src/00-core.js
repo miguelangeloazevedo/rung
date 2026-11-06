@@ -293,6 +293,7 @@ function Root({ children, className }) {
 function tone(node) {
   if (!node) return 'dim'
   const st = node.status
+  if (node.kind === 'specification' && (node.draft_state === 'failed' || node.draft_state === 'drafting')) return 'needs'  // as the Draft failed and Drafting badges
   if (st === 'stale') return 'stale'
   if (st === 'draft' || st === 'proposed' || st === 'dismissed') return 'dim'
   if (node.kind === 'test') {

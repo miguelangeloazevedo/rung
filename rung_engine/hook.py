@@ -43,8 +43,12 @@ def _session_claims(session_id: str, store: Path | None = None) -> tuple[list[di
     """Open claims of the session with their checks, and the open project (what a tool call without a
     project acts on), from a read-only view of the store."""
     path = store if store is not None else _store()
-    if path is None or not Path(path).is_file():
-        return [], ""
+    if path is None:
+        return [], ""  # no Rung store at all: nothing is claimed
+    if not Path(path).is_file():
+        # A store that is named but missing (moved, being replaced) is unreadable, not empty: the caller
+        # fails open without recording the completion as judged.
+        raise FileNotFoundError(path)
     from .core import Engine
     eng = Engine(path, readonly=True)
     try:
@@ -174,6 +178,8 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
     block = None
     if tool_name == "rung_report":
         from .claims import canonical_rid
+        if isinstance(args, dict) and args.get("project") is not None and not isinstance(args.get("project"), str):
+            return None  # malformed: the tool itself refuses it (project is text), no completion is declared
         spec = args.get("spec") if isinstance(args, dict) else None
         spec = canonical_rid(spec) if isinstance(spec, str) else spec
         project = args.get("project") if isinstance(args, dict) and isinstance(args.get("project"), str) \

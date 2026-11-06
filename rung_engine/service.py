@@ -128,7 +128,8 @@ class Service:
                     if spec["children"] or spec["status"] != "approved":
                         continue
                     for fields in d.propose_tests(spec["text"], req["text"], proj):
-                        made.append(self.engine.add_test(project, spec["id"], fields, Actor("agent", "drafting")))
+                        made.append(self.engine.add_test(project, spec["id"], fields,
+                                                         Actor("agent", getattr(d, "profile", "drafting"))))
         return made
 
     def run_test(self, project: str, test_rid: str, carried_by: str = "engine", wait: bool = False,

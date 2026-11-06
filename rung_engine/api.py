@@ -78,7 +78,7 @@ def _int_path(value, field: str) -> int:
         return value
     if isinstance(value, str) and value.isdigit():
         return int(value)
-    raise RungError(f"{field} is a number", code="bad_request", status=400, field=field)
+    raise RungError(f"{field} is a whole number, 0 or more", code="bad_request", status=400, field=field)
 
 
 def _known_profiles(svc, names) -> None:
@@ -131,7 +131,10 @@ def _create_project(svc, human, body):
 
 @route("POST", "/projects/defaults")
 def _project_defaults(svc, human, body):
-    return svc.engine.project_defaults(body.get("folder", ""))
+    folder = body.get("folder", "")
+    if not isinstance(folder, str):
+        raise RungError("folder is text", code="bad_request", status=400, field="folder")
+    return svc.engine.project_defaults(folder)
 
 
 @route("GET", "/projects/archived")

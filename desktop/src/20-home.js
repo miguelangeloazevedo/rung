@@ -373,7 +373,7 @@ function Settings({ project }) {
     const timeout = num(s.test_timeout, /\s*s$/i)
     const kb = num(s.output_limit_label != null ? s.output_limit_label : Math.round(s.output_limit / 1000), /\s*kb$/i)
     const res = await post('/settings', {
-      settings: { test_timeout: timeout, output_limit: typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
+      settings: { test_timeout: timeout, output_limit: s.output_limit_label == null ? s.output_limit : typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
       profiles: draft.profiles.map(p => ({ ...p, cost: num(p.cost), max_runs: num(p.max_runs), at_once: num(p.at_once) }))
     })
     if (!res.ok) {

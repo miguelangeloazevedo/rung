@@ -157,7 +157,8 @@ def main(args) -> int:
                     print("usage: hermes rung claims release <SPEC>", file=sys.stderr)
                     return 2
                 rows = e.release_claim(project, args.spec)
-                _say(args, rows, f"{args.spec}: released " + ", ".join(f"{r['chat']} ({r['profile']})" for r in rows))
+                from .claims import canonical_rid
+                _say(args, rows, f"{canonical_rid(args.spec)}: released " + ", ".join(f"{r['chat']} ({r['profile']})" for r in rows))
                 return 0
             rows = e.claims(project, open_only=not args.all)
             lines = [f"{c['spec']:8} {c['status']:9} {c['profile']:12} {c['chat']}"

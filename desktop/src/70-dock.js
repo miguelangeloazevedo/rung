@@ -26,6 +26,8 @@ function noteNeed(project, need) {
 function rungLabel(n) {
   if (!n) return ''
   if (n.kind === 'test') return n.status === 'stale' ? 'stale' : resultWord(n.result)
+  if (n.kind === 'specification' && n.draft_state === 'failed') return 'draft failed'
+  if (n.kind === 'specification' && n.draft_state === 'drafting') return 'drafting'
   if (n.status === 'stale') return 'stale'
   if (n.status === 'draft' || n.status === 'proposed') return n.status
   if (n.kind === 'specification') {

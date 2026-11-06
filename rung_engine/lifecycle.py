@@ -40,7 +40,8 @@ class LifecycleMixin:
         if p["archived_at"] is not None:
             raise RungError(f"{p['name']} is archived; restore it to change it", code="read_only")
         if rid:
-            r = self._q1("SELECT * FROM rungs WHERE project_pk = ? AND rid = ?", (p["pk"], rid))
+            from .claims import _canon
+            r = self._q1("SELECT * FROM rungs WHERE project_pk = ? AND rid = ?", (p["pk"], _canon(rid)))
             need = self._need_of(r) if r is not None else None
             if need is not None and need["retired_at"] is not None:
                 raise RungError(f"{need['rid']} is retired; restore it to change it", code="read_only")
@@ -73,9 +74,6 @@ class LifecycleMixin:
         if new_name is not None:
             after["name"] = _text_field(new_name, "name")
             self._check_name(after["name"], p["pk"])
-            if after["name"] != before["name"]:
-                # A develop run, a draft being written and a running test address the project by name.
-                self._refuse_while_busy(p["pk"], before["name"], claims=False)
         if folder is not None:
             after["folder"] = _text_field(folder, "folder")
             self._check_folder(after["folder"])
@@ -91,6 +89,16 @@ class LifecycleMixin:
         if not changed:
             return self.project(name)
         with self._tx() as c:
+            if after["name"] != before["name"]:
+                # A develop run, a draft being written and a running test address the project by name.
+                self._refuse_while_busy(p["pk"], before["name"], claims=False)
+            gone = [x for x in before["profiles"] if x not in after["profiles"]]
+            held = self._q1("SELECT c.profile, s.rid FROM claims c JOIN rungs s ON s.pk = c.spec_pk WHERE c.status='open' "
+                            f"AND s.project_pk = ? AND c.profile IN ({','.join('?' * len(gone))})",
+                            (p["pk"], *gone)) if gone else None
+            if held is not None:
+                raise RungError(f"{held['profile']} holds the claim on {held['rid']}; release it first",
+                                field="profiles")
             c.execute("UPDATE projects SET name=?, folder=?, test_command=?, profiles=?, last_activity=? WHERE pk=?",
                       (after["name"], after["folder"], after["test_command"], _j(after["profiles"]), self.clock(),
                        p["pk"]))
@@ -128,8 +136,9 @@ class LifecycleMixin:
         p = self._project_row(name)
         if p["archived_at"] is not None:
             raise RungError(f"{name} is already archived")
-        self._refuse_while_busy(p["pk"], name)
         with self._tx() as c:
+            # Checked inside the write transaction: no claim, run or draft can start in between.
+            self._refuse_while_busy(p["pk"], name)
             c.execute("UPDATE projects SET archived_at=? WHERE pk=?", (self.clock(), p["pk"]))
             self._log(c, p["pk"], "project_archived", {}, actor.name)
         return self.project(name)
@@ -156,8 +165,8 @@ class LifecycleMixin:
         p = self._project_row(name)
         if (confirm or "") != p["name"]:
             raise RungError("type the project name to delete it", code="bad_request", status=400, field="confirm")
-        self._refuse_while_busy(p["pk"], name)
         with self._tx() as c:
+            self._refuse_while_busy(p["pk"], name)
             c.execute("DELETE FROM projects WHERE pk=?", (p["pk"],))
             self._log(c, None, "project_deleted", {"name": p["name"], "folder": p["folder"]}, actor.name)
             if self.get_setting("last_project") == name:
@@ -182,8 +191,8 @@ class LifecycleMixin:
             raise RungError("a reason is required", code="bad_request", status=400, field="reason")
         sub = [n["pk"]] + [r["pk"] for r in self._descendants(n["pk"])]
         marks = ",".join("?" * len(sub))
-        self._refuse_while_busy(n["project_pk"], rid, sub)
         with self._tx() as c:
+            self._refuse_while_busy(n["project_pk"], rid, sub)
             c.execute("UPDATE rungs SET retired_at=?, retired_reason=?, retired_by=? WHERE pk=?",
                       (self.clock(), reason[:500], actor.name, n["pk"]))
             self._log(c, n["project_pk"], "need_retired", {"need": rid, "reason": reason[:500]}, actor.name)
