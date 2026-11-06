@@ -4,6 +4,7 @@ import shutil
 import sqlite3
 
 import harness as H
+from rung_engine.db import SCHEMA_VERSION
 from rung_engine.host import pid_alive
 from support import seed
 
@@ -110,7 +111,7 @@ def test_res04_previous_release_store_opens_intact(rung, page):
         listed = page.locator(".rung [data-testid=project-list]").inner_text()
         for p in before["projects"]:
             assert p["name"] in listed
-        assert rows(copy, "SELECT value FROM meta WHERE key='schema_version'")[0]["value"] == "2"
+        assert rows(copy, "SELECT value FROM meta WHERE key='schema_version'")[0]["value"] == str(SCHEMA_VERSION)
         after = {t: rows(copy, f"SELECT * FROM {t}") for t in before}
         for t, old in before.items():
             assert len(after[t]) == len(old), t

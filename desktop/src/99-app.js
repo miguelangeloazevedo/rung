@@ -57,6 +57,7 @@ export default {
     document.head.appendChild(style)
     window.__rungNavigate = navigate
     window.__rungDock = setDock
+    window.__rungRest = rest
     ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungDock })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([

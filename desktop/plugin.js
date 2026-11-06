@@ -1862,8 +1862,16 @@ function ReqEditor({ project, r, need, ret }) {
   const [sugs, setSugs] = useState(null)
   const [marks, setMarks] = useState({})
   const [conflict, setConflict] = useState(null)
-  const base = useBase(r && r.version)
+  const shown = useRef(r ? { text: r.text, detail: r.detail } : null)
+  const clean = !!shown.current && text === shown.current.text && detail === shown.current.detail
+  const base = useBase(r && r.version, clean)
   const needId = r ? r.parent : need
+  // Follow a newer version (a revert, another edit) while nothing is typed; typed text stays and meets the conflict check.
+  useEffect(() => {
+    if (!r || !shown.current) return
+    if (text === shown.current.text && detail === shown.current.detail) { setText(r.text); setDetail(r.detail) }
+    shown.current = { text: r.text, detail: r.detail }
+  }, [r && r.version, r && r.text])
   useEffect(() => {
     if (isNew) return
     let live = true
@@ -1891,6 +1899,9 @@ function ReqEditor({ project, r, need, ret }) {
         h(Badge, { status: r ? r.status : 'draft' })),
       h('div', 'flex items-center',
         h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, autoFocus: isNew, onChange: e => setText(e.target.value) }))),
+    r && r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
+      h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
+      h('a', { className: 'text-[11px] font-medium text-needs cursor-pointer', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
     h('div', 'flex flex-col gap-2',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Acceptance'),
       h('textarea', { className: 'w-full bg-well border border-line2 rounded-[6px] p-3 text-xs text-fg focus:outline-none focus:border-needs font-mono leading-relaxed', rows: 3, name: 'req-detail', value: detail, onChange: e => setDetail(e.target.value) })),
@@ -3587,6 +3598,7 @@ export default {
     document.head.appendChild(style)
     window.__rungNavigate = navigate
     window.__rungDock = setDock
+    window.__rungRest = rest
     ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungDock })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
