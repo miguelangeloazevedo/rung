@@ -538,16 +538,39 @@ def test_clm01_the_claiming_profile_is_read_per_call_not_at_registration(engine,
 
 
 def test_alc01_profile_tools_read_without_pyyaml(tmp_path, monkeypatch):
-    """Hermes 0.23 ships no PyYAML; it reads YAML through its own `hermes_yaml`. A profile's tools still
-    come from its config there."""
+    """Hermes 0.23 ships no PyYAML: an explicit tool list is read through Hermes's public config reader."""
     from rung_engine import host
     home = tmp_path / "home"
     (home / "profiles" / "coder").mkdir(parents=True)
     (home / "profiles" / "coder" / "config.yaml").write_text("platform_toolsets:\n  cli: [terminal, file]\n")
     monkeypatch.setenv("HERMES_HOME", str(home))
-    fake = types.ModuleType("hermes_yaml")
-    fake.safe_load = lambda text: {"platform_toolsets": {"cli": ["terminal", "file"]}} if "terminal" in text else {}
-    monkeypatch.setitem(sys.modules, "hermes_yaml", fake)
+    fake = types.ModuleType("hermes_cli.config")
+    fake.read_user_config_raw = lambda path: {"platform_toolsets": {"cli": ["terminal", "file"]}}
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", fake)
     monkeypatch.setitem(sys.modules, "yaml", None)
-    monkeypatch.setitem(sys.modules, "hermes_cli.tools_config", None)
     assert host.hermes_profile_tools("coder") == ["file", "terminal"]
+
+
+def test_alc01_profile_default_tools_come_from_hermes_tools_list(tmp_path, monkeypatch):
+    """A profile on Hermes's default toolsets (no explicit list, or a composite one) gets what
+    `hermes -p <name> tools list` reports enabled; nothing when that command cannot answer."""
+    from rung_engine import host
+    home = tmp_path / "home"
+    (home / "profiles" / "coder").mkdir(parents=True)
+    (home / "profiles" / "coder" / "config.yaml").write_text("model: x\n")
+    (home / "profiles" / "mixed").mkdir(parents=True)
+    (home / "profiles" / "mixed" / "config.yaml").write_text("platform_toolsets:\n  cli: [hermes-cli]\n")
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    fake = tmp_path / "hermes"
+    rows = ["Built-in toolsets (cli):", "  \u2713 enabled  terminal  T", "  \u2717 disabled  web  W",
+            "  \u2713 enabled  todo  P", "Plugin toolsets (cli):", "  \u2713 enabled  rung  R"]
+    fake.write_text(f"#!{sys.executable}\nprint({chr(10).join(rows)!r})\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(host, "hermes_bin", lambda: str(fake))
+    host._CLI_TOOLS.clear()
+    assert host.hermes_profile_tools("coder") == ["rung", "terminal", "todo"]
+    assert host.hermes_profile_tools("mixed") == ["rung", "terminal", "todo"]
+    host._CLI_TOOLS.clear()
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    assert host.hermes_profile_tools("coder") is None

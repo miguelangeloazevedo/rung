@@ -264,7 +264,7 @@ const DOCK_CSS = `
 .rung .dk .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .rung .dk-row:focus-visible,.rung .dk-more:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
-.rung [data-testid=main]{container-type:inline-size}
+.rung .r-main{container-type:inline-size}
 @container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
 `
 

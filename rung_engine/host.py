@@ -9,7 +9,9 @@ and uses that one, so a chat or a develop run as `coder` claims and checks the w
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -101,39 +103,61 @@ def _profile_home(name: str) -> Path:
     return root if name == "default" else root / "profiles" / name
 
 
-def _read_yaml(path: Path):
-    """A profile config read with the YAML parser the running Hermes ships: Hermes 0.23 reads YAML through
-    its own `hermes_yaml` (ruamel) and no longer installs PyYAML; older releases ship PyYAML."""
-    text = path.read_text()
+def _read_config(path: Path) -> dict:
+    """A profile's config.yaml as written, read through Hermes's public config module (Hermes 0.23
+    ships no PyYAML); PyYAML only where that reader is missing."""
     try:
-        import hermes_yaml
-        return hermes_yaml.safe_load(text)
+        from hermes_cli.config import read_user_config_raw
+        data = read_user_config_raw(path)
     except ImportError:
         import yaml
-        return yaml.safe_load(text)
+        data = yaml.safe_load(path.read_text())
+    return data if isinstance(data, dict) else {}
+
+
+# `hermes tools list` rows: "  ✓ enabled  terminal  ..." (the key is the word after the state).
+_TOOL_ROW = re.compile(r"^\s*✓\s+enabled\s+([a-z0-9_][a-z0-9_.-]*)\b")
+_CLI_TOOLS: dict[tuple, list[str] | None] = {}
+
+
+def _cli_tools(name: str, cfg_path: Path) -> list[str] | None:
+    """The profile's enabled CLI toolsets as `hermes -p <name> tools list` resolves them (defaults
+    included), cached per config version. None when the command cannot answer."""
+    try:
+        st = cfg_path.stat()
+        key = (name, str(cfg_path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = (name, str(cfg_path), None, None)
+    if key in _CLI_TOOLS:
+        return _CLI_TOOLS[key]
+    try:
+        out = subprocess.run([hermes_bin(), "-p", name, "tools", "list", "--platform", "cli"],
+                             capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        names = [m.group(1) for line in out.stdout.splitlines() if (m := _TOOL_ROW.match(line))]
+        got = sorted(set(names)) if out.returncode == 0 and names else None
+    except (OSError, subprocess.SubprocessError):
+        got = None
+    _CLI_TOOLS[key] = got
+    return got
 
 
 def hermes_profile_tools(name: str) -> list[str] | None:
-    """The toolsets a Hermes profile has on the CLI (`platform_toolsets.cli` in its config), resolved
-    the way Hermes resolves them. Read only; None when the profile's config cannot be read."""
+    """The toolsets a Hermes profile has on the CLI. An explicit `platform_toolsets.cli` list of plain
+    toolset names is read from the profile's config; otherwise (Hermes defaults, composite toolsets)
+    Hermes resolves them through `hermes tools list`. Read only; None when neither can answer."""
     home = _profile_home(name)
     if not home.is_dir():
         return None
     cfg_path = home / "config.yaml"
     try:
-        cfg = _read_yaml(cfg_path) if cfg_path.is_file() else {}
+        cfg = _read_config(cfg_path) if cfg_path.is_file() else {}
     except Exception:
-        return None
-    cfg = cfg if isinstance(cfg, dict) else {}
-    try:
-        from hermes_cli.tools_config import _get_platform_tools
-        return sorted(_get_platform_tools(cfg, "cli", include_default_mcp_servers=False))
-    except Exception:
-        pass
-    raw = (cfg.get("platform_toolsets") or {}).get("cli") if isinstance(cfg.get("platform_toolsets"), dict) else None
-    if isinstance(raw, list):
-        return sorted(str(x) for x in raw if isinstance(x, str) and not x.startswith("hermes-"))
-    return None
+        cfg = {}  # unreadable here: Hermes itself still answers below
+    pts = cfg.get("platform_toolsets")
+    raw = pts.get("cli") if isinstance(pts, dict) else None
+    if isinstance(raw, list) and raw and all(isinstance(x, str) and x and not x.startswith("hermes-") for x in raw):
+        return sorted(set(raw))
+    return _cli_tools(name, cfg_path)
 
 
 def service() -> Service:

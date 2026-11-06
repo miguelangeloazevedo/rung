@@ -43,7 +43,7 @@ function StaleCard({ project, item, ro }) {
   const ch = item.change
   const path = (r && r.path) || []
   const [err, setErr] = useState('')
-  return h(Card, { className: 'p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
+  return h(Card, { className: 'r-ny p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
     h('div', 'flex flex-col gap-1.5',
       h('div', 'flex items-center justify-between',
         h('div', 'text-[11px] mono text-muted font-medium flex items-center gap-1.5',
@@ -75,7 +75,7 @@ function ProposedCard({ project, item, ro }) {
     setErr(res.ok ? '' : res.error)
   }
   return h('div', {
-    className: 'bg-card border border-line rounded-[6px] px-4 py-3 flex items-center justify-between',
+    className: 'r-ny bg-card border border-line rounded-[6px] px-4 py-3 flex items-center justify-between',
     style: { borderLeft: '3px solid var(--r-needs)' },
     'data-testid': 'needs-you-item', 'data-proposed': item.id
   },
@@ -94,7 +94,7 @@ function ProposedCard({ project, item, ro }) {
 
 function ApprovalCard({ project, item, ro }) {
   const [err, setErr] = useState('')
-  return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item' },
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item' },
     h('div', 'flex flex-col gap-1',
       h('div', 'flex items-center gap-2 text-xs',
         h(Badge, { status: 'pending' }),

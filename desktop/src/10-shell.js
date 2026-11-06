@@ -287,7 +287,7 @@ function Rail({ tree, alloc, sel, retired }) {
 
 function Frame({ main, rail, wide }) {
   return h('div', 'flex flex-row h-full w-full overflow-hidden',
-    h('section', { className: cx('flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
+    h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
     rail || null)
 }
 

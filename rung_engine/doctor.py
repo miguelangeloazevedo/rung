@@ -132,12 +132,14 @@ def _test_command(command: str, folder: Path) -> tuple[bool, str]:
 
 
 def _hermes_version() -> str:
-    """Read in process when Rung runs inside Hermes; never starts hermes, which can take a minute to answer."""
+    """The installed Hermes package's version, from its distribution metadata; never starts hermes, which
+    can take a minute to answer. Empty when the install does not record one."""
     try:
-        import hermes_cli  # type: ignore
-        return str(getattr(hermes_cli, "__version__", "") or "")
+        from importlib.metadata import version
+        v = version("hermes-agent")
     except Exception:
         return ""
+    return "" if v in ("", "0.0.0") else v
 
 
 def _which(cmd: str) -> str | None:

@@ -846,7 +846,7 @@ function Rail({ tree, alloc, sel, retired }) {
 
 function Frame({ main, rail, wide }) {
   return h('div', 'flex flex-row h-full w-full overflow-hidden',
-    h('section', { className: cx('flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
+    h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
     rail || null)
 }
 
@@ -904,7 +904,7 @@ function StaleCard({ project, item, ro }) {
   const ch = item.change
   const path = (r && r.path) || []
   const [err, setErr] = useState('')
-  return h(Card, { className: 'p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
+  return h(Card, { className: 'r-ny p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
     h('div', 'flex flex-col gap-1.5',
       h('div', 'flex items-center justify-between',
         h('div', 'text-[11px] mono text-muted font-medium flex items-center gap-1.5',
@@ -936,7 +936,7 @@ function ProposedCard({ project, item, ro }) {
     setErr(res.ok ? '' : res.error)
   }
   return h('div', {
-    className: 'bg-card border border-line rounded-[6px] px-4 py-3 flex items-center justify-between',
+    className: 'r-ny bg-card border border-line rounded-[6px] px-4 py-3 flex items-center justify-between',
     style: { borderLeft: '3px solid var(--r-needs)' },
     'data-testid': 'needs-you-item', 'data-proposed': item.id
   },
@@ -955,7 +955,7 @@ function ProposedCard({ project, item, ro }) {
 
 function ApprovalCard({ project, item, ro }) {
   const [err, setErr] = useState('')
-  return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item' },
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item' },
     h('div', 'flex flex-col gap-1',
       h('div', 'flex items-center gap-2 text-xs',
         h(Badge, { status: 'pending' }),
@@ -3028,7 +3028,7 @@ function FirstGreen({ project }) {
 // ------------------------------------------------------------------ Needs you: error and needs input
 
 function ErrorCard({ project, item, ro }) {
-  return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'error' }), h('span', 'mono text-muted', `${item.id} #${item.n}`)),
       h('span', 'text-sm text-fg', item.text),
@@ -3045,7 +3045,7 @@ function NeedsInputCard({ project, item, ro }) {
     if (!x.ok) return setErr(x.error)
     navigate('run', { run: x.data.id })
   }
-  return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'needs_input' }), h('span', 'mono text-muted', `${item.id} · run ${item.run} · ${item.profile}`)),
       h('span', { className: 'text-sm text-fg', 'data-testid': 'needs-input-reason' }, item.text),
@@ -3577,7 +3577,7 @@ const DOCK_CSS = `
 .rung .dk .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .rung .dk-row:focus-visible,.rung .dk-more:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
-.rung [data-testid=main]{container-type:inline-size}
+.rung .r-main{container-type:inline-size}
 @container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
 `
 
@@ -3665,7 +3665,7 @@ export default {
       '\n.rung h1,.rung h2,.rung h3,.rung p{margin:0}.rung table{border-spacing:0}.rung [data-locked="1"]{cursor:not-allowed}' +
       '\n.rung{overflow-wrap:anywhere}.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
-      '\n.rung [data-testid=needs-you-item]{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
+      '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)

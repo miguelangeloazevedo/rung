@@ -104,7 +104,7 @@ function FirstGreen({ project }) {
 // ------------------------------------------------------------------ Needs you: error and needs input
 
 function ErrorCard({ project, item, ro }) {
-  return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'error' }), h('span', 'mono text-muted', `${item.id} #${item.n}`)),
       h('span', 'text-sm text-fg', item.text),
@@ -121,7 +121,7 @@ function NeedsInputCard({ project, item, ro }) {
     if (!x.ok) return setErr(x.error)
     navigate('run', { run: x.data.id })
   }
-  return h(Card, { className: 'px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'needs_input' }), h('span', 'mono text-muted', `${item.id} · run ${item.run} · ${item.profile}`)),
       h('span', { className: 'text-sm text-fg', 'data-testid': 'needs-input-reason' }, item.text),
