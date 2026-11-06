@@ -354,7 +354,8 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
   const [open, setOpen] = useState(false)
   if (!r) return h('div', 'px-4 py-3 text-xs text-muted', spec.id)
   const a = r.allocation
-  const shown = a.pick ? a.suggestions.find(x => x.profile === a.pick.profile) || null : a.suggestions[0]
+  // The pick when it is still eligible, else the first eligible profile: the one Send starts, as the engine does.
+  const shown = (a.pick && a.suggestions.find(x => x.profile === a.pick.profile)) || a.suggestions[0] || null
   const running = (r.runs || []).find(x => x.status === 'running' || x.status === 'queued')
   const lastRun = (r.runs || [])[0]
   const grid = 'grid grid-cols-[2.2fr_1fr_1.8fr_1.4fr_1fr] items-center px-4 py-3 text-xs'

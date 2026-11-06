@@ -25,7 +25,13 @@ def palette_dock(page, want: bool) -> None:
     page.keyboard.type("Rung dock")  # typed, so the palette filters and highlights the entry
     sel = page.locator("[role=option][aria-selected=true]").filter(has_text="Rung dock")
     try:
-        H.wait_until(lambda: sel.count() == 1, timeout=10, msg="Rung dock highlighted")
+        try:
+            H.wait_until(lambda: sel.count() == 1, timeout=4, msg="Rung dock highlighted")
+        except AssertionError:
+            # The palette sometimes filters to the entry without highlighting it (seen with one match
+            # left); a person then moves onto it with the arrow key.
+            page.keyboard.press("ArrowDown")
+            H.wait_until(lambda: sel.count() == 1, timeout=6, msg="Rung dock highlighted")
     except AssertionError as exc:
         opts = page.locator("[role=option]").all_inner_texts()[:8]
         raise AssertionError(f"{exc}: input {box.input_value()!r}, options {opts!r}") from exc

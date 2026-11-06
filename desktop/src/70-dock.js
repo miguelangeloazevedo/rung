@@ -87,7 +87,7 @@ function DockEmpty({ label, action, onAction }) {
     action ? h('button', { type: 'button', className: 'dk-btn', onClick: onAction }, action) : null)
 }
 
-function DockNeedRow({ i, path }) {
+function DockNeedRow({ i, path, fullPath }) {
   const label = `${i.id} ${i.text || ''}`
   const meta = i.type === 'approval' ? `#${i.n} recorded by ${i.recorder || 'you'}`
     : i.type === 'error' ? `#${i.n} ${i.reason || ''}`.trim()
@@ -97,7 +97,7 @@ function DockNeedRow({ i, path }) {
     h('span', 'dk-row-top',
       h('span', { className: cx('mono dk-id', i.type === 'proposed' ? 'text-needs' : 'text-fg') }, i.id),
       h(Badge, { status: ITEM_BADGE[i.type] || i.type, small: true }),
-      path ? h('span', { className: 'dk-path mono truncate', title: path }, path) : null),
+      path ? h('span', { className: 'dk-path mono truncate', title: fullPath || path }, path) : null),
     i.text ? h('span', { className: 'dk-text truncate', title: i.text }, i.text) : null,
     meta ? h('span', { className: 'dk-meta mono truncate', title: meta }, meta) : null)
 }
@@ -187,12 +187,12 @@ function DockProject({ project }) {
   const hl = d.allocation && d.allocation.spec
   const pathOf = i => {
     const up = chainOf(tree, i.id, []) || []
-    return (up.length > 2 ? [up[0], up[up.length - 1]] : up).join(' › ')
+    return { short: (up.length > 2 ? [up[0], up[up.length - 1]] : up).join(' › '), full: up.join(' › ') }
   }
   const n = d.tiles ? d.tiles.needs_you : items.length
   return h('div', 'dk-body',
     h(DockSection, { id: 'dk-needs', title: 'Needs you', count: n, tone: n ? 'needs' : 'dim' },
-      items.length ? frag(...items.slice(0, DOCK_ITEMS).map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i) })),
+      items.length ? frag(...items.slice(0, DOCK_ITEMS).map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i).short, fullPath: pathOf(i).full })),
         items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => openRung('home') },
           `${items.length - DOCK_ITEMS} more`) : null)
         : h(DockEmpty, { label: 'Nothing needs you' })),

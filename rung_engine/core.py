@@ -409,6 +409,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         name, folder, test_command = (_text_field(v, f) for v, f in
                                       ((name, "name"), (folder, "folder"), (test_command, "test_command")))
         self._check_folder(folder)
+        folder = str(Path(folder).expanduser())  # stored as the folder tests run in
         defaults = self.project_defaults(folder)
         name = name or defaults["name"]
         test_command = test_command or defaults["test_command"]
@@ -987,6 +988,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
         req = self._rung_by_pk(r["parent_pk"]) if r["parent_pk"] else None
         return bool(req) and _l(req["data"], {}).get("authoring") == "ai"
 
+    @writes()
     def mark_drafting(self, project: str, spec_rid: str, actor: Actor = HUMAN) -> dict:
         """Ask the drafting provider for a new draft of an AI-derived specification (SPC-05). An open
         draft is drafted again in place; an approved one gets a new version waiting for approval, and

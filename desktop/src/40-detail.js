@@ -299,7 +299,7 @@ function SpecView({ project, r, ret, need }) {
         r.draft_state === 'failed' ? h('p', { className: 'text-xs text-needs', 'data-testid': 'draft-error' }, r.draft_error || 'Draft failed') : null),
       h('div', 'flex flex-col gap-1.5 pt-2 border-t border-line',
         h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Authoring'),
-        h(Seg, { big: true, options: [['ai', 'AI derives'], ['human', 'I write, AI supports']], value: r.author_role === 'human' ? 'human' : 'ai', testid: 'authoring', onChange: v => (v === 'human' ? navigate('spec-edit', { spec: r.id, ret, need }) : act(`${P(project)}/rungs/${r.parent}/authoring`, { mode: 'ai' })) })),
+        h(Seg, { big: true, options: [['ai', 'AI derives'], ['human', 'I write, AI supports']], value: r.authoring || (r.author_role === 'human' ? 'human' : 'ai'), testid: 'authoring', onChange: v => (v === 'human' ? navigate('spec-edit', { spec: r.id, ret, need }) : act(`${P(project)}/rungs/${r.parent}/authoring`, { mode: 'ai' })) })),
       lines.length ? h('div', 'flex flex-col gap-2 pt-2 border-t border-line',
         h('span', 'text-[11px] font-semibold text-muted', `Draft by ${r.drafted_by || 'drafting'}`),
         h('div', 'bg-well p-3 rounded-[6px] border border-line2 flex flex-col gap-1.5 text-xs text-fg',

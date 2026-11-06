@@ -77,6 +77,7 @@ class LifecycleMixin:
         if folder is not None:
             after["folder"] = _text_field(folder, "folder")
             self._check_folder(after["folder"])
+            after["folder"] = str(Path(after["folder"]).expanduser())
         if test_command is not None:
             after["test_command"] = _text_field(test_command, "test_command")
             if not after["test_command"]:

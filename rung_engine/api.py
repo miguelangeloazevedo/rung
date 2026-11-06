@@ -56,6 +56,8 @@ def handle(svc: Service, method: str, path: str, body: Any = None, human: Actor 
         mt = rx.match(path)
         if not mt:
             continue
+        if body is not None and not isinstance(body, dict):
+            return 400, {"detail": "the request body is an object", "code": "bad_request"}
         try:
             return 200, fn(svc, human, body or {}, **mt.groupdict())
         except NotFound as exc:
@@ -308,6 +310,7 @@ def _needs_you(svc, human, body, project):
 def _rung(svc, human, body, project, rid):
     e = svc.engine
     r = e.rung(project, rid)
+    rid = r["id"]  # the stored id: every lookup below (tree, history, executions) is keyed by it
     tree_index = {}
 
     def walk(nodes):
@@ -345,6 +348,8 @@ def _rung(svc, human, body, project, rid):
         r["runs"] = e.runs(project, rid)
         r["claims"] = e.claims(project, rid, open_only=False)
         r["ai_derived"] = e.ai_derived(project, rid)
+        req = e.rung(project, r["parent"]) if r.get("parent") else None
+        r["authoring"] = (req or {}).get("authoring")  # the requirement's mode, which its control writes
         ok, why = e.develop_available(project, rid)
         r["develop"] = {"available": ok, "blocked_by": why or None}
     if r["kind"] == "test":
