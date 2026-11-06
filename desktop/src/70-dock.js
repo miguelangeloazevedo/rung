@@ -66,9 +66,9 @@ function needOf(tree, rid) {
 const ITEM_BADGE = { stale: 'stale', proposed: 'proposed', approval: 'pending', error: 'error', needs_input: 'needs_input' }
 
 function openItem(i) {
-  if (i.type === 'error') return navigate('exec', { test: i.id, n: i.n })
-  if (i.type === 'needs_input') return navigate('run', { run: i.run })
-  return navigate('rung', { rid: i.id })
+  if (i.type === 'error') return openRung('exec', { test: i.id, n: i.n })
+  if (i.type === 'needs_input') return openRung('run', { run: i.run })
+  return openRung('rung', { rid: i.id })
 }
 
 function DockSection({ id, title, count, tone: t, children }) {
@@ -106,7 +106,7 @@ function DockRunRow({ run }) {
   const n = last ? last.n : 1
   const secs = run.started_at ? Date.now() / 1000 - run.started_at : 0
   const meta = `${run.profile} · attempt ${n} of ${run.max_attempts}`
-  return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => navigate('run', { run: run.id }) },
+  return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => openRung('run', { run: run.id }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', run.spec),
       h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'run'),
@@ -121,7 +121,7 @@ function DockClaimRow({ c }) {
   const blocked = c.check && !c.check.ok
   const meta = `${c.profile} · ${c.chat}`
   const check = blocked ? blockedText(c.check) : 'passes'
-  return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => navigate('rung', { rid: c.spec }) },
+  return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => openRung('rung', { rid: c.spec }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', c.spec),
       h('span', 'dk-chip', 'claimed'),
@@ -140,7 +140,7 @@ function DockTree({ nodes, depth, cur }) {
       return h('li', { key: n.id, role: 'treeitem', 'aria-expanded': kids.length ? 'true' : undefined },
         h('button', {
           type: 'button', className: cx('dk-tr-row', cur === n.id && 'dk-tr-cur'), title: `${n.id} ${n.text || ''}`.trim(),
-          'data-rung': n.id, 'data-tone': t, 'data-label': label, onClick: () => navigate('rung', { rid: n.id })
+          'data-rung': n.id, 'data-tone': t, 'data-label': label, onClick: () => openRung('rung', { rid: n.id })
         },
         h(Dot, { t }),
         h('span', { className: cx('mono dk-tr-id', cur === n.id ? 'text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -177,7 +177,7 @@ function DockProject({ project }) {
   return h('div', 'dk-body',
     h(DockSection, { id: 'dk-needs', title: 'Needs you', count: n, tone: n ? 'needs' : 'dim' },
       items.length ? frag(...items.slice(0, DOCK_ITEMS).map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i) })),
-        items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => navigate('home') },
+        items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => openRung('home') },
           `${items.length - DOCK_ITEMS} more`) : null)
         : h(DockEmpty, { label: 'Nothing needs you' })),
     h(DockSection, { id: 'dk-running', title: 'Running', count: runs.length + claims.length, tone: runs.length + claims.length ? 'needs' : 'dim' },
@@ -191,7 +191,7 @@ function DockProject({ project }) {
           h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
             ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
           node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
-        : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => navigate('need-new') })))
+        : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => openRung('need-new') })))
 }
 
 function Dock() {
@@ -202,12 +202,12 @@ function Dock() {
       st && project
         ? h('header', 'dk-head',
           h('span', { className: 'dk-project truncate', title: project, 'data-testid': 'dock-project' }, project),
-          h('button', { type: 'button', className: 'dk-btn', 'aria-label': `Open Rung on ${project}`, 'data-testid': 'dock-open', onClick: () => navigate('home') }, 'Open Rung',
+          h('button', { type: 'button', className: 'dk-btn', 'aria-label': `Open Rung on ${project}`, 'data-testid': 'dock-open', onClick: () => openRung('home') }, 'Open Rung',
             h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, h('path', { d: 'M6 3h7v7M13 3 6 10M3 6v7h7' }))))
         : null,
       !st ? h('div', 'dk-body', h(DockEmpty, { label: 'Loading' }))
         : project ? h(DockProject, { project })
-          : h('div', 'dk-body', h(DockEmpty, { label: 'No project', action: 'Open Rung', onAction: () => navigate('home') }))))
+          : h('div', 'dk-body', h(DockEmpty, { label: 'No project', action: 'Open Rung', onAction: () => openRung('home') }))))
 }
 
 const DOCK_CSS = `

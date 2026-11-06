@@ -36,10 +36,10 @@ function ExecList({ test, execs, limit }) {
 }
 
 function StaleCard({ project, item, ro }) {
-  const r = useApi(`/projects/${project}/rungs/${item.id}`).data
+  const r = useApi(`/projects/${encodeURIComponent(project)}/rungs/${item.id}`).data
   const tests = r && r.kind === 'specification' ? (r.children || []).filter(c => c.type === 'command' && c.status !== 'dismissed') : []
   const first = tests[0]
-  const ex = useApi(first ? `/projects/${project}/tests/${first.id}/executions` : null, { enabled: !!first }).data
+  const ex = useApi(first ? `/projects/${encodeURIComponent(project)}/tests/${first.id}/executions` : null, { enabled: !!first }).data
   const ch = item.change
   const path = (r && r.path) || []
   const [err, setErr] = useState('')
@@ -62,7 +62,7 @@ function StaleCard({ project, item, ro }) {
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
     ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${project}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
+      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
@@ -71,7 +71,7 @@ function StaleCard({ project, item, ro }) {
 function ProposedCard({ project, item, ro }) {
   const [err, setErr] = useState('')
   const act = async which => {
-    const res = await post(`/projects/${project}/rungs/${item.id}/${which}`)
+    const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/${which}`)
     setErr(res.ok ? '' : res.error)
   }
   return h('div', {
@@ -104,7 +104,7 @@ function ApprovalCard({ project, item, ro }) {
       item.note ? h('span', 'text-[11px] text-muted', item.note) : null,
       h(ErrorLine, { text: err })),
     h('div', 'flex items-center gap-2',
-      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${project}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
+      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${encodeURIComponent(project)}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
       h(Btn, { kind: 'ghostLine', onClick: () => navigate('rung', { rid: item.id }) }, 'Open')))
 }
 
@@ -122,7 +122,7 @@ function RunningRow({ run }) {
 }
 
 function Home({ project }) {
-  const q = useApi(`/projects/${project}/home`, { live: true })
+  const q = useApi(`/projects/${encodeURIComponent(project)}/home`, { live: true })
   const d = q.data
   // Home polls itself; the status bar chip follows the change ticker. Refetch the chip as soon as Home sees a
   // different Needs you count, so the two never show different numbers.

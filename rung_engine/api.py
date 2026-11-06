@@ -555,7 +555,10 @@ def _suggest(svc, human, body, project, rid):
 def _pick(svc, human, body, project, rid):
     # The body key is "agent", not "profile": Hermes's dashboard auth reserves a top-level
     # "profile" key in JSON bodies for profile scoping and refuses requests that carry another one.
-    return svc.engine.pick(project, rid, _need(body, "agent"), human)
+    agent = _need(body, "agent")
+    if not isinstance(agent, str):
+        raise RungError("agent is a profile name", code="bad_request", status=400, field="agent")
+    return svc.engine.pick(project, rid, agent, human)
 
 
 @route("POST", "/projects/{project}/specs/{rid}/send")

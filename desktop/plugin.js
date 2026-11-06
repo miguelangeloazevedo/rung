@@ -299,8 +299,15 @@ let CTX = null
 const $nav = atom({ view: 'home' })
 const $rev = atom(0)
 
+// Changes the Rung page's view. It never moves the app: a request that finishes after the person went to a
+// chat updates the page they left and leaves them where they are.
 function navigate(view, params) {
   $nav.set({ view, ...(params || {}) })
+}
+
+// Opens Rung on a view from outside it (the dock, the status bar): a click, so the app moves.
+function openRung(view, params) {
+  navigate(view, params)
   if (!String(location.hash || '').includes(ROUTE)) host.navigate(ROUTE)
 }
 
@@ -889,10 +896,10 @@ function ExecList({ test, execs, limit }) {
 }
 
 function StaleCard({ project, item, ro }) {
-  const r = useApi(`/projects/${project}/rungs/${item.id}`).data
+  const r = useApi(`/projects/${encodeURIComponent(project)}/rungs/${item.id}`).data
   const tests = r && r.kind === 'specification' ? (r.children || []).filter(c => c.type === 'command' && c.status !== 'dismissed') : []
   const first = tests[0]
-  const ex = useApi(first ? `/projects/${project}/tests/${first.id}/executions` : null, { enabled: !!first }).data
+  const ex = useApi(first ? `/projects/${encodeURIComponent(project)}/tests/${first.id}/executions` : null, { enabled: !!first }).data
   const ch = item.change
   const path = (r && r.path) || []
   const [err, setErr] = useState('')
@@ -915,7 +922,7 @@ function StaleCard({ project, item, ro }) {
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
     ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${project}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
+      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
@@ -924,7 +931,7 @@ function StaleCard({ project, item, ro }) {
 function ProposedCard({ project, item, ro }) {
   const [err, setErr] = useState('')
   const act = async which => {
-    const res = await post(`/projects/${project}/rungs/${item.id}/${which}`)
+    const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/${which}`)
     setErr(res.ok ? '' : res.error)
   }
   return h('div', {
@@ -957,7 +964,7 @@ function ApprovalCard({ project, item, ro }) {
       item.note ? h('span', 'text-[11px] text-muted', item.note) : null,
       h(ErrorLine, { text: err })),
     h('div', 'flex items-center gap-2',
-      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${project}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
+      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${encodeURIComponent(project)}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
       h(Btn, { kind: 'ghostLine', onClick: () => navigate('rung', { rid: item.id }) }, 'Open')))
 }
 
@@ -975,7 +982,7 @@ function RunningRow({ run }) {
 }
 
 function Home({ project }) {
-  const q = useApi(`/projects/${project}/home`, { live: true })
+  const q = useApi(`/projects/${encodeURIComponent(project)}/home`, { live: true })
   const d = q.data
   // Home polls itself; the status bar chip follows the change ticker. Refetch the chip as soon as Home sees a
   // different Needs you count, so the two never show different numbers.
@@ -3356,9 +3363,9 @@ function needOf(tree, rid) {
 const ITEM_BADGE = { stale: 'stale', proposed: 'proposed', approval: 'pending', error: 'error', needs_input: 'needs_input' }
 
 function openItem(i) {
-  if (i.type === 'error') return navigate('exec', { test: i.id, n: i.n })
-  if (i.type === 'needs_input') return navigate('run', { run: i.run })
-  return navigate('rung', { rid: i.id })
+  if (i.type === 'error') return openRung('exec', { test: i.id, n: i.n })
+  if (i.type === 'needs_input') return openRung('run', { run: i.run })
+  return openRung('rung', { rid: i.id })
 }
 
 function DockSection({ id, title, count, tone: t, children }) {
@@ -3396,7 +3403,7 @@ function DockRunRow({ run }) {
   const n = last ? last.n : 1
   const secs = run.started_at ? Date.now() / 1000 - run.started_at : 0
   const meta = `${run.profile} · attempt ${n} of ${run.max_attempts}`
-  return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => navigate('run', { run: run.id }) },
+  return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => openRung('run', { run: run.id }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', run.spec),
       h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'run'),
@@ -3411,7 +3418,7 @@ function DockClaimRow({ c }) {
   const blocked = c.check && !c.check.ok
   const meta = `${c.profile} · ${c.chat}`
   const check = blocked ? blockedText(c.check) : 'passes'
-  return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => navigate('rung', { rid: c.spec }) },
+  return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => openRung('rung', { rid: c.spec }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', c.spec),
       h('span', 'dk-chip', 'claimed'),
@@ -3430,7 +3437,7 @@ function DockTree({ nodes, depth, cur }) {
       return h('li', { key: n.id, role: 'treeitem', 'aria-expanded': kids.length ? 'true' : undefined },
         h('button', {
           type: 'button', className: cx('dk-tr-row', cur === n.id && 'dk-tr-cur'), title: `${n.id} ${n.text || ''}`.trim(),
-          'data-rung': n.id, 'data-tone': t, 'data-label': label, onClick: () => navigate('rung', { rid: n.id })
+          'data-rung': n.id, 'data-tone': t, 'data-label': label, onClick: () => openRung('rung', { rid: n.id })
         },
         h(Dot, { t }),
         h('span', { className: cx('mono dk-tr-id', cur === n.id ? 'text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -3467,7 +3474,7 @@ function DockProject({ project }) {
   return h('div', 'dk-body',
     h(DockSection, { id: 'dk-needs', title: 'Needs you', count: n, tone: n ? 'needs' : 'dim' },
       items.length ? frag(...items.slice(0, DOCK_ITEMS).map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i) })),
-        items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => navigate('home') },
+        items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => openRung('home') },
           `${items.length - DOCK_ITEMS} more`) : null)
         : h(DockEmpty, { label: 'Nothing needs you' })),
     h(DockSection, { id: 'dk-running', title: 'Running', count: runs.length + claims.length, tone: runs.length + claims.length ? 'needs' : 'dim' },
@@ -3481,7 +3488,7 @@ function DockProject({ project }) {
           h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
             ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
           node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
-        : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => navigate('need-new') })))
+        : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => openRung('need-new') })))
 }
 
 function Dock() {
@@ -3492,12 +3499,12 @@ function Dock() {
       st && project
         ? h('header', 'dk-head',
           h('span', { className: 'dk-project truncate', title: project, 'data-testid': 'dock-project' }, project),
-          h('button', { type: 'button', className: 'dk-btn', 'aria-label': `Open Rung on ${project}`, 'data-testid': 'dock-open', onClick: () => navigate('home') }, 'Open Rung',
+          h('button', { type: 'button', className: 'dk-btn', 'aria-label': `Open Rung on ${project}`, 'data-testid': 'dock-open', onClick: () => openRung('home') }, 'Open Rung',
             h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, h('path', { d: 'M6 3h7v7M13 3 6 10M3 6v7h7' }))))
         : null,
       !st ? h('div', 'dk-body', h(DockEmpty, { label: 'Loading' }))
         : project ? h(DockProject, { project })
-          : h('div', 'dk-body', h(DockEmpty, { label: 'No project', action: 'Open Rung', onAction: () => navigate('home') }))))
+          : h('div', 'dk-body', h(DockEmpty, { label: 'No project', action: 'Open Rung', onAction: () => openRung('home') }))))
 }
 
 const DOCK_CSS = `
@@ -3608,7 +3615,7 @@ function StatusChip() {
       className: cx('px-1.5 text-[11px] mono font-medium', n ? 'text-needs' : 'text-muted'),
       'data-testid': 'rung-status-chip',
       'aria-live': 'polite',
-      onClick: () => navigate('home')
+      onClick: () => openRung('home')
     }, `Rung: ${n} needs you`))
 }
 
@@ -3629,10 +3636,11 @@ export default {
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)
-    window.__rungNavigate = navigate
+    window.__rungNavigate = openRung  // tests: open a view, moving the app
+    window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest
-    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungDock })
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },

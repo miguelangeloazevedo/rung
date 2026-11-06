@@ -19,6 +19,28 @@ def _rx_for(rid: str):
     return re.compile(r"(?<![A-Za-z0-9.])" + body + r"(?![A-Za-z0-9]|\.[0-9])", re.IGNORECASE)
 
 
+_DASHES = dict.fromkeys(map(ord, "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d"), "-")
+
+
+def normalise(text: str) -> str:
+    """Text as the id match reads it: compatibility forms folded (full-width letters and digits), every
+    dash and hyphen character read as `-`."""
+    import unicodedata
+    return unicodedata.normalize("NFKC", text).translate(_DASHES)
+
+
+def rids_in(text: str) -> list[str]:
+    """Every rung id a text names, in the ladder's form (`ship s 2.1` names `S-2.1`)."""
+    import re
+    out = []
+    for m in re.finditer(r"(?<![A-Za-z0-9.])([A-Za-z])[-\s]?(\d+(?:\.\d+)*)([A-Za-z]*)(?![0-9]|\.[0-9])",
+                         normalise(text or "")):
+        rid = f"{m.group(1).upper()}-{m.group(2)}{m.group(3).lower()}"
+        if rid not in out:
+            out.append(rid)
+    return out
+
+
 def canonical_rid(value: str) -> str:
     """An id as an agent may type it (`s-2.1`, ` S 2.1 `) in the form the ladder stores (`S-2.1`).
     Anything that does not look like an id is returned trimmed, for the lookup to refuse by name."""
@@ -127,6 +149,8 @@ class ClaimsMixin:
         with self._lock, self._tx() as c:
             self._check_writable(project, spec_rid)
             s = self._rung_row(project, spec_rid)
+            if s["kind"] != "specification":
+                raise RungError(f"{spec_rid} is not a specification", code="bad_request", status=400)
             mine = self._q1("SELECT * FROM claims WHERE spec_pk=? AND session_id=? AND status='open' ORDER BY pk "
                             "LIMIT 1", (s["pk"], session_id or ""))
             if mine is None:
@@ -151,9 +175,12 @@ class ClaimsMixin:
         actor = actor or HUMAN
         if not actor.is_human:
             raise RungError("only a human releases a claim", code="forbidden", status=403)
+        spec_rid = canonical_rid(spec_rid) if isinstance(spec_rid, str) else spec_rid
         with self._lock, self._tx() as c:
             self._check_writable(project, spec_rid)
             s = self._rung_row(project, spec_rid)
+            if s["kind"] != "specification":
+                raise RungError(f"{spec_rid} is not a specification", code="bad_request", status=400)
             rows = self._q("SELECT * FROM claims WHERE spec_pk=? AND status='open'", (s["pk"],))
             if not rows:
                 raise RungError(f"no open claim on {spec_rid}", code="no_claim")
@@ -168,4 +195,4 @@ class ClaimsMixin:
 
     @staticmethod
     def names_spec(text: str, rid: str) -> bool:
-        return bool(text) and bool(_rx_for(rid).search(text))
+        return bool(text) and bool(_rx_for(rid).search(normalise(text)))

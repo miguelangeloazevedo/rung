@@ -21,9 +21,14 @@ def palette_dock(page, want: bool) -> None:
     page.keyboard.press("Meta+K")
     box = page.get_by_role("dialog").locator("input").first
     box.wait_for(timeout=10000)
+    box.click()  # focused before typing: keys sent while the palette opens can land elsewhere
     page.keyboard.type("Rung dock")  # typed, so the palette filters and highlights the entry
-    H.wait_until(lambda: page.locator("[role=option][aria-selected=true]").filter(has_text="Rung dock").count() == 1,
-                 timeout=10, msg="Rung dock highlighted")
+    sel = page.locator("[role=option][aria-selected=true]").filter(has_text="Rung dock")
+    try:
+        H.wait_until(lambda: sel.count() == 1, timeout=10, msg="Rung dock highlighted")
+    except AssertionError as exc:
+        opts = page.locator("[role=option]").all_inner_texts()[:8]
+        raise AssertionError(f"{exc}: input {box.input_value()!r}, options {opts!r}") from exc
     page.keyboard.press("Enter")
     H.wait_until(lambda: dock_open(page) == want, timeout=15, msg=f"dock {'open' if want else 'closed'}")
 
@@ -184,6 +189,7 @@ def test_dck08_dck09_dock_light_theme_widths_and_large_project(rung, csvtidy, th
         H.wait_view(page, "home")
         page.locator(".rung [data-testid=rail] [data-rung]").first.wait_for(timeout=30000)
         chat_route(page)
+        H.wait_until(lambda: page.evaluate("typeof window.__rungDock === 'function'"), msg="Rung registered")
         # The project's data is loaded (the full page fetched it); the dock renders it within a second.
         t0 = time.time()
         page.evaluate("window.__rungDock(true)")
@@ -192,7 +198,8 @@ def test_dck08_dck09_dock_light_theme_widths_and_large_project(rung, csvtidy, th
         assert took < 1.0, f"dock rendered a 500-rung project in {took:.2f}s"
         # A glance: the first items, then how many more, opening the full page.
         n = len(e.needs_you("bigladder"))
-        assert n > 8 and page.locator(DOCK + " [data-testid=dock-item]").count() == 8
+        assert n > 8
+        H.wait_until(lambda: page.locator(DOCK + " [data-testid=dock-item]").count() == 8, msg="eight Needs you rows")
         assert page.locator(DOCK + " [data-testid=dock-more]").inner_text().strip() == f"{n - 8} more"
         # contrast and names on a light theme
         assert not a11y.contrast_failures(page)

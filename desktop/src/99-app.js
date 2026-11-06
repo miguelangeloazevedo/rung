@@ -36,7 +36,7 @@ function StatusChip() {
       className: cx('px-1.5 text-[11px] mono font-medium', n ? 'text-needs' : 'text-muted'),
       'data-testid': 'rung-status-chip',
       'aria-live': 'polite',
-      onClick: () => navigate('home')
+      onClick: () => openRung('home')
     }, `Rung: ${n} needs you`))
 }
 
@@ -57,10 +57,11 @@ export default {
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)
-    window.__rungNavigate = navigate
+    window.__rungNavigate = openRung  // tests: open a view, moving the app
+    window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest
-    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungDock })
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },

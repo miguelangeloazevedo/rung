@@ -98,7 +98,7 @@ def _svc():
 def _arg(args, key: str, required: bool = True, default=None):
     """A text argument: present when required, and text. A clear refusal instead of a crash."""
     v = args.get(key)
-    if v is None or v == "":
+    if v is None or (isinstance(v, str) and not v.strip()):
         if required:
             raise RungError(f"{key} is required", code="bad_request", status=400, field=key)
         return default

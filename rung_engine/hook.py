@@ -18,14 +18,16 @@ from pathlib import Path
 
 WATCHED = frozenset({"rung_report", "kanban_complete", "todo_list"})
 
-# Per session: todo id -> what that id has carried in the session's todo_list calls: every content it was
-# given (an id that once named a specification keeps counting, whatever it says later) and the content
-# it had when it was last let through as completed. In memory only: the hook never writes. Bounded so a
-# long-lived process cannot grow it without limit.
+# Per session: todo id -> what that id has carried in the session's todo_list calls: every rung id any of
+# its contents named (an id that once named a specification keeps counting, whatever it says later; adding
+# more never pushes one out) and the content it had when it was last let through as completed. In memory
+# only: the hook never writes. Sessions are kept most recently used first; past the limit the least
+# recently used session goes, one that has held a claim only when no other is left.
 _TODOS: dict[str, dict[str, dict]] = {}
-_MAX_TEXTS = 20
+_HELD: set[str] = set()  # sessions seen holding a claim
+_MAX_RIDS = 500
 _TODOS_LOCK = threading.Lock()
-_MAX_SESSIONS = 500
+_MAX_SESSIONS = 5000
 
 
 def _store() -> Path | None:
@@ -62,53 +64,80 @@ def _names(text: str, rid: str) -> bool:
 
 
 def _todo_items(args) -> list[dict]:
+    """The todo items as the todo tool will read them: Hermes turns a JSON text into a list after this
+    hook has run, so a text is read the same way here."""
     todos = args.get("todos") if isinstance(args, dict) else None
+    if isinstance(todos, str):
+        import json
+        try:
+            todos = json.loads(todos)
+        except ValueError:
+            return []
     return [t for t in todos if isinstance(t, dict)] if isinstance(todos, list) else []
 
 
 def _content(t: dict) -> str:
+    """The content as the todo tool stores it: text as is, anything else as its text form."""
     c = t.get("content")
-    return c.strip() if isinstance(c, str) else ""
+    if c is None:
+        return ""
+    return (c if isinstance(c, str) else str(c)).strip()
 
 
 def _completed(t: dict) -> bool:
     return str(t.get("status", "")).strip().lower() == "completed"
 
 
+def _session(session_id: str) -> dict:
+    """The session's record, moved to most recently used. Called with the lock held."""
+    seen = _TODOS.pop(session_id, None)
+    if seen is None:
+        seen = {}
+        while len(_TODOS) >= _MAX_SESSIONS:
+            # least recently used first; a session whose todos named no rung before one that did, and a
+            # session never seen holding a claim before one that was
+            idle = next((k for k in _TODOS if k not in _HELD and not any(r["rids"] for r in _TODOS[k].values())),
+                        None) or next((k for k in _TODOS if k not in _HELD), None) or next(iter(_TODOS))
+            _TODOS.pop(idle)
+            _HELD.discard(idle)
+    _TODOS[session_id] = seen
+    return seen
+
+
 def _remember(session_id: str, items: list[dict], allowed: bool) -> None:
-    """Record the contents each id carried; when the call was let through, also what it completed."""
+    """Record the ids each todo named; when the call was let through, also what it completed."""
+    from .claims import rids_in
     with _TODOS_LOCK:
-        if session_id not in _TODOS and len(_TODOS) >= _MAX_SESSIONS:
-            _TODOS.pop(next(iter(_TODOS)))
-        seen = _TODOS.setdefault(session_id, {})
+        seen = _session(session_id)
         for t in items:
             tid = str(t.get("id", "")).strip()
             if not tid:
                 continue
-            rec = seen.setdefault(tid, {"texts": [], "done": None})
+            rec = seen.setdefault(tid, {"rids": [], "done": None})
             text = _content(t)
-            if text and text not in rec["texts"]:
-                rec["texts"] = (rec["texts"] + [text])[-_MAX_TEXTS:]
+            for rid in rids_in(text):
+                if rid not in rec["rids"] and len(rec["rids"]) < _MAX_RIDS:
+                    rec["rids"].append(rid)
             if allowed:
-                rec["done"] = (text or (rec["done"] or "")) if _completed(t) else None
+                rec["done"] = (text or None) if _completed(t) else None
 
 
 def _completing(session_id: str, items: list[dict]) -> list[tuple[str, str]]:
-    """(id, text) of each item this call declares completed, text being its id, its content now and
-    every content the id carried earlier in the session. An item re-sent completed with the same content
-    it had when it was let through declares nothing new and is left out."""
+    """(id, text) of each item this call declares completed, text being its id, its content now and every
+    rung id the id named earlier in the session. An item re-sent completed with the same, non-empty content
+    it had when it was let through declares nothing new and is left out; a bare id always counts (CLM-06)."""
     with _TODOS_LOCK:
-        seen = {k: {"texts": list(v["texts"]), "done": v["done"]} for k, v in _TODOS.get(session_id, {}).items()}
+        seen = {k: {"rids": list(v["rids"]), "done": v["done"]} for k, v in _TODOS.get(session_id, {}).items()}
     out = []
     for t in items:
         if not _completed(t):
             continue
         tid = str(t.get("id", "")).strip()
-        rec = seen.get(tid, {"texts": [], "done": None})
+        rec = seen.get(tid, {"rids": [], "done": None})
         now = _content(t)
-        if rec["done"] is not None and now in ("", rec["done"]):
+        if now and rec["done"] is not None and now == rec["done"]:
             continue
-        out.append((tid, " ".join(x for x in [tid, now, *rec["texts"]] if x)))
+        out.append((tid, " ".join(x for x in [tid, now, *rec["rids"]] if x)))
     return out
 
 
@@ -123,7 +152,15 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
         if not completing:
             _remember(session_id, items, allowed=True)
             return None
-    claims, current = _session_claims(session_id, store)
+    try:
+        claims, current = _session_claims(session_id, store)
+    except Exception:  # an unreadable or locked store never blocks a tool
+        if tool_name == "todo_list":
+            _remember(session_id, items, allowed=True)
+        return None
+    if claims:
+        with _TODOS_LOCK:
+            _HELD.add(session_id)
     failing = [c for c in claims if not c["check"].get("ok")]
     block = None
     if tool_name == "rung_report":
@@ -159,5 +196,7 @@ def forget(session_id: str | None = None) -> None:
     with _TODOS_LOCK:
         if session_id is None:
             _TODOS.clear()
+            _HELD.clear()
         else:
             _TODOS.pop(session_id, None)
+            _HELD.discard(session_id)

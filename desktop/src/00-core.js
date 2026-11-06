@@ -65,8 +65,15 @@ let CTX = null
 const $nav = atom({ view: 'home' })
 const $rev = atom(0)
 
+// Changes the Rung page's view. It never moves the app: a request that finishes after the person went to a
+// chat updates the page they left and leaves them where they are.
 function navigate(view, params) {
   $nav.set({ view, ...(params || {}) })
+}
+
+// Opens Rung on a view from outside it (the dock, the status bar): a click, so the app moves.
+function openRung(view, params) {
+  navigate(view, params)
   if (!String(location.hash || '').includes(ROUTE)) host.navigate(ROUTE)
 }
 
