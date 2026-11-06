@@ -119,7 +119,7 @@ Entry rules (Nous announcement, 4 Nov): a PR adding `plugin-catalog/<name>.yaml`
 
 | Topic | Decision |
 | --- | --- |
-| Hermes version | Rung was built and tested on Hermes v0.22.5. v0.23.0 (5 Nov) is what judges and catalog CI run. Test and fix on v0.23.0 in an isolated checkout and Desktop build next to Miguel's own install, rerun all acceptance and readiness there, then declare `requires_hermes: ">=0.23.0"` in plugin.yaml and in the catalog entry. |
+| Hermes version | Rung was built and tested on Hermes v0.22.5. v0.23.0 (5 Nov) is what judges and catalog CI run. Test and fix on v0.23.0 in an isolated checkout and Desktop build next to Miguel's own install, rerun all acceptance and readiness there, then declare `requires_hermes: ">=0.23.0"` in plugin.yaml and in the catalog entry. Amended 6 Nov after the pass: declared `">=0.22.5"`, the oldest release Rung passes on, because acceptance, readiness and clean install pass on both v0.22.5 and v0.23.0, and `">=0.23.0"` would stop Rung loading on Miguel's own v0.22.5 install. |
 | Demo video | Who makes it and how: decided when we get there, probably Tue 10 Nov. |
 | Demo story | The done gate first: an agent claims a specification, tries to mark it done, the hook blocks it naming the failing test, the agent fixes the code, the test passes, the report goes through, and the dock updates live. Then about 20 s from need to release. |
 | Public repo | This repo stays private and unchanged, renamed `rung-dev`. The public repo `github.com/miguelangeloazevedo/rung` is generated from it by a repeatable scrub script (git filter-repo). The script is deterministic, so a re-run for a release only appends new commits and a catalog pin stays valid. |
