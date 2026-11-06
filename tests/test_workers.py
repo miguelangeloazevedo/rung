@@ -56,3 +56,18 @@ def test_stub_worker_delay_honours_cancel(tmp_path):
                          deadline=time.time() + 60, should_cancel=lambda: time.time() - t0 > 0.5)
     r = StubWorker(delay=30).attempt(ctx)
     assert r.cancelled and time.time() - t0 < 3
+
+
+def test_child_hermes_never_inherits_yolo(tmp_path, monkeypatch):
+    """A develop run's Hermes child resolves approvals under Hermes's own single-query rules: YOLO mode
+    of the process that started it is not passed on."""
+    monkeypatch.setenv("HERMES_YOLO_MODE", "1")
+    fake = tmp_path / "hermes"
+    fake.write_text('#!/bin/sh\necho "yolo=${HERMES_YOLO_MODE:-unset}"\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    folder = tmp_path / "proj"
+    folder.mkdir()
+    ctx = AttemptContext(folder=folder, spec="S-4.1", n=1, prompt="go", profile="coder",
+                         deadline=time.time() + 30)
+    r = HermesWorker(str(fake)).attempt(ctx)
+    assert "yolo=unset" in r.output

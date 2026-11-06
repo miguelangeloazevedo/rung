@@ -134,10 +134,13 @@ class ProfileDrafter(Drafter):
 
 
 def scrubbed_env() -> dict:
-    """Environment for child Hermes processes: no Rung or calling-session variables leak in."""
+    """Environment for child Hermes processes: no Rung or calling-session variables leak in, and no
+    approval bypass: a child never inherits YOLO mode from the process that started it, so its flagged
+    actions resolve under Hermes's single-query approval rules."""
     env = dict(os.environ)
     for k in list(env):
-        if k.startswith("RUNG_") or k.startswith("HERMES_SESSION") or k in ("HERMES_GOAL", "PYTEST_CURRENT_TEST"):
+        if k.startswith("RUNG_") or k.startswith("HERMES_SESSION") or k in (
+                "HERMES_GOAL", "PYTEST_CURRENT_TEST", "HERMES_YOLO_MODE"):
             env.pop(k, None)
     return env
 
