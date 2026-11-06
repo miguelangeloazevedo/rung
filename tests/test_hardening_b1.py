@@ -160,6 +160,7 @@ def test_r1_all_manual_tests_name_human_only_on_send(engine, tmp_path):
     e = engine
     seed.seed_built(e, seed.copy_fixture("csvtidy", tmp_path / "b"))
     e.edit_test("csvtidy", "T-1.1a", {"type": "manual", "text": "Look at it", "steps": ["Open the file"]})
+    e.approve("csvtidy", "T-1.1a", HUMAN)  # accepted again: the only gate left is the filters
     assert e.suggest("csvtidy", "S-1.1")["human_only_reason"] == "all tests manual"
     with pytest.raises(RungError, match="human only"):  # not "no accepted command test"
         e.start_run("csvtidy", "S-1.1")
