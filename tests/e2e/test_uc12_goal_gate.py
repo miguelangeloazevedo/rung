@@ -13,7 +13,7 @@ R2_NEW = "Normalise every date to ISO 8601 with a time zone"
 GATE = "hermes rung check S-2.1"
 
 
-HERMES_BIN = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
+HERMES_BIN = os.environ.get("RUNG_HERMES_BIN") or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
 STUB_LOG = "http://127.0.0.1:18765/v1/log"
 
 

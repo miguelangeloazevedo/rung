@@ -10,7 +10,7 @@ import time
 import harness as H
 from support import seed
 
-HERMES_BIN = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
+HERMES_BIN = os.environ.get("RUNG_HERMES_BIN") or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
 MARKUP = '<img src=x onerror="window.__rungPwned=1"><b data-x="1">bold</b>'
 
 

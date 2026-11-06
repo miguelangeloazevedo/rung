@@ -14,7 +14,7 @@ import harness as H
 from support import seed
 
 SHOTS = Path(os.environ.get("RUNG_SMOKE_SHOTS", "/tmp/rung-smoke"))
-HERMES_BIN = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
+HERMES_BIN = os.environ.get("RUNG_HERMES_BIN") or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
 THEMES = [("catppuccin", "dark"), ("catppuccin", "light"), ("github", "light"), ("github", "dark"),
           ("solarized", "dark"), ("everforest", "light"), ("mono", "dark"), ("nous", "dark")]
 
