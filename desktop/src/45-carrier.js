@@ -86,9 +86,15 @@ function ClaimsSection({ project, r, onErr }) {
         h('span', { className: cx('font-medium shrink-0', c.status === 'open' ? 'text-needs' : c.status === 'reported' ? 'text-pass' : 'text-muted'), 'data-testid': 'claim-state' }, claimLine(c))))))
 }
 
-function blockingRung(chk) {
-  const m = String(((chk && chk.blockers) || [])[0] || '').match(/[NRST]-\d+(?:\.\d+)?[a-z]?/)
-  return m ? m[0] : ''
+// What holds a claimed specification back, in a few words: the first rung below it that blocks
+// ("blocked by T-2.1a"), else the specification's own first blocker ("blocked: S-2.1 has no tests").
+function blockedText(chk) {
+  const list = ((chk && chk.blockers) || []).map(String)
+  for (const b of list) {
+    const m = b.match(/^[NRST]-\d+(?:\.\d+)?[a-z]?/)
+    if (m && m[0] !== chk.id) return `blocked by ${m[0]}`
+  }
+  return list.length ? `blocked: ${list[0]}` : 'blocked'
 }
 
 function ClaimRow({ c }) {
@@ -96,5 +102,5 @@ function ClaimRow({ c }) {
   return h(Card, { className: 'p-3 flex items-center justify-between gap-3 text-xs', testid: 'running-claim', onClick: () => navigate('rung', { rid: c.spec }) },
     h('span', { className: 'text-fg mono truncate', title: `${c.spec} · ${c.profile} · ${c.chat}` }, `${c.spec} · ${c.profile} · ${c.chat}`),
     h('span', { className: cx('text-[11px] font-medium shrink-0', blocked ? 'text-fail' : 'text-pass') },
-      blocked ? `claimed · blocked by ${blockingRung(c.check)}` : 'claimed · check passes'))
+      blocked ? `claimed · ${blockedText(c.check)}` : 'claimed · check passes'))
 }

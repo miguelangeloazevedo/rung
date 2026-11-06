@@ -2491,9 +2491,15 @@ function ClaimsSection({ project, r, onErr }) {
         h('span', { className: cx('font-medium shrink-0', c.status === 'open' ? 'text-needs' : c.status === 'reported' ? 'text-pass' : 'text-muted'), 'data-testid': 'claim-state' }, claimLine(c))))))
 }
 
-function blockingRung(chk) {
-  const m = String(((chk && chk.blockers) || [])[0] || '').match(/[NRST]-\d+(?:\.\d+)?[a-z]?/)
-  return m ? m[0] : ''
+// What holds a claimed specification back, in a few words: the first rung below it that blocks
+// ("blocked by T-2.1a"), else the specification's own first blocker ("blocked: S-2.1 has no tests").
+function blockedText(chk) {
+  const list = ((chk && chk.blockers) || []).map(String)
+  for (const b of list) {
+    const m = b.match(/^[NRST]-\d+(?:\.\d+)?[a-z]?/)
+    if (m && m[0] !== chk.id) return `blocked by ${m[0]}`
+  }
+  return list.length ? `blocked: ${list[0]}` : 'blocked'
 }
 
 function ClaimRow({ c }) {
@@ -2501,7 +2507,7 @@ function ClaimRow({ c }) {
   return h(Card, { className: 'p-3 flex items-center justify-between gap-3 text-xs', testid: 'running-claim', onClick: () => navigate('rung', { rid: c.spec }) },
     h('span', { className: 'text-fg mono truncate', title: `${c.spec} · ${c.profile} · ${c.chat}` }, `${c.spec} · ${c.profile} · ${c.chat}`),
     h('span', { className: cx('text-[11px] font-medium shrink-0', blocked ? 'text-fail' : 'text-pass') },
-      blocked ? `claimed · blocked by ${blockingRung(c.check)}` : 'claimed · check passes'))
+      blocked ? `claimed · ${blockedText(c.check)}` : 'claimed · check passes'))
 }
 
 // Rung desktop pane: runs, attempts, executions, defects.
@@ -3319,6 +3325,16 @@ function liveKids(n) {
   return (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
 }
 
+// The ids above a rung, need first: [N-1, R-2] for S-2.1.
+function chainOf(nodes, rid, above) {
+  for (const x of nodes || []) {
+    if (x.id === rid) return above
+    const got = chainOf(x.children, rid, [...above, x.id])
+    if (got) return got
+  }
+  return null
+}
+
 function needOf(tree, rid) {
   for (const n of tree || []) {
     const stack = [n]
@@ -3357,7 +3373,8 @@ function DockNeedRow({ i, path }) {
   const label = `${i.id} ${i.text || ''}`
   const meta = i.type === 'approval' ? `#${i.n} recorded by ${i.recorder || 'you'}`
     : i.type === 'error' ? `#${i.n} ${i.reason || ''}`.trim()
-      : i.type === 'proposed' && i.proposer ? `by ${i.proposer}${i.source_chat ? ' · ' + i.source_chat : ''}` : ''
+      : i.type === 'proposed' && i.proposer ? `by ${i.proposer}${i.source_chat ? ' · ' + i.source_chat : ''}`
+        : i.type === 'stale' && i.change ? `${i.change.rung} changed · ${ago(i.change.at)}` : ''
   return h('button', { type: 'button', className: 'dk-row', title: label, 'data-testid': 'dock-item', 'data-item': i.id, onClick: () => openItem(i) },
     h('span', 'dk-row-top',
       h('span', { className: cx('mono dk-id', i.type === 'proposed' ? 'text-needs' : 'text-fg') }, i.id),
@@ -3387,14 +3404,15 @@ function DockClaimRow({ c }) {
   useTick(15000)
   const blocked = c.check && !c.check.ok
   const meta = `${c.profile} · ${c.chat}`
+  const check = blocked ? blockedText(c.check) : 'passes'
   return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => navigate('rung', { rid: c.spec }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', c.spec),
       h('span', 'dk-chip', 'claimed'),
       h('span', 'dk-path mono', ago(c.opened_at))),
     h('span', { className: 'dk-meta mono truncate', title: meta }, meta),
-    h('span', 'dk-meta mono', 'check: ',
-      h('span', { className: blocked ? 'text-fail' : 'text-pass' }, blocked ? `blocked by ${blockingRung(c.check)}` : 'passes')))
+    h('span', { className: 'dk-meta mono truncate', title: `check: ${check}` }, 'check: ',
+      h('span', { className: blocked ? 'text-fail' : 'text-pass' }, check)))
 }
 
 function DockTree({ nodes, depth, cur }) {
@@ -3433,8 +3451,8 @@ function DockProject({ project }) {
   const node = tree.find(n => n.id === need)
   const hl = d.allocation && d.allocation.spec
   const pathOf = i => {
-    const nd = needOf(tree, i.id)
-    return nd && nd !== i.id ? nd : ''
+    const up = chainOf(tree, i.id, []) || []
+    return (up.length > 2 ? [up[0], up[up.length - 1]] : up).join(' › ')
   }
   const n = d.tiles ? d.tiles.needs_you : items.length
   return h('div', 'dk-body',

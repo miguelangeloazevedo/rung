@@ -41,6 +41,16 @@ function liveKids(n) {
   return (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
 }
 
+// The ids above a rung, need first: [N-1, R-2] for S-2.1.
+function chainOf(nodes, rid, above) {
+  for (const x of nodes || []) {
+    if (x.id === rid) return above
+    const got = chainOf(x.children, rid, [...above, x.id])
+    if (got) return got
+  }
+  return null
+}
+
 function needOf(tree, rid) {
   for (const n of tree || []) {
     const stack = [n]
@@ -79,7 +89,8 @@ function DockNeedRow({ i, path }) {
   const label = `${i.id} ${i.text || ''}`
   const meta = i.type === 'approval' ? `#${i.n} recorded by ${i.recorder || 'you'}`
     : i.type === 'error' ? `#${i.n} ${i.reason || ''}`.trim()
-      : i.type === 'proposed' && i.proposer ? `by ${i.proposer}${i.source_chat ? ' · ' + i.source_chat : ''}` : ''
+      : i.type === 'proposed' && i.proposer ? `by ${i.proposer}${i.source_chat ? ' · ' + i.source_chat : ''}`
+        : i.type === 'stale' && i.change ? `${i.change.rung} changed · ${ago(i.change.at)}` : ''
   return h('button', { type: 'button', className: 'dk-row', title: label, 'data-testid': 'dock-item', 'data-item': i.id, onClick: () => openItem(i) },
     h('span', 'dk-row-top',
       h('span', { className: cx('mono dk-id', i.type === 'proposed' ? 'text-needs' : 'text-fg') }, i.id),
@@ -109,14 +120,15 @@ function DockClaimRow({ c }) {
   useTick(15000)
   const blocked = c.check && !c.check.ok
   const meta = `${c.profile} · ${c.chat}`
+  const check = blocked ? blockedText(c.check) : 'passes'
   return h('button', { type: 'button', className: 'dk-row', title: `${c.spec} claimed by ${c.profile}`, 'data-testid': 'dock-claim', 'data-claim': c.id, onClick: () => navigate('rung', { rid: c.spec }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', c.spec),
       h('span', 'dk-chip', 'claimed'),
       h('span', 'dk-path mono', ago(c.opened_at))),
     h('span', { className: 'dk-meta mono truncate', title: meta }, meta),
-    h('span', 'dk-meta mono', 'check: ',
-      h('span', { className: blocked ? 'text-fail' : 'text-pass' }, blocked ? `blocked by ${blockingRung(c.check)}` : 'passes')))
+    h('span', { className: 'dk-meta mono truncate', title: `check: ${check}` }, 'check: ',
+      h('span', { className: blocked ? 'text-fail' : 'text-pass' }, check)))
 }
 
 function DockTree({ nodes, depth, cur }) {
@@ -155,8 +167,8 @@ function DockProject({ project }) {
   const node = tree.find(n => n.id === need)
   const hl = d.allocation && d.allocation.spec
   const pathOf = i => {
-    const nd = needOf(tree, i.id)
-    return nd && nd !== i.id ? nd : ''
+    const up = chainOf(tree, i.id, []) || []
+    return (up.length > 2 ? [up[0], up[up.length - 1]] : up).join(' › ')
   }
   const n = d.tiles ? d.tiles.needs_you : items.length
   return h('div', 'dk-body',
