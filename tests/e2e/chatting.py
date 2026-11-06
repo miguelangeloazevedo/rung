@@ -7,6 +7,8 @@ sessions of the isolated home's `coder` profile through the deterministic stub m
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import os
 import time
 import urllib.request
 
@@ -102,7 +104,13 @@ def route(page) -> str:
 def go(page, hash_: str) -> None:
     """Open a session by its route and wait until its transcript has loaded and stopped changing."""
     page.evaluate(f"location.hash = {json.dumps(hash_)}")
-    page.locator(COMPOSER).first.wait_for(timeout=30000)
+    try:
+        page.locator(COMPOSER).first.wait_for(timeout=30000)
+    except Exception as exc:
+        shot = Path(os.environ.get("TMPDIR", "/tmp")) / f"rung-go-{int(time.time())}.png"
+        page.screenshot(path=str(shot))
+        raise AssertionError(f"no composer after opening {hash_!r}: now at {route(page)!r}, "
+                             f"page {page.evaluate('document.body.innerText')[:400]!r}, screenshot {shot}") from exc
     last, same = None, 0
     for _ in range(60):
         now = transcript(page)
