@@ -216,6 +216,9 @@ def test_acc06_reduced_motion_stops_animation(rung, csvtidy, page):
     s.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
     try:
         H.open_rung(page, fresh=False)
+        # No reload (the reduced-motion emulation stays on this page), so the pane keeps the view the
+        # previous test left it on: start from home explicitly.
+        page.evaluate("window.__rungNavigate('home')")
         H.wait_view(page, "home")
         page.evaluate("window.__rungNavigate('build', {need: 'N-2', step: 'develop'})")
         row = page.locator(".rung [data-testid=develop-table] [data-spec=\"S-4.1\"]")

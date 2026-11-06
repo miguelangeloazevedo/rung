@@ -146,7 +146,9 @@ def test_run04_cancel_running_loop(rung, csvtidy, page):
 def test_gateway_restart_mid_run(rung, csvtidy, page):
     e, run_id = _start_slow_run(rung, csvtidy, page, delay=6.0)
     pid = e.run(run_id)["pid"]
-    r = isolated("gateway", "restart", timeout=240)
+    # --detach: a bounded caller restarts the gateway without becoming it. Without it, a home whose
+    # gateway has no installed service (Hermes 0.23 Desktop) runs the new gateway in this process.
+    r = isolated("gateway", "restart", "--detach", timeout=240)
     assert r.returncode == 0, r.stdout + r.stderr
     # The supervised run is its own process: it carries on through the restart.
     assert _alive(pid) or e.run(run_id)["status"] == "passed"
