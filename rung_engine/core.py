@@ -315,6 +315,15 @@ class Engine(LifecycleMixin, ClaimsMixin):
             return []
         return _clean_names(got or [], "tool") if isinstance(got, (list, tuple, set)) else []
 
+    def fill_profile_tools(self, name: str, tools) -> bool:
+        """Pre-fill a profile's tools that Hermes resolved late; a row that already has tools keeps them."""
+        clean = _clean_names(list(tools or []), "tool")
+        if not clean:
+            return False
+        with self._tx() as c:
+            return c.execute("UPDATE profiles SET tools = ? WHERE name = ? AND tools = ?",
+                             (_j(clean), name, _j([]))).rowcount > 0
+
     def profiles(self) -> list[dict]:
         return [self._profile_dict(r) for r in self._q("SELECT * FROM profiles ORDER BY name")]
 

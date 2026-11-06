@@ -141,23 +141,60 @@ def _cli_tools(name: str, cfg_path: Path) -> list[str] | None:
     return got
 
 
-def hermes_profile_tools(name: str) -> list[str] | None:
-    """The toolsets a Hermes profile has on the CLI. An explicit `platform_toolsets.cli` list of plain
-    toolset names is read from the profile's config; otherwise (Hermes defaults, composite toolsets)
-    Hermes resolves them through `hermes tools list`. Read only; None when neither can answer."""
+def _tool_plan(name: str) -> tuple[list[str] | None, Path | None]:
+    """(explicit tools, None) when the profile's config lists plain CLI toolsets; (None, config path)
+    when only Hermes can resolve them (defaults, composite toolsets); (None, None) for no profile."""
     home = _profile_home(name)
     if not home.is_dir():
-        return None
+        return None, None
     cfg_path = home / "config.yaml"
     try:
         cfg = _read_config(cfg_path) if cfg_path.is_file() else {}
     except Exception:
-        cfg = {}  # unreadable here: Hermes itself still answers below
+        cfg = {}  # unreadable here: Hermes itself still answers
     pts = cfg.get("platform_toolsets")
     raw = pts.get("cli") if isinstance(pts, dict) else None
     if isinstance(raw, list) and raw and all(isinstance(x, str) and x and not x.startswith("hermes-") for x in raw):
-        return sorted(set(raw))
+        return sorted(set(raw)), None
+    return None, cfg_path
+
+
+def _explicit_tools(name: str) -> list[str] | None:
+    """A profile's tools when its config states them; never starts hermes."""
+    return _tool_plan(name)[0]
+
+
+def hermes_profile_tools(name: str) -> list[str] | None:
+    """The toolsets a Hermes profile has on the CLI. An explicit `platform_toolsets.cli` list of plain
+    toolset names is read from the profile's config; otherwise (Hermes defaults, composite toolsets)
+    Hermes resolves them through `hermes tools list`. Read only; None when neither can answer."""
+    explicit, cfg_path = _tool_plan(name)
+    if explicit is not None or cfg_path is None:
+        return explicit
     return _cli_tools(name, cfg_path)
+
+
+def _fill_default_tools(engine: Engine, names: list[str]) -> threading.Thread | None:
+    """Resolve, off the request path, the tools of new profiles whose config does not list them: each
+    `hermes tools list` takes seconds, and a first open must not wait for one per profile. A profile
+    someone gave tools in the meantime keeps them."""
+    todo = [(n, p) for n in names for e, p in [_tool_plan(n)] if e is None and p is not None]
+    if not todo:
+        return None
+
+    def work():
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for name, got in zip([n for n, _ in todo], pool.map(lambda np: _cli_tools(*np), todo)):
+                if got:
+                    try:
+                        engine.fill_profile_tools(name, got)
+                    except Exception:
+                        pass
+
+    t = threading.Thread(target=work, name="rung-profile-tools", daemon=True)
+    t.start()
+    return t
 
 
 def service() -> Service:
@@ -166,9 +203,11 @@ def service() -> Service:
         svc = _SERVICES.get(path)
         if svc is None:
             engine = Engine(path)
-            engine.tool_source = hermes_profile_tools
+            engine.tool_source = _explicit_tools
             if not engine.profiles():
-                engine.sync_profiles(hermes_profiles())
+                names = hermes_profiles()
+                engine.sync_profiles(names)
+                _fill_default_tools(engine, names)
             svc = Service(engine, hermes_bin=hermes_bin(), log_dir=Path(path).parent / "logs")
             svc.reconcile()
             _SERVICES[path] = svc

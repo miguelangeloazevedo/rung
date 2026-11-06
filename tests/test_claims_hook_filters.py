@@ -574,3 +574,43 @@ def test_alc01_profile_default_tools_come_from_hermes_tools_list(tmp_path, monke
     host._CLI_TOOLS.clear()
     fake.write_text("#!/bin/sh\nexit 1\n")
     assert host.hermes_profile_tools("coder") is None
+
+
+def test_alc01_first_open_never_waits_for_hermes_tools_list(tmp_path, monkeypatch):
+    """Opening Rung the first time does not wait for `hermes tools list` (seconds per profile): profiles
+    with an explicit list get it at once, the rest are filled in the background, and a profile someone
+    gave tools in the meantime keeps them."""
+    import time
+    from rung_engine import host
+    home = tmp_path / "home"
+    for n, cfg in (("coder", "platform_toolsets:\n  cli: [terminal, file]\n"), ("writer", "model: x\n"), ("keeper", "model: x\n")):
+        (home / "profiles" / n).mkdir(parents=True)
+        (home / "profiles" / n / "config.yaml").write_text(cfg)
+    (home / "config.yaml").write_text("model: x\n")
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("RUNG_STORE", str(tmp_path / "rung.db"))
+    cfgmod = types.ModuleType("hermes_cli.config")
+    cfgmod.read_user_config_raw = lambda path: (
+        {"platform_toolsets": {"cli": ["terminal", "file"]}} if "coder" in str(path) else {"model": "x"})
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", cfgmod)
+    fake = tmp_path / "hermes"
+    fake.write_text(f"#!{sys.executable}\nimport time; time.sleep(2); print('  \\u2713 enabled  web  W')\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(host, "hermes_bin", lambda: str(fake))
+    host._CLI_TOOLS.clear()
+    host._SERVICES.clear()
+    t = time.time()
+    svc = host.service()
+    assert time.time() - t < 1.5
+    e = svc.engine
+    tools = {p["name"]: p["tools"] for p in e.profiles()}
+    assert tools["coder"] == ["file", "terminal"] and tools["writer"] == [] and tools["default"] == []
+    e.save_profiles([{"name": "keeper", "tools": ["browser"]}])
+    end = time.time() + 20
+    while time.time() < end and {p["name"]: p["tools"] for p in e.profiles()}["writer"] != ["web"]:
+        time.sleep(0.2)
+    tools = {p["name"]: p["tools"] for p in e.profiles()}
+    assert tools["writer"] == ["web"] and tools["default"] == ["web"]
+    assert tools["keeper"] == ["browser"] and tools["coder"] == ["file", "terminal"]
+    host._SERVICES.clear()
