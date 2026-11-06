@@ -535,3 +535,19 @@ def test_clm01_the_claiming_profile_is_read_per_call_not_at_registration(engine,
     assert "error" not in out, out
     assert [c["profile"] for c in engine.claims("csvtidy")] == ["coder"]
     host._SERVICES.clear()
+
+
+def test_alc01_profile_tools_read_without_pyyaml(tmp_path, monkeypatch):
+    """Hermes 0.23 ships no PyYAML; it reads YAML through its own `hermes_yaml`. A profile's tools still
+    come from its config there."""
+    from rung_engine import host
+    home = tmp_path / "home"
+    (home / "profiles" / "coder").mkdir(parents=True)
+    (home / "profiles" / "coder" / "config.yaml").write_text("platform_toolsets:\n  cli: [terminal, file]\n")
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    fake = types.ModuleType("hermes_yaml")
+    fake.safe_load = lambda text: {"platform_toolsets": {"cli": ["terminal", "file"]}} if "terminal" in text else {}
+    monkeypatch.setitem(sys.modules, "hermes_yaml", fake)
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.setitem(sys.modules, "hermes_cli.tools_config", None)
+    assert host.hermes_profile_tools("coder") == ["file", "terminal"]

@@ -101,6 +101,18 @@ def _profile_home(name: str) -> Path:
     return root if name == "default" else root / "profiles" / name
 
 
+def _read_yaml(path: Path):
+    """A profile config read with the YAML parser the running Hermes ships: Hermes 0.23 reads YAML through
+    its own `hermes_yaml` (ruamel) and no longer installs PyYAML; older releases ship PyYAML."""
+    text = path.read_text()
+    try:
+        import hermes_yaml
+        return hermes_yaml.safe_load(text)
+    except ImportError:
+        import yaml
+        return yaml.safe_load(text)
+
+
 def hermes_profile_tools(name: str) -> list[str] | None:
     """The toolsets a Hermes profile has on the CLI (`platform_toolsets.cli` in its config), resolved
     the way Hermes resolves them. Read only; None when the profile's config cannot be read."""
@@ -109,8 +121,7 @@ def hermes_profile_tools(name: str) -> list[str] | None:
         return None
     cfg_path = home / "config.yaml"
     try:
-        import yaml
-        cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.is_file() else {}
+        cfg = _read_yaml(cfg_path) if cfg_path.is_file() else {}
     except Exception:
         return None
     cfg = cfg if isinstance(cfg, dict) else {}
