@@ -150,6 +150,9 @@ function DockTree({ nodes, depth, cur }) {
     }))
 }
 
+// The dock is a glance: the first few items, then how many more (the full page lists them all).
+const DOCK_ITEMS = 8
+
 function DockProject({ project }) {
   const q = useApi(`/projects/${encodeURIComponent(project)}/home`, { live: true })
   const last = useValue($lastNeed)[project]
@@ -173,7 +176,9 @@ function DockProject({ project }) {
   const n = d.tiles ? d.tiles.needs_you : items.length
   return h('div', 'dk-body',
     h(DockSection, { id: 'dk-needs', title: 'Needs you', count: n, tone: n ? 'needs' : 'dim' },
-      items.length ? frag(...items.map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i) })))
+      items.length ? frag(...items.slice(0, DOCK_ITEMS).map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i) })),
+        items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => navigate('home') },
+          `${items.length - DOCK_ITEMS} more`) : null)
         : h(DockEmpty, { label: 'Nothing needs you' })),
     h(DockSection, { id: 'dk-running', title: 'Running', count: runs.length + claims.length, tone: runs.length + claims.length ? 'needs' : 'dim' },
       runs.length + claims.length
@@ -218,7 +223,9 @@ const DOCK_CSS = `
 .rung .dk-row:active{background:var(--r-line)}
 .rung .dk-row-top{display:flex;align-items:center;gap:6px;min-width:0}
 .rung .dk-id{font-size:12px;font-weight:600;flex:none}
-.rung .dk-path{margin-left:auto;font-size:11px;color:var(--r-muted);flex:none;max-width:40%}
+.rung .dk-more{display:block;width:100%;text-align:left;padding:6px 10px;font-size:11px;color:var(--r-muted);border-radius:6px}
+.rung .dk-more:hover{color:var(--r-fg);background:var(--r-btnh)}
+.rung .dk-path{margin-left:auto;font-size:11px;color:var(--r-muted);flex:0 1 auto;min-width:0;max-width:40%}
 .rung .dk-text{font-size:12px;color:var(--r-fg2)}
 .rung .dk-meta{font-size:11px;color:var(--r-muted)}
 .rung .dk-chip{font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;border:1px solid var(--r-line2);color:var(--r-muted);flex:none}
@@ -238,7 +245,7 @@ const DOCK_CSS = `
 .rung .dk-tr-text{font-size:11px;color:var(--r-muted)}
 .rung .dk-tr-label{margin-left:auto;font-size:11px;flex:none}
 .rung .dk .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.rung .dk-row:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
+.rung .dk-row:focus-visible,.rung .dk-more:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
 .rung [data-testid=main]{container-type:inline-size}
 @container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}

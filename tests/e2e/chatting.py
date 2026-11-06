@@ -88,13 +88,10 @@ def turn(page, text: str, timeout: float = 90) -> str:
                  msg=f"reply to {text!r}: {transcript(page)[-400:]!r}")
     time.sleep(0.5)
     now = transcript(page)
-    # The turn starts at the first occurrence of the message that was not there before (the tool result
-    # can quote the message again, as a claim's chat title does).
-    i = -1
-    for _ in range(before.count(text) + 1):
-        i = now.find(text, i + 1)
-        if i < 0:
-            break
+    # This turn is the last time the message was sent before the last reply. The reply itself can quote
+    # the message (a claim's chat title does), so search only up to the reply.
+    j = now.rfind("Done: ")
+    i = now.rfind(text, 0, j)
     return now[i:] if i >= 0 else now[len(before):]
 
 
@@ -103,6 +100,14 @@ def route(page) -> str:
 
 
 def go(page, hash_: str) -> None:
+    """Open a session by its route and wait until its transcript has loaded and stopped changing."""
     page.evaluate(f"location.hash = {json.dumps(hash_)}")
     page.locator(COMPOSER).first.wait_for(timeout=30000)
-    time.sleep(0.5)
+    last, same = None, 0
+    for _ in range(60):
+        now = transcript(page)
+        same = same + 1 if now == last and "Done: " in now else 0
+        if same >= 3:
+            return
+        last = now
+        time.sleep(0.25)

@@ -190,6 +190,10 @@ def test_dck08_dck09_dock_light_theme_widths_and_large_project(rung, csvtidy, th
         page.locator(DOCK + " [data-rung]").first.wait_for(timeout=20000)
         took = time.time() - t0
         assert took < 1.0, f"dock rendered a 500-rung project in {took:.2f}s"
+        # A glance: the first items, then how many more, opening the full page.
+        n = len(e.needs_you("bigladder"))
+        assert n > 8 and page.locator(DOCK + " [data-testid=dock-item]").count() == 8
+        assert page.locator(DOCK + " [data-testid=dock-more]").inner_text().strip() == f"{n - 8} more"
         # contrast and names on a light theme
         assert not a11y.contrast_failures(page)
         for width in (237, 288, 360):
