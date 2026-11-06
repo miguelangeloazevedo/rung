@@ -105,8 +105,14 @@ def test_res07_sec03_worst_case_data_breaks_no_view(rung, page):
     for project in ("worstcase", "one", "empty"):
         e.open_project(project)
         page.evaluate("window.__rungNavigate('home')")
-        H.wait_until(lambda: page.locator(".rung [data-testid=project-name]").first.inner_text() == project,
-                     msg=f"project {project}")
+        name = page.locator(".rung [data-testid=project-name]")
+        try:
+            H.wait_until(lambda: name.count() and name.first.inner_text() == project, msg=f"project {project}")
+        except AssertionError as exc:
+            shown = name.first.inner_text() if name.count() else None
+            view = page.evaluate("document.querySelector('[data-rung-view]')?.dataset.rungView")
+            text = page.locator(".rung").first.inner_text()[:300]
+            raise AssertionError(f"{exc}: shows {shown!r}, view {view!r}, text {text!r}") from exc
         for view, params in VIEWS:
             if project != "worstcase" and view not in ("home", "projects", "settings"):
                 continue
