@@ -875,7 +875,7 @@ function execLine(x) {
   return bits.join(' · ')
 }
 
-function ExecList({ test, execs, limit }) {
+function ExecList({ test, execs, limit, showTest }) {
   const rows = (execs || []).slice(0, limit || 3)
   if (!rows.length) return h('div', 'bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] text-dim', 'No executions yet')
   return h('div', 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]',
@@ -883,12 +883,12 @@ function ExecList({ test, execs, limit }) {
       const dead = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; earlier fails stay failed
       const t = dead ? 'dim' : x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'pending' || x.status === 'error' ? 'needs' : 'dim'
       return h('div', {
-        key: x.n,
+        key: `${x.test || test}#${x.n}`,
         className: cx('flex items-center justify-between py-0.5 cursor-pointer', dead ? 'line-through text-dim' : 'text-fg'),
-        'data-exec': `${test}#${x.n}`,
-        onClick: () => navigate('exec', { test, n: x.n })
+        'data-exec': `${x.test || test}#${x.n}`,
+        onClick: () => navigate('exec', { test: x.test || test, n: x.n })
       },
-      h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
+      h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, showTest ? `${x.test} ${execLine(x)}` : execLine(x))),
       dead
         ? h('span', 'text-[10px] no-underline text-dim italic', `invalidated by ${String(x.invalidated_by || 'an upstream edit').replace(/ edited$/, ' edit')}`)
         : h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
@@ -1027,7 +1027,7 @@ function Home({ project }) {
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing needs you'),
       proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro }))) : null),
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'running' },
-      h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length ? 'needs' : 'dim' }, 'Running'),
+      h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length || (d.running_tests || []).length ? 'needs' : 'dim' }, 'Running'),
       (d.running || []).length || (d.running_tests || []).length || (d.claims || []).length
         ? frag(...d.running.map(r => h(RunningRow, { key: r.id, run: r })),
           ...(d.claims || []).map(c => h(ClaimRow, { key: 'c' + c.id, c })),
@@ -1206,6 +1206,9 @@ function SettingsExclusions({ project }) {
 }
 
 function Settings({ project }) {
+  const [bad, setBad] = useState(null)  // the row (a profile name, or null for a setting) and field a save refused
+  const inv = (row, field) => !!bad && bad.field === field && bad.row === row
+  const mark = (cls, row, field) => ({ className: cx(cls, inv(row, field) && 'border-fail'), 'aria-invalid': inv(row, field) || undefined })
   const q = useApi('/settings')
   const onb = (useApi('/state').data || {}).onboarding
   const [draft, setDraft] = useState(null)
@@ -1233,7 +1236,12 @@ function Settings({ project }) {
       settings: { test_timeout: timeout, output_limit: typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
       profiles: draft.profiles.map(p => ({ ...p, cost: num(p.cost), max_runs: num(p.max_runs), at_once: num(p.at_once) }))
     })
-    if (!res.ok) return setErr(res.error)
+    if (!res.ok) {
+      const m = /^([^:]+): /.exec(res.error || '')
+      setBad({ row: m && draft.profiles.some(p => p.name === m[1]) ? m[1] : null, field: res.field || null })
+      return setErr(res.error)
+    }
+    setBad(null)
     $colours.set(res.data.settings.colours)
     setDraft(JSON.parse(JSON.stringify(res.data)))
     setErr('')
@@ -1282,14 +1290,14 @@ function Settings({ project }) {
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'cost'), type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
               h('td', 'px-3 py-2.5', h(ChipList, {
                 items: p.tools || [], testid: 'tools', attr: 'data-tool', addLabel: `Add a tool to ${p.name}`,
                 onRemove: t => setProf(i, { tools: (p.tools || []).filter(x => x !== t) }),
                 onAdd: t => setProf(i, { tools: [...(p.tools || []), t] })
               })),
-              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'max_runs'), type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'at_once'), type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
               h('td', 'px-3 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
     project ? h(SettingsExclusions, { project }) : null,
     h('section', 'flex flex-col gap-3',
@@ -1309,10 +1317,10 @@ function Settings({ project }) {
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
         h('div', 'flex items-center justify-between px-4 py-3',
           h('span', 'text-xs text-fg font-medium', 'Default timeout'),
-          h('input', { className: 'w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', type: 'text', name: 'test_timeout', value: typeof draft.settings.test_timeout === 'number' ? `${draft.settings.test_timeout}s` : draft.settings.test_timeout, onChange: e => setSet('test_timeout', e.target.value) })),
+          h('input', { ...mark('w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', null, 'test_timeout'), type: 'text', name: 'test_timeout', value: typeof draft.settings.test_timeout === 'number' ? `${draft.settings.test_timeout}s` : draft.settings.test_timeout, onChange: e => setSet('test_timeout', e.target.value) })),
         h('div', 'flex items-center justify-between px-4 py-3',
           h('span', 'text-xs text-fg font-medium', 'Output limit'),
-          h('input', { className: 'w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', type: 'text', name: 'output_limit', value: draft.settings.output_limit_label != null ? draft.settings.output_limit_label : `${Math.round(draft.settings.output_limit / 1000)} KB`, onChange: e => setSet('output_limit_label', e.target.value) })))),
+          h('input', { ...mark('w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', null, 'output_limit'), type: 'text', name: 'output_limit', value: draft.settings.output_limit_label != null ? draft.settings.output_limit_label : `${Math.round(draft.settings.output_limit / 1000)} KB`, onChange: e => setSet('output_limit_label', e.target.value) })))),
     h('section', { className: 'flex flex-col gap-3', 'data-testid': 'settings-project' },
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
@@ -2094,7 +2102,7 @@ function SpecView({ project, r, ret, need }) {
             h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, capital(resultWord(t.result)))))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Latest run'),
-          h(SpecExecs, { project, tests, runId: lastRun && lastRun.id })),
+          h(SpecExecs, { tests, run: lastRun })),
         h(ErrorLine, { text: err }),
         h('div', 'flex items-center gap-2 pt-3 border-t border-line',
           h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runTests }, 'Run tests'),
@@ -2119,7 +2127,7 @@ function SpecView({ project, r, ret, need }) {
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'run-tests', onClick: runTests }, 'Run tests'),
         a.human_only ? null : h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'),
-        r.status === 'approved' && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
+        (r.status === 'approved' || r.status === 'stale') && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
@@ -2151,12 +2159,14 @@ function dayClock(ts) {
   return `${same ? 'today' : d.toISOString().slice(0, 10)} ${clock(ts)}`
 }
 
-function SpecExecs({ project, tests }) {
-  const ids = tests.filter(t => t.type !== 'manual').map(t => t.id)
-  const first = ids[0]
-  const q = useApi(first ? `${P(project)}/tests/${first}/executions` : null, { enabled: !!first })
-  if (!first) return h(Well, { className: 'font-mono text-[11px] text-dim' }, 'No executions yet')
-  return h(ExecList, { test: first, execs: q.data || [], limit: 4 })
+// The latest run: the last attempt of the latest develop run that ran tests, every test in it; with no
+// develop run, the newest execution of each command test.
+function SpecExecs({ tests, run }) {
+  const att = run && (run.attempts || []).filter(a => (a.executions || []).length).slice(-1)[0]
+  const rows = att
+    ? att.executions
+    : tests.filter(t => t.type !== 'manual').map(t => { const x = (t.executions || [])[0]; return x ? { ...x, test: t.id } : null }).filter(Boolean)
+  return h(ExecList, { execs: rows, limit: Math.max(1, rows.length), showTest: true })
 }
 
 // ------------------------------------------------------------------ specification editor (I write, AI supports)
@@ -3406,11 +3416,23 @@ function DockRunRow({ run }) {
   return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => openRung('run', { run: run.id }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', run.spec),
-      h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'run'),
+      h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'in progress'),  // the full page's Running labels
       h('span', { className: 'dk-path mono', 'data-testid': 'dock-elapsed' }, dur(secs))),
     h('span', { className: 'dk-meta mono truncate', title: meta }, meta),
     h('span', { className: 'dk-bar', role: 'progressbar', 'aria-label': `${run.spec} attempts`, 'aria-valuemin': 0, 'aria-valuemax': run.max_attempts, 'aria-valuenow': n },
       h('span', { style: { width: `${Math.round(100 * n / Math.max(1, run.max_attempts))}%` } })))
+}
+
+function DockTestRow({ x }) {
+  useTick(1000)
+  const secs = x.started_at ? Date.now() / 1000 - x.started_at : 0
+  const meta = `execution #${x.n}`
+  return h('button', { type: 'button', className: 'dk-row', title: `${x.test} execution #${x.n}`, 'data-testid': 'dock-test', 'data-exec': `${x.test}#${x.n}`, onClick: () => openRung('exec', { test: x.test, n: x.n }) },
+    h('span', 'dk-row-top',
+      h('span', 'mono dk-id text-fg', x.test),
+      h('span', 'dk-chip', 'in progress'),
+      h('span', 'dk-path mono', dur(secs))),
+    h('span', { className: 'dk-meta mono truncate', title: meta }, meta))
 }
 
 function DockClaimRow({ c }) {
@@ -3461,6 +3483,8 @@ function DockProject({ project }) {
   const items = d.needs_you || []
   const runs = d.running || []
   const claims = d.claims || []
+  const tests = d.running_tests || []
+  const busy = runs.length + claims.length + tests.length  // the full page's Running: runs, claims, test executions
   const ids = tree.map(n => n.id)
   const firstHot = items.map(i => needOf(tree, i.id)).find(Boolean)
   const need = (last && ids.includes(last) && last) || firstHot || ids[0]
@@ -3477,15 +3501,16 @@ function DockProject({ project }) {
         items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => openRung('home') },
           `${items.length - DOCK_ITEMS} more`) : null)
         : h(DockEmpty, { label: 'Nothing needs you' })),
-    h(DockSection, { id: 'dk-running', title: 'Running', count: runs.length + claims.length, tone: runs.length + claims.length ? 'needs' : 'dim' },
-      runs.length + claims.length
-        ? frag(...runs.map(r => h(DockRunRow, { key: 'r' + r.id, run: r })), ...claims.map(c => h(DockClaimRow, { key: 'c' + c.id, c })))
+    h(DockSection, { id: 'dk-running', title: 'Running', count: busy, tone: busy ? 'needs' : 'dim' },
+      busy
+        ? frag(...runs.map(r => h(DockRunRow, { key: 'r' + r.id, run: r })), ...claims.map(c => h(DockClaimRow, { key: 'c' + c.id, c })),
+          ...tests.map(x => h(DockTestRow, { key: 't' + x.test + x.n, x })))
         : h(DockEmpty, { label: 'Nothing running' })),
     h(DockSection, { id: 'dk-ladder', title: 'Ladder', tone: 'dim' },
       tree.length
         ? frag(
           h('label', { className: 'sr-only', htmlFor: 'rung-dock-need' }, 'Need'),
-          h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
+          h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, title: (() => { const x = tree.find(t => t.id === need); return x ? `${x.id}  ${x.text}` : '' })(), 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
             ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
           node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
         : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => openRung('need-new') })))

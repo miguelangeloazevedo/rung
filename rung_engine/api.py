@@ -457,7 +457,7 @@ def _resolve_suggestion(svc, human, body, project, sid):
 
 @route("POST", "/projects/{project}/changes/{cid}/revert")
 def _revert(svc, human, body, project, cid):
-    return svc.engine.revert_change(project, int(cid), human)
+    return svc.engine.revert_change(project, _int_path(cid, "change"), human)
 
 
 @route("GET", "/projects/{project}/changes")

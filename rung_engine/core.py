@@ -503,6 +503,9 @@ class Engine(LifecycleMixin, ClaimsMixin):
 
     def _rung_row(self, project: str, rid: str):
         p = self._project_row(project)
+        if isinstance(rid, str):
+            from .claims import canonical_rid
+            rid = canonical_rid(rid)  # every door reads s-2.1, ' S 2.1 ' or S\u20112.1 as S-2.1
         r = self._q1("SELECT * FROM rungs WHERE project_pk = ? AND rid = ?", (p["pk"], rid))
         if not r:
             raise NotFound(f"no {rid} in {project}")
@@ -998,7 +1001,9 @@ class Engine(LifecycleMixin, ClaimsMixin):
             raise RungError(f"{spec_rid} is still drafting", code="locked")
         if not self.ai_derived(project, spec_rid):
             raise RungError(f"{spec_rid} is written by you; edit it instead", code="refused")
-        fresh = r["status"] == "approved"
+        # An approved specification, or one gone stale since its approval: either way its approved text is
+        # kept as a version and the fresh draft is compared with it.
+        fresh = r["status"] == "approved" or (r["status"] == "stale" and r["approved_at"] is not None)
         data["draft_state"] = "drafting"
         data.pop("draft_error", None)
         if r["status"] != "draft":
@@ -1415,8 +1420,12 @@ class Engine(LifecycleMixin, ClaimsMixin):
             if data.get("type") == "ai_judged" and status == "pass":
                 status = "pass"  # recorded, but never releases a gate (see _released)
         with self._tx() as c:
-            c.execute("UPDATE executions SET status=?, exit_code=?, output=?, ended_at=? WHERE pk=?",
-                      (status, res_exit, res_out, self.clock(), e["pk"]))
+            # Only a running execution takes its result: a cancel that landed while the command finished
+            # stands (the output is kept with it), so a cancelled execution never turns into a pass.
+            cur = c.execute("UPDATE executions SET status=?, exit_code=?, output=?, ended_at=? WHERE pk=? AND "
+                            "status='running'", (status, res_exit, res_out, self.clock(), e["pk"]))
+            if not cur.rowcount:
+                c.execute("UPDATE executions SET exit_code=?, output=? WHERE pk=?", (res_exit, res_out, e["pk"]))
             self._touch_project(c, t["project_pk"])
         return self.execution(project, test_rid, n)
 
@@ -1785,11 +1794,19 @@ class Engine(LifecycleMixin, ClaimsMixin):
         """The facts as they stand for one specification: the claim on that specification is the work
         itself, not load against it, so its holder is not at capacity for it."""
         held = self._q1("SELECT profile FROM claims WHERE spec_pk=? AND status='open' LIMIT 1", (spec_pk,))
-        if held is None:
+        run = self._q1("SELECT profile FROM runs WHERE spec_pk=? AND status IN ('queued','running') LIMIT 1",
+                       (spec_pk,))
+        if held is None and run is None:
             return facts
         import dataclasses
-        return [dataclasses.replace(f, claims=max(0, f.claims - 1)) if f.name == held["profile"] else f
-                for f in facts]
+        out = []
+        for f in facts:
+            if held is not None and f.name == held["profile"]:
+                f = dataclasses.replace(f, claims=max(0, f.claims - 1))
+            if run is not None and f.name == run["profile"]:
+                f = dataclasses.replace(f, running=max(0, f.running - 1))
+            out.append(f)
+        return out
 
     def exclusion(self, project: str, spec_rid: str, profile: str, ignore_claim: int | None = None) -> str:
         """Why a profile may not carry a specification ('' when it may). The one check behind pick, Send,
@@ -2031,13 +2048,39 @@ class Engine(LifecycleMixin, ClaimsMixin):
                 self._touch_project(c, pk[0])
 
     def cancel_run(self, run_id: int) -> dict:
-        r = self.run(run_id)
-        if r["status"] not in LIVE_RUN:
-            return r
-        self.set_run(run_id, cancel=1)
-        if r["status"] == "queued":
-            self.set_run(run_id, status="cancelled", ended_at=self.clock(), reason="cancelled before start")
+        """One transaction: the flag, and a run not started yet recorded cancelled. The runner starts a run
+        only while it is still queued and not cancelled (start_running), so a cancel before start sticks."""
+        with self._tx() as c:
+            row = c.execute("SELECT status, project_pk FROM runs WHERE pk=?", (int(run_id),)).fetchone()
+            if row is not None and row["status"] in LIVE_RUN:
+                c.execute("UPDATE runs SET cancel=1 WHERE pk=?", (int(run_id),))
+                c.execute("UPDATE runs SET status='cancelled', ended_at=?, reason='cancelled before start' "
+                          "WHERE pk=? AND status='queued'", (self.clock(), int(run_id)))
+                self._touch_project(c, row["project_pk"])
         return self.run(run_id)
+
+    def start_running(self, run_id: int, started_at: float, pid: int) -> bool:
+        """Queued to running, only if the run is still queued and nobody cancelled it."""
+        with self._tx() as c:
+            cur = c.execute("UPDATE runs SET status='running', started_at=?, pid=? WHERE pk=? AND status='queued' "
+                            "AND cancel=0", (started_at, pid, int(run_id)))
+            return bool(cur.rowcount)
+
+    def finish_run(self, run_id: int, final: str, reason: str, commit_ref, last_attempt: int | None) -> None:
+        """The run's end, in one transaction with the cancel flag: a cancel accepted while the run was still
+        running wins over the result the runner reached, and the attempt it ended is recorded cancelled."""
+        with self._tx() as c:
+            row = c.execute("SELECT status, cancel, project_pk FROM runs WHERE pk=?", (int(run_id),)).fetchone()
+            if row is None or row["status"] not in LIVE_RUN:
+                return
+            if row["cancel"] and final != "cancelled":
+                final, reason = "cancelled", "cancelled"
+                if last_attempt is not None:
+                    c.execute("UPDATE attempts SET status='cancelled' WHERE run_pk=? AND n=? AND status IN "
+                              "('pass','fail','no_change','error','running')", (int(run_id), last_attempt))
+            c.execute("UPDATE runs SET status=?, ended_at=?, reason=?, commit_ref=?, pid=NULL WHERE pk=?",
+                      (final, self.clock(), reason, commit_ref, int(run_id)))
+            self._touch_project(c, row["project_pk"])
 
     def run_cancelled(self, run_id: int) -> bool:
         r = self._q1("SELECT cancel FROM runs WHERE pk=?", (int(run_id),))

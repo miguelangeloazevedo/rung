@@ -109,11 +109,23 @@ function DockRunRow({ run }) {
   return h('button', { type: 'button', className: 'dk-row', title: `${run.spec} run`, 'data-testid': 'dock-run', 'data-run': run.id, onClick: () => openRung('run', { run: run.id }) },
     h('span', 'dk-row-top',
       h('span', 'mono dk-id text-fg', run.spec),
-      h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'run'),
+      h('span', 'dk-chip', run.status === 'queued' ? 'queued' : 'in progress'),  // the full page's Running labels
       h('span', { className: 'dk-path mono', 'data-testid': 'dock-elapsed' }, dur(secs))),
     h('span', { className: 'dk-meta mono truncate', title: meta }, meta),
     h('span', { className: 'dk-bar', role: 'progressbar', 'aria-label': `${run.spec} attempts`, 'aria-valuemin': 0, 'aria-valuemax': run.max_attempts, 'aria-valuenow': n },
       h('span', { style: { width: `${Math.round(100 * n / Math.max(1, run.max_attempts))}%` } })))
+}
+
+function DockTestRow({ x }) {
+  useTick(1000)
+  const secs = x.started_at ? Date.now() / 1000 - x.started_at : 0
+  const meta = `execution #${x.n}`
+  return h('button', { type: 'button', className: 'dk-row', title: `${x.test} execution #${x.n}`, 'data-testid': 'dock-test', 'data-exec': `${x.test}#${x.n}`, onClick: () => openRung('exec', { test: x.test, n: x.n }) },
+    h('span', 'dk-row-top',
+      h('span', 'mono dk-id text-fg', x.test),
+      h('span', 'dk-chip', 'in progress'),
+      h('span', 'dk-path mono', dur(secs))),
+    h('span', { className: 'dk-meta mono truncate', title: meta }, meta))
 }
 
 function DockClaimRow({ c }) {
@@ -164,6 +176,8 @@ function DockProject({ project }) {
   const items = d.needs_you || []
   const runs = d.running || []
   const claims = d.claims || []
+  const tests = d.running_tests || []
+  const busy = runs.length + claims.length + tests.length  // the full page's Running: runs, claims, test executions
   const ids = tree.map(n => n.id)
   const firstHot = items.map(i => needOf(tree, i.id)).find(Boolean)
   const need = (last && ids.includes(last) && last) || firstHot || ids[0]
@@ -180,15 +194,16 @@ function DockProject({ project }) {
         items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => openRung('home') },
           `${items.length - DOCK_ITEMS} more`) : null)
         : h(DockEmpty, { label: 'Nothing needs you' })),
-    h(DockSection, { id: 'dk-running', title: 'Running', count: runs.length + claims.length, tone: runs.length + claims.length ? 'needs' : 'dim' },
-      runs.length + claims.length
-        ? frag(...runs.map(r => h(DockRunRow, { key: 'r' + r.id, run: r })), ...claims.map(c => h(DockClaimRow, { key: 'c' + c.id, c })))
+    h(DockSection, { id: 'dk-running', title: 'Running', count: busy, tone: busy ? 'needs' : 'dim' },
+      busy
+        ? frag(...runs.map(r => h(DockRunRow, { key: 'r' + r.id, run: r })), ...claims.map(c => h(DockClaimRow, { key: 'c' + c.id, c })),
+          ...tests.map(x => h(DockTestRow, { key: 't' + x.test + x.n, x })))
         : h(DockEmpty, { label: 'Nothing running' })),
     h(DockSection, { id: 'dk-ladder', title: 'Ladder', tone: 'dim' },
       tree.length
         ? frag(
           h('label', { className: 'sr-only', htmlFor: 'rung-dock-need' }, 'Need'),
-          h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
+          h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, title: (() => { const x = tree.find(t => t.id === need); return x ? `${x.id}  ${x.text}` : '' })(), 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
             ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
           node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
         : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => openRung('need-new') })))

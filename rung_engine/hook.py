@@ -26,6 +26,7 @@ WATCHED = frozenset({"rung_report", "kanban_complete", "todo_list"})
 _TODOS: dict[str, dict[str, dict]] = {}
 _HELD: set[str] = set()  # sessions seen holding a claim
 _MAX_RIDS = 500
+ALL = "\u0000every specification"  # an id past _MAX_RIDS names every specification
 _TODOS_LOCK = threading.Lock()
 _MAX_SESSIONS = 5000
 
@@ -116,8 +117,11 @@ def _remember(session_id: str, items: list[dict], allowed: bool) -> None:
             rec = seen.setdefault(tid, {"rids": [], "done": None})
             text = _content(t)
             for rid in rids_in(text):
-                if rid not in rec["rids"] and len(rec["rids"]) < _MAX_RIDS:
-                    rec["rids"].append(rid)
+                if rid not in rec["rids"]:
+                    if len(rec["rids"]) < _MAX_RIDS:
+                        rec["rids"].append(rid)
+                    else:
+                        rec["all"] = True  # past the limit the id counts as naming every specification
             if allowed:
                 rec["done"] = (text or None) if _completed(t) else None
 
@@ -127,17 +131,20 @@ def _completing(session_id: str, items: list[dict]) -> list[tuple[str, str]]:
     rung id the id named earlier in the session. An item re-sent completed with the same, non-empty content
     it had when it was let through declares nothing new and is left out; a bare id always counts (CLM-06)."""
     with _TODOS_LOCK:
-        seen = {k: {"rids": list(v["rids"]), "done": v["done"]} for k, v in _TODOS.get(session_id, {}).items()}
+        seen = {k: {"rids": list(v["rids"]), "done": v["done"], "all": v.get("all", False)}
+                for k, v in _TODOS.get(session_id, {}).items()}
     out = []
     for t in items:
         if not _completed(t):
             continue
         tid = str(t.get("id", "")).strip()
-        rec = seen.get(tid, {"rids": [], "done": None})
+        rec = seen.get(tid, {"rids": [], "done": None, "all": False})
         now = _content(t)
         if now and rec["done"] is not None and now == rec["done"]:
             continue
-        out.append((tid, " ".join(x for x in [tid, now, *rec["rids"]] if x)))
+        # Each part is read on its own (joined by a separator no id spans): a short id followed by
+        # content starting with a number does not read as one id.
+        out.append((tid, " | ".join(x for x in [tid, now, *rec["rids"], ALL if rec["all"] else ""] if x)))
     return out
 
 
@@ -156,7 +163,9 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
         claims, current = _session_claims(session_id, store)
     except Exception:  # an unreadable or locked store never blocks a tool
         if tool_name == "todo_list":
-            _remember(session_id, items, allowed=True)
+            # Let through unjudged: what the items named is kept, but not as completions that were let
+            # through, so the same items sent again once the store reads are judged then.
+            _remember(session_id, items, allowed=False)
         return None
     if claims:
         with _TODOS_LOCK:
@@ -175,7 +184,7 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
         block = _message(failing[0]) if failing else None
     else:
         for _tid, text in completing:
-            hit = [c for c in failing if _names(text, c["spec"])]
+            hit = [c for c in failing if ALL in text or _names(text, c["spec"])]
             if hit:
                 block = _message(hit[0])
                 break

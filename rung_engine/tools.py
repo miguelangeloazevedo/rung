@@ -153,6 +153,12 @@ def _proposer() -> str:
             name = ""
         if name and name != "custom":
             return name
+        if name == "custom":
+            # Hermes names a home that is neither its root nor a profile 'custom': it is not the default
+            # profile, so it is not labelled one (a claim or proposal as 'custom' names no profile).
+            from .host import hermes_home
+            home = hermes_home()
+            return home.name if home.parent.name == "profiles" else "custom"
     from .host import hermes_home
     home = hermes_home()
     return home.name if home.parent.name == "profiles" else "default"

@@ -73,6 +73,9 @@ class LifecycleMixin:
         if new_name is not None:
             after["name"] = _text_field(new_name, "name")
             self._check_name(after["name"], p["pk"])
+            if after["name"] != before["name"]:
+                # A develop run, a draft being written and a running test address the project by name.
+                self._refuse_while_busy(p["pk"], before["name"], claims=False)
         if folder is not None:
             after["folder"] = _text_field(folder, "folder")
             self._check_folder(after["folder"])
@@ -96,7 +99,7 @@ class LifecycleMixin:
                 c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_project', ?)", (_j(after["name"]),))
         return self.project(after["name"])
 
-    def _refuse_while_busy(self, project_pk, what: str, pks=None) -> None:
+    def _refuse_while_busy(self, project_pk, what: str, pks=None, claims: bool = True) -> None:
         """Archive, delete and retire wait for work in flight: a develop run, a draft being written or a test
         execution still running would otherwise land in a read-only or removed ladder."""
         from .core import RungError
@@ -113,7 +116,7 @@ class LifecycleMixin:
             raise RungError(f"{what} has a test running; wait for it first")
         # An open claim is work in flight too: in a read-only ladder its chat could never report it and
         # the done hook would hold that chat's completions for good.
-        if self._q1(f"SELECT 1 FROM claims WHERE status = 'open' AND "
+        if claims and self._q1(f"SELECT 1 FROM claims WHERE status = 'open' AND "
                     f"{'project_pk = ?' if pks is None else 'spec_pk IN (' + ','.join('?' * len(pks)) + ')'}", args):
             raise RungError(f"{what} has an open claim; release it first")
 

@@ -26,7 +26,10 @@ def normalise(text: str) -> str:
     """Text as the id match reads it: compatibility forms folded (full-width letters and digits), every
     dash and hyphen character read as `-`."""
     import unicodedata
-    return unicodedata.normalize("NFKC", text).translate(_DASHES)
+    text = unicodedata.normalize("NFKC", text).translate(_DASHES)
+    # Invisible format characters (zero-width space and joiners, soft hyphen, BOM) are dropped: an id
+    # with one inside reads the same to a person.
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
 
 
 def rids_in(text: str) -> list[str]:
@@ -45,7 +48,7 @@ def canonical_rid(value: str) -> str:
     """An id as an agent may type it (`s-2.1`, ` S 2.1 `) in the form the ladder stores (`S-2.1`).
     Anything that does not look like an id is returned trimmed, for the lookup to refuse by name."""
     import re
-    m = re.match(r"^\s*([A-Za-z])[-\s]?(\d+(?:\.\d+)*)([A-Za-z]*)\s*$", value or "")
+    m = re.match(r"^\s*([A-Za-z])[-\s]?(\d+(?:\.\d+)*)([A-Za-z]*)\s*$", normalise(value or ""))
     if not m:
         return (value or "").strip()
     return f"{m.group(1).upper()}-{m.group(2)}{m.group(3).lower()}"
@@ -105,6 +108,8 @@ class ClaimsMixin:
             if s["status"] != "approved":
                 raise RungError(f"{spec_rid} is {s['status']}; only an approved specification can be claimed",
                                 code="locked")
+            if held is not None and held["session_id"] == session_id and held["profile"] != profile:
+                raise RungError(f"{spec_rid} is held by this chat as {held['profile']}", code="conflict")
             if held is not None and held["session_id"] != session_id:
                 raise RungError(f"{spec_rid} is held by {held['chat'] or 'another chat'} ({held['profile']})",
                                 code="conflict")

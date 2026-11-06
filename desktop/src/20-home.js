@@ -15,7 +15,7 @@ function execLine(x) {
   return bits.join(' · ')
 }
 
-function ExecList({ test, execs, limit }) {
+function ExecList({ test, execs, limit, showTest }) {
   const rows = (execs || []).slice(0, limit || 3)
   if (!rows.length) return h('div', 'bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] text-dim', 'No executions yet')
   return h('div', 'flex flex-col gap-1.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]',
@@ -23,12 +23,12 @@ function ExecList({ test, execs, limit }) {
       const dead = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; earlier fails stay failed
       const t = dead ? 'dim' : x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : x.status === 'pending' || x.status === 'error' ? 'needs' : 'dim'
       return h('div', {
-        key: x.n,
+        key: `${x.test || test}#${x.n}`,
         className: cx('flex items-center justify-between py-0.5 cursor-pointer', dead ? 'line-through text-dim' : 'text-fg'),
-        'data-exec': `${test}#${x.n}`,
-        onClick: () => navigate('exec', { test, n: x.n })
+        'data-exec': `${x.test || test}#${x.n}`,
+        onClick: () => navigate('exec', { test: x.test || test, n: x.n })
       },
-      h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
+      h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, showTest ? `${x.test} ${execLine(x)}` : execLine(x))),
       dead
         ? h('span', 'text-[10px] no-underline text-dim italic', `invalidated by ${String(x.invalidated_by || 'an upstream edit').replace(/ edited$/, ' edit')}`)
         : h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
@@ -167,7 +167,7 @@ function Home({ project }) {
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing needs you'),
       proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro }))) : null),
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'running' },
-      h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length ? 'needs' : 'dim' }, 'Running'),
+      h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length || (d.running_tests || []).length ? 'needs' : 'dim' }, 'Running'),
       (d.running || []).length || (d.running_tests || []).length || (d.claims || []).length
         ? frag(...d.running.map(r => h(RunningRow, { key: r.id, run: r })),
           ...(d.claims || []).map(c => h(ClaimRow, { key: 'c' + c.id, c })),
@@ -346,6 +346,9 @@ function SettingsExclusions({ project }) {
 }
 
 function Settings({ project }) {
+  const [bad, setBad] = useState(null)  // the row (a profile name, or null for a setting) and field a save refused
+  const inv = (row, field) => !!bad && bad.field === field && bad.row === row
+  const mark = (cls, row, field) => ({ className: cx(cls, inv(row, field) && 'border-fail'), 'aria-invalid': inv(row, field) || undefined })
   const q = useApi('/settings')
   const onb = (useApi('/state').data || {}).onboarding
   const [draft, setDraft] = useState(null)
@@ -373,7 +376,12 @@ function Settings({ project }) {
       settings: { test_timeout: timeout, output_limit: typeof kb === 'number' ? kb * 1000 : kb, colours: s.colours },
       profiles: draft.profiles.map(p => ({ ...p, cost: num(p.cost), max_runs: num(p.max_runs), at_once: num(p.at_once) }))
     })
-    if (!res.ok) return setErr(res.error)
+    if (!res.ok) {
+      const m = /^([^:]+): /.exec(res.error || '')
+      setBad({ row: m && draft.profiles.some(p => p.name === m[1]) ? m[1] : null, field: res.field || null })
+      return setErr(res.error)
+    }
+    setBad(null)
     $colours.set(res.data.settings.colours)
     setDraft(JSON.parse(JSON.stringify(res.data)))
     setErr('')
@@ -422,14 +430,14 @@ function Settings({ project }) {
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'cost'), type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
               h('td', 'px-3 py-2.5', h(ChipList, {
                 items: p.tools || [], testid: 'tools', attr: 'data-tool', addLabel: `Add a tool to ${p.name}`,
                 onRemove: t => setProf(i, { tools: (p.tools || []).filter(x => x !== t) }),
                 onAdd: t => setProf(i, { tools: [...(p.tools || []), t] })
               })),
-              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-3 py-2.5', h('input', { className: numInp, type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'max_runs'), type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'at_once'), type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
               h('td', 'px-3 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
     project ? h(SettingsExclusions, { project }) : null,
     h('section', 'flex flex-col gap-3',
@@ -449,10 +457,10 @@ function Settings({ project }) {
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',
         h('div', 'flex items-center justify-between px-4 py-3',
           h('span', 'text-xs text-fg font-medium', 'Default timeout'),
-          h('input', { className: 'w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', type: 'text', name: 'test_timeout', value: typeof draft.settings.test_timeout === 'number' ? `${draft.settings.test_timeout}s` : draft.settings.test_timeout, onChange: e => setSet('test_timeout', e.target.value) })),
+          h('input', { ...mark('w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', null, 'test_timeout'), type: 'text', name: 'test_timeout', value: typeof draft.settings.test_timeout === 'number' ? `${draft.settings.test_timeout}s` : draft.settings.test_timeout, onChange: e => setSet('test_timeout', e.target.value) })),
         h('div', 'flex items-center justify-between px-4 py-3',
           h('span', 'text-xs text-fg font-medium', 'Output limit'),
-          h('input', { className: 'w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', type: 'text', name: 'output_limit', value: draft.settings.output_limit_label != null ? draft.settings.output_limit_label : `${Math.round(draft.settings.output_limit / 1000)} KB`, onChange: e => setSet('output_limit_label', e.target.value) })))),
+          h('input', { ...mark('w-32 bg-well border border-line rounded px-2.5 py-1 text-xs text-fg mono outline-none text-right', null, 'output_limit'), type: 'text', name: 'output_limit', value: draft.settings.output_limit_label != null ? draft.settings.output_limit_label : `${Math.round(draft.settings.output_limit / 1000)} KB`, onChange: e => setSet('output_limit_label', e.target.value) })))),
     h('section', { className: 'flex flex-col gap-3', 'data-testid': 'settings-project' },
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
       h('div', 'bg-card border border-line rounded-[6px] divide-y divide-line',

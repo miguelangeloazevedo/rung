@@ -71,7 +71,8 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
         row = engine._q1("SELECT worker FROM runs WHERE pk=?", (run_id,))
         worker = make_worker(json.loads(row["worker"] or "{}"), hermes_bin)
     started = time.time()
-    engine.set_run(run_id, status="running", started_at=started, pid=os.getpid())
+    if not engine.start_running(run_id, started, os.getpid()):
+        return engine.run(run_id)  # cancelled (or taken) before it started
     deadline = started + run["timeout_s"]
     fed = ""
     max_attempts = run["max_attempts"]
@@ -83,6 +84,7 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
         return engine.run_cancelled(run_id)
 
     tested_once = False
+    last = None
     for n in range(1, max_attempts + 1):
         if cancelled():
             final, reason = "cancelled", "cancelled"
@@ -92,6 +94,7 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
             break
         prompt = build_prompt(engine, project, spec, n, max_attempts, fed)
         engine.begin_attempt(run_id, n, prompt, fed)
+        last = n
         before = snapshot(folder)
         ctx = AttemptContext(folder=folder, spec=spec, n=n, prompt=prompt, profile=run["profile"], deadline=deadline,
                              should_cancel=cancelled,
@@ -161,7 +164,7 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
         engine.end_attempt(run_id, n, "fail", files, commands, wout, fed_forward=fed)
     else:
         final, reason = "failed", f"no pass in {max_attempts} attempts"
-    engine.set_run(run_id, status=final, ended_at=time.time(), reason=reason, commit_ref=git_commit(folder), pid=None)
+    engine.finish_run(run_id, final, reason, git_commit(folder), last)
     return engine.run(run_id)
 
 

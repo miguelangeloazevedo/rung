@@ -333,7 +333,7 @@ function SpecView({ project, r, ret, need }) {
             h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, capital(resultWord(t.result)))))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Latest run'),
-          h(SpecExecs, { project, tests, runId: lastRun && lastRun.id })),
+          h(SpecExecs, { tests, run: lastRun })),
         h(ErrorLine, { text: err }),
         h('div', 'flex items-center gap-2 pt-3 border-t border-line',
           h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runTests }, 'Run tests'),
@@ -358,7 +358,7 @@ function SpecView({ project, r, ret, need }) {
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'run-tests', onClick: runTests }, 'Run tests'),
         a.human_only ? null : h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'),
-        r.status === 'approved' && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
+        (r.status === 'approved' || r.status === 'stale') && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
@@ -390,12 +390,14 @@ function dayClock(ts) {
   return `${same ? 'today' : d.toISOString().slice(0, 10)} ${clock(ts)}`
 }
 
-function SpecExecs({ project, tests }) {
-  const ids = tests.filter(t => t.type !== 'manual').map(t => t.id)
-  const first = ids[0]
-  const q = useApi(first ? `${P(project)}/tests/${first}/executions` : null, { enabled: !!first })
-  if (!first) return h(Well, { className: 'font-mono text-[11px] text-dim' }, 'No executions yet')
-  return h(ExecList, { test: first, execs: q.data || [], limit: 4 })
+// The latest run: the last attempt of the latest develop run that ran tests, every test in it; with no
+// develop run, the newest execution of each command test.
+function SpecExecs({ tests, run }) {
+  const att = run && (run.attempts || []).filter(a => (a.executions || []).length).slice(-1)[0]
+  const rows = att
+    ? att.executions
+    : tests.filter(t => t.type !== 'manual').map(t => { const x = (t.executions || [])[0]; return x ? { ...x, test: t.id } : null }).filter(Boolean)
+  return h(ExecList, { execs: rows, limit: Math.max(1, rows.length), showTest: true })
 }
 
 // ------------------------------------------------------------------ specification editor (I write, AI supports)
