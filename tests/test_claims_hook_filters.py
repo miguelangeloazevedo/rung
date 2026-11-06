@@ -4,6 +4,7 @@ Test names carry the use-case IDs of docs/use-cases-3.md.
 """
 
 import json
+import types
 import os
 import socket
 import sqlite3
@@ -35,7 +36,7 @@ def tool(engine, monkeypatch):
     monkeypatch.setenv("RUNG_STORE", engine.path)
     from rung_engine import host, tools
     host._SERVICES.clear()
-    monkeypatch.setitem(tools.PROFILE, "name", "coder")
+    monkeypatch.setitem(tools.PROFILE, "ctx", types.SimpleNamespace(profile_name="coder"))
 
     def call(name, args, session="sess-1", title="Fix date parsing in csvtidy"):
         return json.loads(tools.HANDLERS[name](args, session_id=session, user_task=title))
@@ -509,3 +510,28 @@ def test_pne02_fresh_draft_of_an_approved_ai_spec_is_a_new_version(engine, csv_f
     e.mark_drafting("csvtidy", "S-2.1")
     with pytest.raises(RungError, match="still drafting"):
         e.mark_drafting("csvtidy", "S-2.1")
+
+
+def test_clm01_the_claiming_profile_is_read_per_call_not_at_registration(engine, monkeypatch, csv_folder):
+    """One gateway process serves several profiles. Registration under one profile must not label a
+    later turn of another profile: the claim is recorded for the profile the turn runs for."""
+    import rung_engine.host as host
+    import rung_engine.tools as tools
+    seed.seed_failing(engine, csv_folder)
+    monkeypatch.setenv("RUNG_STORE", engine.path)
+    host._SERVICES.clear()
+
+    class Ctx:
+        current = "coder"
+
+        @property
+        def profile_name(self):
+            return Ctx.current
+
+    Ctx.current = "default"                             # registered while default was active
+    monkeypatch.setitem(tools.PROFILE, "ctx", Ctx())
+    Ctx.current = "coder"                               # a later turn runs for coder
+    out = json.loads(tools.HANDLERS["rung_claim"]({"spec": "S-2.1"}, session_id="s-coder", user_task="t"))
+    assert "error" not in out, out
+    assert [c["profile"] for c in engine.claims("csvtidy")] == ["coder"]
+    host._SERVICES.clear()

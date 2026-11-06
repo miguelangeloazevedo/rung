@@ -136,19 +136,24 @@ def _source_chat(session_id: str = "", user_task: str = "") -> str:
     return title or (f"chat {session_id[:8]}" if session_id else "a chat")
 
 
-PROFILE = {"name": ""}
+PROFILE = {"ctx": None}
 
 
 def _proposer() -> str:
-    """The Hermes profile this agent runs as (set at registration from ctx.profile_name)."""
-    if PROFILE["name"]:
-        return PROFILE["name"]
-    import os
-    from pathlib import Path
-    home = os.environ.get("HERMES_HOME", "")
-    if home and Path(home).parent.name == "profiles":
-        return Path(home).name
-    return "default"
+    """The Hermes profile this call runs for, read at call time. One gateway process serves several
+    profiles, each turn under its own Hermes home, so the name read at registration would label every
+    later turn with whichever profile registered last."""
+    ctx = PROFILE["ctx"]
+    if ctx is not None:
+        try:
+            name = ctx.profile_name
+        except Exception:
+            name = ""
+        if name and name != "custom":
+            return name
+    from .host import hermes_home
+    home = hermes_home()
+    return home.name if home.parent.name == "profiles" else "default"
 
 
 def _wrap(fn):

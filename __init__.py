@@ -14,7 +14,7 @@ from rung_engine import tools as _tools  # noqa: E402
 
 
 def register(ctx):
-    _tools.PROFILE["name"] = getattr(ctx, "profile_name", "") or ""
+    _tools.PROFILE["ctx"] = ctx  # profile_name is read per call: the gateway serves several profiles
     for schema in _tools.SCHEMAS:
         ctx.register_tool(name=schema["name"], toolset="rung", schema=schema,
                           handler=_tools.HANDLERS[schema["name"]], emoji="🪜")

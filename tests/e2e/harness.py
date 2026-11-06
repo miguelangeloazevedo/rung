@@ -113,7 +113,24 @@ def desktop(theme=THEME):
         _size_window(page)
         if _prefs(page, theme):
             reload(page)
+        default_profile(page)
         yield page
+
+
+def default_profile(page) -> None:
+    """Every test starts on the default Hermes profile: a test that chats as another profile (UC23, UC24,
+    UC26) and stops midway would otherwise leave the Desktop on it, and later chats would run as that
+    profile."""
+    other = "button[aria-pressed=true][aria-label]:not([aria-label^='Switch to']):not([aria-label^='Show all'])"
+    names = page.evaluate("""(sel) => [...document.querySelectorAll(sel)].map(b => b.getAttribute('aria-label'))""", other)
+    profiles = [n for n in names if n and (HOME / "profiles" / n).is_dir()]
+    if not profiles:
+        return
+    back = page.locator("button[aria-label='Switch to default']")
+    if back.count():
+        back.first.click()
+    wait_until(lambda: not page.locator(f"button[aria-label={json.dumps(profiles[0])}][aria-pressed=true]").count(),
+               timeout=60, msg=f"back on the default profile from {profiles[0]}")
 
 
 def reload(page) -> None:
