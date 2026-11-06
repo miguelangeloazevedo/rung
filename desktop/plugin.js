@@ -3179,6 +3179,8 @@ function DeleteDialog({ name, onClose, after }) {
   const go = async () => {
     const x = await post(`/projects/${encodeURIComponent(name)}/delete`, { confirm: typed })
     if (!x.ok) return setErr(x.error)
+    // The deleted project leaves the cached list at once, so the picker never shows it while /state refetches.
+    queryClient.setQueryData(['rung', '/state'], d => d && { ...d, projects: (d.projects || []).filter(p => p.name !== name) })
     onClose()
     if (after) after(x.data)
   }
