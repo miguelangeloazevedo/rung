@@ -267,6 +267,8 @@ const DOCK_CSS = `
 .rung .r-main{container-type:inline-size}
 .rung .r-frame{container:rframe / inline-size}
 @container rframe (max-width: 640px){
+.rung .r-main .justify-between,.rung .r-main .flex:has(>button){flex-wrap:wrap;row-gap:8px}
+.rung .r-main span.mono:not(.truncate){white-space:nowrap}
 .rung .r-frame-in{flex-direction:column;overflow-y:auto}
 .rung .r-frame-in>.r-main{flex:none;height:auto;overflow:visible;max-width:none;padding:16px 12px}
 .rung .r-frame-in>:not(.r-main){flex:none;width:100%!important;min-width:0!important;max-width:none!important;height:auto!important;overflow:visible!important;border-left:0!important;border-top:1px solid var(--r-line2)}

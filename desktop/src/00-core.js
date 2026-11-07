@@ -32,6 +32,11 @@ function activate(fn) {
 
 function h(tag, props, ...kids) {
   let p = props == null ? {} : typeof props === 'string' ? { className: props } : props
+  if (typeof tag === 'string' && /^h[1-6]$/.test(tag) && p.onClick) {
+    // A heading that opens something stays a heading; a button inside it carries the action and its name.
+    const { onClick, title, 'aria-label': named, ...rest } = p
+    return React.createElement(tag, rest, React.createElement('button', { type: 'button', className: 'w-full text-left hover:underline', onClick, title, 'aria-label': named }, ...kids))
+  }
   if (typeof tag === 'string') {
     // Anything clickable is reachable and operable from the keyboard, with the same handler.
     if (p.onClick && (!NATIVE[tag] || (tag === 'a' && !p.href))) {
@@ -289,7 +294,19 @@ const RESULTS = [
   [/\/projects\/[^/]+\/tests\/([^/]+)$/, m => `Saved ${m[1]}`],
   [/\/tests\/([^/]+)\/record$/, (m, b) => `Recorded ${b && b.result === 'fail' ? 'Fail' : 'Pass'} for ${m[1]}`],
   [/\/suggestions\/[^/]+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
-  [/\/bot\/[^/]+\/items\/\d+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
+  [/\/bot\/[^/]+\/items\/\d+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : 'Dismissed'],
+  [/\/suggestions\/[^/]+$/, (m, b) => (b && !b.accept ? 'Dismissed' : null)],
+  [/\/rungs\/([^/]+)\/dismiss$/, m => `Dismissed ${m[1]}`],
+  [/\/rungs\/([^/]+)\/regenerate$/, m => `Drafting ${m[1]}`],
+  [/\/rungs\/([^/]+)\/authoring$/, (m, b) => (b && b.mode === 'human' ? `${m[1]}: I write, AI supports` : `${m[1]}: AI derives`)],
+  [/\/specs\/([^/]+)\/send$/, m => `Sent ${m[1]}`],
+  [/\/specs\/([^/]+)\/pick$/, (m, b) => `Picked ${(b && b.agent) || 'a profile'} for ${m[1]}`],
+  [/\/specs\/([^/]+)\/run-tests$/, m => `Started the tests of ${m[1]}`],
+  [/\/specs\/([^/]+)\/allocation$/, m => `Saved the allocation of ${m[1]}`],
+  [/\/specs\/([^/]+)\/claims\/release$/, m => `Released ${m[1]}`],
+  [/\/tests\/([^/]+)\/run$/, (m, b, d) => `Started ${m[1]}${d && d.n ? ' #' + d.n : ''}`],
+  [/\/tests\/([^/]+)\/executions\/(\d+)\/cancel$/, m => `Cancelled ${m[1]} #${m[2]}`],
+  [/\/runs\/([^/]+)\/cancel$/, m => `Cancelled run ${m[1]}`],
 ]
 function resultLine(path, body, data) {
   const p = decodeURIComponent(String(path).split('?')[0])

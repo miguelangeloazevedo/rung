@@ -19,7 +19,7 @@ function Btn({ kind, onClick, disabled, children, title, testid, className, labe
   }[kind || 'secondary']
   return h('button', {
     type: 'button',
-    className: cx(base, disabled && 'opacity-40 cursor-not-allowed', className),
+    className: cx(base, 'whitespace-nowrap shrink-0', disabled && 'opacity-40 cursor-not-allowed', className),
     'aria-disabled': disabled ? 'true' : undefined,
     'data-locked': disabled ? '1' : undefined,
     'data-testid': testid,
@@ -74,7 +74,7 @@ function SeenFailing({ value, small }) {
 function Badge({ status, label, small, onClick, struck, testid }) {
   const [word, cls] = BADGE[status] || [status, 'bg-btn text-muted border border-line']
   return h('span', {
-    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer', struck && 'line-through'),
+    className: cx('inline-flex items-center px-2 py-0.5 rounded font-medium whitespace-nowrap shrink-0', small ? 'text-[10px]' : 'text-[11px]', cls, onClick && 'cursor-pointer', struck && 'line-through'),
     'data-status': status,
     'data-testid': testid,
     onClick: onClick ? e => { e.stopPropagation(); onClick() } : undefined
@@ -215,7 +215,7 @@ function Strip({ current, reached, need, done: doneList }) {
     kids.push(h('div', {
       key: 's' + i,
       className: cx('flex items-center gap-2 shrink-0 rs-step', on && 'rs-on', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
-      'data-step': name, title: name, 'aria-label': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
+      'data-step': name, title: name, 'aria-label': done ? `${name}, done` : locked ? `${name}, locked` : name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
       'aria-current': on ? 'step' : undefined, tabIndex: locked ? -1 : 0,
       onClick: () => {
         if (locked) return
@@ -351,7 +351,9 @@ function LoadErrors() {
   const b = useApi('/settings', { enabled: false })
   const e = a.error || b.error
   if (!e) return null
-  return h(ErrorLine, { text: `${CUR_PROJECT ? CUR_PROJECT + ': ' : ''}${errText(e)}` })
+  return h('div', { className: 'flex flex-wrap items-center gap-2', 'data-testid': 'load-error' },
+    h(ErrorLine, { text: `${CUR_PROJECT ? CUR_PROJECT + ': ' : ''}${errText(e)}` }),
+    h(Btn, { kind: 'small', testid: 'load-retry', onClick: () => { a.refetch(); b.refetch() } }, 'Retry'))
 }
 
 // A folder: the typed path, and Choose for the host's folder picker when this Hermes has one (never a button
@@ -410,11 +412,13 @@ function ExitBtn({ onClick, exit, children, ...rest }) {
 }
 
 function Missing({ project, text }) {
-  const back = () => goBack(project ? 'home' : 'projects')
+  // Back never falls back to the page that failed: a failed Home goes on to Needs you.
+  const cur = ($nav.get() || {}).view
+  const back = () => goBack(project && cur !== 'home' ? 'home' : 'projects')
   useExit(back, false, true)
   // The sentence and the way on, alone: no tiles or rail of a project the person did not ask for.
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('h1', { className: 'text-xl font-bold tracking-tight text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
+    h('div', { role: 'alert' }, h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, missingText(text))),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,

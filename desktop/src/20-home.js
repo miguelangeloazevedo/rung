@@ -62,10 +62,16 @@ function StaleCard({ project, item, ro }) {
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
     ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error); if (res.ok) notify(`Approved ${item.id}`) } }, 'Approve'),
+      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
+}
+
+// Who proposed it and where, from data only: a missing part is left out, never filled with a placeholder.
+function proposalSource(item) {
+  const sc = item.source_chat
+  return [item.proposer ? `by ${item.proposer}` : null, sc ? (/^run \d+$/.test(sc) ? `from ${sc}` : `from chat "${sc}"`) : null].filter(Boolean).join(' · ')
 }
 
 function ProposedCard({ project, item, ro }) {
@@ -81,9 +87,9 @@ function ProposedCard({ project, item, ro }) {
   },
   h('div', 'flex flex-col gap-1',
     h('div', 'flex items-center gap-2 text-xs',
-      h('span', 'px-1.5 py-0.5 rounded border border-needs text-needs text-[10px] font-semibold uppercase tracking-wider', 'Proposed'),
+      h('span', 'px-1.5 py-0.5 rounded border border-needs text-needs text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap shrink-0', 'Proposed'),
       h('span', 'mono text-muted', item.id),
-      h('span', { className: 'text-muted', 'data-testid': 'proposal-source' }, `by ${item.proposer || 'an agent'} · ${/^run \d+$/.test(item.source_chat || '') ? 'from ' + item.source_chat : `from chat "${item.source_chat || 'a chat'}"`}`)),
+      h('span', { className: 'text-muted', 'data-testid': 'proposal-source' }, proposalSource(item))),
     h('span', 'text-sm text-fg', item.text),
     h('span', 'text-[11px] text-muted mono', `${item.parent} › ${item.id}`),
     h(ErrorLine, { text: err })),

@@ -173,6 +173,8 @@ def test_nav01_nav02_nav03_nav04_nav07_nav08_nav09_nav13_route_walk(rung, csvtid
         # NAV-08: one h1, the largest heading.
         assert len(st["h1"]) == 1, f"{origin}: h1s {st['h1']}"
         assert not st["bigger"], f"{origin}: headings larger than the h1: {st['bigger']}"
+        # A heading stays a heading: an action on it is a button inside it, never a role on the heading.
+        assert page.locator(".rung :is(h1, h2, h3, h4, h5, h6)[role]").count() == 0, f"{origin}: a heading with a role"
         # NAV-09: the current item marked on breadcrumbs, the step strip and the rail.
         assert all(c == 1 for c in st["crumbs"]), f"{origin}: crumbs aria-current {st['crumbs']}"
         assert all(c == 1 for c in st["strip"]), f"{origin}: strip aria-current {st['strip']}"
@@ -331,6 +333,8 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
     e = rung.engine
     seed.seed_merge(e, csvtidy, upto="develop")
     e.open_project(P)
+    # A proposal: its card pairs text with Accept and Dismiss, the row that broke into letters at 320 pixels.
+    e.propose(P, "N-1", "requirement", "Keep the header row unchanged", "reviewer")
     H.open_rung(page)
     H.wait_view(page, "home")
     page.evaluate("document.querySelector('.rung').style.width = '320px'")
@@ -350,8 +354,11 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
                 .map(b => { const r = b.getBoundingClientRect(); return { t: (b.innerText || b.getAttribute('aria-label') || '').trim().slice(0, 30), l: r.left - R.left, r: R.right - r.right } })
                 .filter(x => x.l < -0.5 || x.r < -0.5)
               const m = main && main.getBoundingClientRect(), s = rail && rail.getBoundingClientRect()
+              const broken = [...root.querySelectorAll('[data-rung-view] button:not(.text-left), [data-rung-view] [data-status]')]
+                .filter(b => b.offsetParent !== null && b.getClientRects().length && b.getBoundingClientRect().height > 2.2 * parseFloat(getComputedStyle(b).lineHeight || '16'))
+                .map(b => (b.innerText || '').trim().slice(0, 20))
               const hidden = [...root.querySelectorAll('.rs-label')].filter(l => l.offsetParent === null || l.getBoundingClientRect().width < 1).map(l => l.textContent)
-              return { width: R.width, railAfter: !rail || (s.top >= m.bottom - 1 && s.left - R.left < 30), out, hidden,
+              return { width: R.width, railAfter: !rail || (s.top >= m.bottom - 1 && s.left - R.left < 30), out, hidden, broken,
                        stripFits: !strip || strip.scrollWidth <= strip.clientWidth + 1,
                        hscroll: root.scrollWidth > root.clientWidth + 1 }
             }""")
@@ -359,6 +366,7 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
             assert got["railAfter"], f"{view}: the rail is not under the main column"
             assert got["stripFits"], f"{view}: the step strip does not wrap"
             assert not got["hidden"], f"{view}: step names hidden {got['hidden']}"
+            assert not got["broken"], f"{view}: controls broken across lines {got['broken']}"
             assert not got["out"], f"{view}: clipped {got['out'][:8]}"
     finally:
         page.evaluate("document.querySelector('.rung').style.width = ''")

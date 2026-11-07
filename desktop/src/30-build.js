@@ -102,7 +102,7 @@ function NeedNew({ project }) {
     const accepted = sugs.filter(s => marks[s] === 'accepted')
     const res = await post(`${P(project)}/needs`, { text: text.trim(), requirements: accepted })
     if (!res.ok) return setErr(res.error)
-    finish('build', { need: res.data.id, step: 'reqs' }, `Created ${res.data.id}`)
+    finish('build', { need: res.data.id, step: 'reqs' })
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need: null, flow: null, current: 0 }),

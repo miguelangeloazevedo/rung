@@ -22,6 +22,7 @@ function usePrefill(view) {
 function useBotJob(verb) {
   const [job, setJob] = useState(null)
   const [err, setErr] = useState('')
+  const starting = useRef(false)  // between the click and the job: a second click starts nothing
   const live = useRef(true)
   const cur = useRef(null)
   useEffect(() => {
@@ -39,15 +40,23 @@ function useBotJob(verb) {
     while (live.current && cur.current === id) {
       await new Promise(r => setTimeout(r, 300))
       let j
-      try { j = await rest(`/bot/${id}`) } catch (e) { if (live.current) setErr(errText(e)); return }
+      try { j = await rest(`/bot/${id}`) } catch (e) {
+        // following failed: the job may still run, so Cancel stays; the error says why the line stopped
+        if (live.current) setErr(errText(e))
+        await new Promise(r => setTimeout(r, 1500))
+        continue
+      }
       if (!live.current || cur.current !== id) return
       setJob(j)
       if (j.status !== 'running') { cur.current = null; return j }
     }
   }
   const start = async (path, body, pick) => {
+    if (starting.current || cur.current) return null
     setErr('')
+    starting.current = true
     const x = await post(path, body)
+    starting.current = false
     if (!x.ok) { setErr(x.error); return null }
     const j = pick ? pick(x.data) : x.data
     setJob(j)
@@ -57,9 +66,8 @@ function useBotJob(verb) {
   const cancel = async () => {
     const id = cur.current
     if (!id) return
-    cur.current = null
     const x = await post(`/bot/${id}/cancel`)
-    if (x.ok) setJob(x.data); else setErr(x.error)
+    if (x.ok) { if (cur.current === id) cur.current = null; setJob(x.data); setErr('') } else setErr(x.error)  // a failed cancel keeps Cancel
   }
   return { job, setJob, err, setErr, start, cancel, busy: !!job && job.status === 'running' }
 }
@@ -123,7 +131,7 @@ function PasteDialog({ project, projects, onClose }) {
   const footer = res
     ? frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'open-as-new', disabled: !check.valid, onClick: open }, `Open as new ${(KIND_WORD[kind] || 'rung').toLowerCase()}`))
     : bot.busy
-      ? frag(h(Btn, { key: 'bot-cancel', testid: 'bot-cancel', label: 'Cancel placing', onClick: bot.cancel }, 'Cancel'))
+      ? frag(h(Btn, { key: 'bot-cancel', testid: 'bot-cancel', onClick: bot.cancel }, 'Cancel placing'))
       : frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'place', disabled: !text.trim() || !proj, onClick: place }, 'Place'))
   return h(Dialog, { title: 'Paste text', onClose, dirty: !!text.trim(), testid: 'paste-dialog', footer },
     projects && projects.length > 1 && !res ? h(Field, { label: 'Project' }, sel('project', proj, setProj, projects.map(p => [p, p]), 'Project')) : null,
@@ -144,7 +152,7 @@ function PasteDialog({ project, projects, onClose }) {
         check.reason && (parent || kind === 'need') ? h('div', { className: 'text-[11px] text-fail', 'data-testid': 'place-check' }, check.reason) : null)
       : h(Field, { label: 'Text' }, h('textarea', { className: INPUT, rows: 4, name: 'paste', value: text, 'data-autofocus': '1', readOnly: bot.busy, onChange: e => setText(e.target.value) })),
     bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Placing · ${bot.job.profile}`) : null,
-    bot.job && bot.job.status === 'cancelled' && !res ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null,
+    bot.job && bot.job.status === 'cancelled' && !res ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled', role: 'status', 'data-focus-first': '1', tabIndex: -1 }, 'Cancelled') : null,
     h(BotFailure, { job: bot.job, err: bot.err, onRetry: text.trim() ? place : null }))
 }
 
@@ -180,14 +188,14 @@ function DraftBar({ project, kind, parent, fields, apply }) {
     h('div', 'flex items-center gap-2',
       bot.busy
         ? frag(h('span', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Drafting · ${bot.job.profile}`),
-          h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', label: 'Cancel draft', onClick: bot.cancel }, 'Cancel'))
+          h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', onClick: bot.cancel }, 'Cancel draft'))
         : h(Btn, { kind: 'small', testid: 'draft', onClick: () => (typed ? setAsking(true) : run(true)) }, 'Draft'),
       by && !bot.busy ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'drafted-by', 'data-focus-first': '1', tabIndex: -1 }, `Drafted by ${by}`) : null,
-      bot.job && bot.job.status === 'cancelled' ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null),
+      bot.job && bot.job.status === 'cancelled' ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'bot-cancelled', role: 'status', 'data-focus-first': '1', tabIndex: -1 }, 'Cancelled') : null),
     h(BotFailure, { job: bot.job, err: bot.err, onRetry: () => run(false) }),
     asking ? h(Dialog, {
       title: 'Replace typed text?', onClose: () => setAsking(false), testid: 'draft-ask',
-      footer: frag(h(Btn, { testid: 'draft-keep', onClick: () => run(false) }, 'Keep'), h(Btn, { kind: 'primary', testid: 'draft-replace', onClick: () => run(true) }, 'Replace'))
+      footer: frag(h(Btn, { testid: 'draft-cancel', onClick: () => setAsking(false) }, 'Cancel'), h(Btn, { testid: 'draft-keep', onClick: () => run(false) }, 'Keep'), h(Btn, { kind: 'primary', testid: 'draft-replace', onClick: () => run(true) }, 'Replace'))
     }) : null)
 }
 
@@ -232,7 +240,7 @@ function SuggestPanel({ project, need, ro }) {
     h('div', 'flex items-center justify-between pb-1',
       h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Suggested requirements'),
       ro ? null : bot.busy
-        ? h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', label: 'Cancel suggest', onClick: bot.cancel }, 'Cancel')
+        ? h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', onClick: bot.cancel }, 'Cancel suggest')
         : h(Btn, { kind: 'small', testid: 'suggest', onClick: run }, 'Suggest')),
     none ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-none', role: 'status' },
       h('div', { className: 'text-xs text-fg', 'data-focus-first': '1', tabIndex: -1 }, 'No profile can suggest')) : null,
@@ -241,7 +249,7 @@ function SuggestPanel({ project, need, ro }) {
       h('span', 'mono text-muted', `ranked ${rank} of ${choice.ranked.length} · ${scoreLine(chosen)}`),
       j.changed_since ? h(Badge, { status: 'stale', label: 'Changed since', small: true }) : null) : null,
     bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Suggesting · ${j.profile}`) : null,
-    j && j.status === 'cancelled' ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null,
+    j && j.status === 'cancelled' ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled', role: 'status', 'data-focus-first': '1', tabIndex: -1 }, 'Cancelled') : null,
     h(BotFailure, { job: j, err: bot.err, onRetry: ro ? null : run }),
     items.length ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-items' },
       ...items.map((it, i) => h('div', {

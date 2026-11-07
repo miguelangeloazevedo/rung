@@ -230,3 +230,20 @@ Three independent reviewers (34 findings, 8 rated major) on the scrubbed public 
 | Result lines | Create need, approve (need, Needs you, specification, stale rung, manual result), accept, regenerate and fresh draft, pick, run, run once, run tests, Develop and Send all end on a line naming what changed. |
 | Cards with buttons | A Needs you card holding Approve and Raise defect is not itself a button: its title is the keyboard's way in, a click on the card still opens it. |
 | Declined | The missing page's `Projects` button (frozen NAV-07 names Back, Home and Projects). The chip counting across projects (Round 16: the chip counts the current project). An `Error:` prefix (Round 14). An action on `Nothing needs you` (nothing is missing; New project is in the list beside it). Suggest's exclusions repeating Allocation's (two decisions with their own rules: Suggest excludes the requirements' authors, Allocation ranks for the specification). A `not saved` marker on drafted fields (the form is unsaved until Save, and leaving asks). The running Draft and Suggest gallery shots showed the finished state because the stub was faster than the capture; the gallery now slows it. |
+
+## Round 18: confirmation review, corrections and declines (7 Nov 2026)
+
+Three independent reviewers (21 findings, 3 rated major) on the Round 17 code and a fresh gallery.
+
+| Topic | Decision |
+| --- | --- |
+| 320 pixel rows | A control, a badge and an id never break inside themselves; in a narrow pane a row pairing text with actions wraps whole. Accept, Dismiss, `Proposed`, ids and status words broke into letters on Home. The route walk now fails on any control taller than two lines at 320 pixels. |
+| Headings stay headings | A heading that opens something holds a button that carries the action (`h()` does it for every heading); the need title was a heading with a button role. |
+| Failed shared load | The line under the header gains Retry. The view keeps the data it loaded itself (NAV-17: the error shows on the view). |
+| Result lines | Every door is named once in `post()`: dismiss, regenerate, authoring, send, pick, run, run tests, allocation, release and cancel join approve, save and record; the per-button notices added in Round 17 are gone (one had a second name for approving an execution). |
+| Bot help | The stop control reads `Cancel placing`, `Cancel draft` or `Cancel suggest`, never a second `Cancel`. A failed cancel or a failed poll keeps Cancel and says why. A second click before the job exists starts nothing. `Cancelled` is a status line and takes focus from the control it replaced. The Replace question has Cancel beside Keep and Replace. |
+| Step names | A build step's name carries its state (`Specifications, done`, `Tests, locked`). |
+| Provenance | `by <profile> · from chat "<chat>"` shows only the parts that exist; no placeholder words. |
+| Missing page Back | Back never falls back to the page that failed: a failed Home goes on to Needs you. |
+| Declined | Replacing a view by the missing page when only `/state` or `/settings` failed (NAV-17; the view's own data loaded). Why the profile was chosen for Place and Draft (BOT-06 asks it of Suggest; BOT-01 and BOT-04 name the profile). The stub's fixed reason sentence (synthetic stub; a profile writes its own). Renaming `Draft` and `Keep` (frozen BOT-04, BOT-05). `Open <id>` names on existing rows and cards (Round 14). The project link's name (Round 16). A header without Dock, Settings and New need on the missing page (the project exists; one header on every project view). Already fixed in Round 17: the Needs you card holding buttons; focus inside Paste text (its dialog keeps focus). |
+
