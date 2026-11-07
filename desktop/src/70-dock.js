@@ -95,7 +95,7 @@ function DockNeedRow({ i, path, fullPath }) {
         : i.type === 'stale' && i.change ? `${i.change.rung} changed · ${ago(i.change.at)}` : ''
   return h('button', { type: 'button', className: 'dk-row', title: label, 'data-testid': 'dock-item', 'data-item': i.id, onClick: () => openItem(i) },
     h('span', 'dk-row-top',
-      h('span', { className: cx('mono dk-id', i.type === 'proposed' ? 'text-needs' : 'text-fg') }, i.id),
+      h('span', { className: cx('whitespace-nowrap mono dk-id', i.type === 'proposed' ? 'text-needs' : 'text-fg') }, i.id),
       h(Badge, { status: ITEM_BADGE[i.type] || i.type, small: true }),
       path ? h('span', { className: 'dk-path mono truncate', title: fullPath || path }, path) : null),
     i.text ? h('span', { className: 'dk-text truncate', title: i.text }, i.text) : null,
@@ -124,7 +124,7 @@ function DockTestRow({ x }) {
   const meta = `execution #${x.n}`
   return h('button', { type: 'button', className: 'dk-row', title: `${x.test} execution #${x.n}`, 'data-testid': 'dock-test', 'data-exec': `${x.test}#${x.n}`, onClick: () => openRung('exec', { test: x.test, n: x.n }) },
     h('span', 'dk-row-top',
-      h('span', 'mono dk-id text-fg', x.test),
+      h('span', 'whitespace-nowrap mono dk-id text-fg', x.test),
       h('span', 'dk-chip', 'in progress'),
       h('span', 'dk-path mono', dur(secs))),
     h('span', { className: 'dk-meta mono truncate', title: meta }, meta))
@@ -157,7 +157,7 @@ function DockTree({ nodes, depth, cur }) {
           'data-rung': n.id, 'data-tone': t, 'data-label': label, onClick: () => openRung('rung', { rid: n.id })
         },
         h(Dot, { t }),
-        h('span', { className: cx('mono dk-tr-id', cur === n.id ? 'text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', { className: cx('whitespace-nowrap mono dk-tr-id', cur === n.id ? 'text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
         n.kind !== 'test' && n.text ? h('span', { className: cx('dk-tr-text truncate', t === 'dim' && 'text-dim'), title: n.text }, n.text) : null,
         label ? h('span', { className: cx('dk-tr-label mono', TONE_TEXT[t] || 'text-muted') }, label) : null),
         kids.length ? h(DockTree, { nodes: kids, depth: (depth || 0) + 1, cur }) : null)

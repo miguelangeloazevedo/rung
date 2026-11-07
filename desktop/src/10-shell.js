@@ -256,7 +256,7 @@ function TreeSpec({ n, sel, hl }) {
     h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
-        h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', { className: cx('whitespace-nowrap text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
         h('span', 'sr-only', rungLabel(n)),
         h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted'), title: typeof sub === 'string' ? sub : undefined }, sub))),
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
@@ -269,7 +269,7 @@ function TreeReq({ n, sel, hl }) {
     h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
-        h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', { className: cx('whitespace-nowrap font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
         h('span', 'sr-only', rungLabel(n)),
         h('span', { className: cx('text-[11px]', t === 'dim' ? 'text-dim' : 'text-muted') }, n.text))),
     ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel, hl })))
@@ -282,7 +282,7 @@ function TreeNeed({ n, sel, hl }) {
     h('div', { className: cx('flex items-start gap-2 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
-        h('span', 'font-semibold text-fg', n.id),
+        h('span', 'whitespace-nowrap font-semibold text-fg', n.id),
         h('span', 'sr-only', rungLabel(n)),
         h('span', 'text-[11px] text-muted leading-tight', n.text))),
     reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)

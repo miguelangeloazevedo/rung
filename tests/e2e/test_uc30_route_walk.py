@@ -357,6 +357,10 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
               const broken = [...root.querySelectorAll('[data-rung-view] button:not(.text-left), [data-rung-view] [data-status]')]
                 .filter(b => b.offsetParent !== null && b.getClientRects().length && b.getBoundingClientRect().height > 2.2 * parseFloat(getComputedStyle(b).lineHeight || '16'))
                 .map(b => (b.innerText || '').trim().slice(0, 20))
+                .concat([...root.querySelectorAll('[data-rung-view] span')]
+                  .filter(x => /^[NRST]-\\d+(\\.\\d+)*[a-z]?$/.test((x.innerText || '').trim()) && x.getClientRects().length > 0
+                    && x.getBoundingClientRect().height > 1.6 * parseFloat(getComputedStyle(x).lineHeight || '16'))
+                  .map(x => x.innerText.trim()))
               const hidden = [...root.querySelectorAll('.rs-label')].filter(l => l.offsetParent === null || l.getBoundingClientRect().width < 1).map(l => l.textContent)
               return { width: R.width, railAfter: !rail || (s.top >= m.bottom - 1 && s.left - R.left < 30), out, hidden, broken,
                        stripFits: !strip || strip.scrollWidth <= strip.clientWidth + 1,

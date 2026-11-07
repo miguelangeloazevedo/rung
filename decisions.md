@@ -237,7 +237,7 @@ Three independent reviewers (21 findings, 3 rated major) on the Round 17 code an
 
 | Topic | Decision |
 | --- | --- |
-| 320 pixel rows | A control, a badge and an id never break inside themselves; in a narrow pane a row pairing text with actions wraps whole. Accept, Dismiss, `Proposed`, ids and status words broke into letters on Home. The route walk now fails on any control taller than two lines at 320 pixels. |
+| 320 pixel rows | A control, a badge and an id never break inside themselves; in a narrow pane a row pairing text with actions wraps whole. Accept, Dismiss, `Proposed`, ids and status words broke into letters on Home. The route walk now fails on any control taller than two lines, or an id on more than one line, at 320 pixels (every id span carries `whitespace-nowrap`). |
 | Headings stay headings | A heading that opens something holds a button that carries the action (`h()` does it for every heading); the need title was a heading with a button role. |
 | Failed shared load | The line under the header gains Retry. The view keeps the data it loaded itself (NAV-17: the error shows on the view). |
 | Result lines | Every door is named once in `post()`: dismiss, regenerate, authoring, send, pick, run, run tests, allocation, release and cancel join approve, save and record; the per-button notices added in Round 17 are gone (one had a second name for approving an execution). |

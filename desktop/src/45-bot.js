@@ -258,7 +258,7 @@ function SuggestPanel({ project, need, ro }) {
       },
       h('div', 'flex items-center gap-2 min-w-0',
         h('span', 'text-xs text-fg', it.text),
-        it.rung ? h('span', 'mono text-[11px] text-needs', it.rung) : null),
+        it.rung ? h('span', 'whitespace-nowrap mono text-[11px] text-needs', it.rung) : null),
       ro ? null : h('div', 'flex items-center gap-2 shrink-0',
         h(Btn, { kind: 'accept', disabled: it.status !== 'open', label: `Accept ${it.text}`, onClick: () => resolve(i, true) }, it.status === 'accepted' ? 'Accepted' : 'Accept'),
         h(Btn, { kind: 'ghost', disabled: it.status !== 'open', label: `Dismiss ${it.text}`, onClick: () => resolve(i, false) }, it.status === 'dismissed' ? 'Dismissed' : 'Dismiss'))))) : null,
