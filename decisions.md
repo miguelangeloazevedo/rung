@@ -166,7 +166,7 @@ Open: who makes the demo video and how (Tue 10 Nov); narration.
 | No projects | With no project yet, the front page is the start screen as it is now (Try the sample project, New project); direction C appears once a project exists. |
 | Start screen cross | Supersedes UC13.5 (in acceptance-4): the cross only closes. It leaves Rung for the Hermes view the person came from (the chat home when there is none) and creates nothing; opening Rung again shows the start screen until a project exists. |
 
-## Round 13: bot help and first install (proposed with acceptance 4, 7 Nov 2026)
+## Round 13: bot help and first install (approved with acceptance 4, 7 Nov 2026)
 
 | Topic | Decision |
 | --- | --- |
@@ -197,3 +197,9 @@ Three independent reviewers (40 findings) on the scrubbed public code, the galle
 | Empty filtered lists | A project search that matches nothing offers `Clear search` (Projects and the archive). |
 | Carried into acceptance 4 | 320 pixel reflow (NAV-14), focusable rows (NAV-15), live views' way out (NAV-16), failed loads (NAV-17, FRT-08), the front page's units, run link, last opened marker, contrast and `Open <id>` names (FRT-02 to FRT-04), Escape on the start screen and New project's Back (FST-02), `Clear search` (FST-04), field errors on every form (NAV-10), `aria-current` (NAV-09). |
 | Declined | Cancel asking before discarding (Round 10: Cancel is the explicit discard). Renaming the run and execution `Cancel` to Stop (frozen UC28). Renaming the locked step's Back (frozen UC03 clicks `Back`). `Open <id>` names on the existing Home and archive rows (frozen UC14 and UC18 find `Open` by exact name; the new front page has them). Focusing the first field on every view change (Round 11 and NAV-08: the h1; new-rung forms already focus their first field). An error summary and an `Error:` window title (forms have at most five fields, each error is tied to its field and focused; the window title belongs to the Desktop). Search across rungs (new scope, not navigation). Raise defect losing text on a view change: the gallery used the forced test hook; visible routes ask. |
+
+## Round 15: acceptance 4 approved and frozen (7 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Freeze | Miguel approved `docs/use-cases-4.md` (43 IDs), `docs/acceptance-4.md` (UC30 to UC36) and `scripts/acceptance-4.sh` as committed in `7ead5ed`; their checksums join the frozen set outside the repo. Rounds 13 and 14 stand as written. |
