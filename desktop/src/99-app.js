@@ -11,9 +11,10 @@ function App() {
   if (noProjects) {
     // No project to open: the start screen until it is dismissed, then the new project form.
     const start = state.onboarding && state.onboarding.start
-    if (!['project-new', 'projects'].includes(view) && !(view === 'start' && start)) view = start ? 'start' : state.archived ? 'projects' : 'project-new'
+    if (!['project-new', 'projects', 'start'].includes(view)) view = start ? 'start' : state.archived ? 'projects' : 'project-new'
   }
   if (!project && !noProjects && !['projects', 'project-new', 'settings'].includes(view)) view = 'projects'
+  CUR_PROJECT = project || null
   const props = { ...nav, project, state }
   let body
   if (view === 'home') body = h(Home, { key: 'home:' + project, project })
@@ -22,7 +23,7 @@ function App() {
   else if (view === 'project-new') body = h(NewProject)
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
-  else body = h(Missing, { project, text: `no view ${view}` })
+  else body = h(Missing, { project, text: `Page not found: ${view}` })
   return h(Root, { className: 'relative h-full w-full' },
     h(ViewFocus, { nav }),
     h('div', { className: 'h-full w-full', 'data-rung-view': view }, body),
@@ -32,18 +33,28 @@ function App() {
 
 // After a view change, focus goes to the new view: its first field when it puts one in focus, else its title.
 function ViewFocus({ nav }) {
+  const [entered, setEntered] = useState(0)
   useEffect(() => {
-    const id = setTimeout(() => {
+    const on = () => { if (String(location.hash || '').includes(ROUTE)) setEntered(x => x + 1) }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  useEffect(() => {
+    let tries = 0
+    let id = 0
+    const go = () => {
       const root = document.querySelector('.rung [data-rung-view]')
       if (!root || !String(location.hash || '').includes(ROUTE)) return
       const a = document.activeElement
       if (a && a !== document.body && root.contains(a)) return
       if (document.querySelector('.rung [role=dialog]')) return
       const t = root.querySelector('[data-page-title]') || root.querySelector('h1')
-      if (t) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }) }
-    }, 60)
+      if (t) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); return }
+      if (++tries < 30) id = setTimeout(go, 100)  // the view is still loading: its title comes with its data
+    }
+    id = setTimeout(go, 60)
     return () => clearTimeout(id)
-  }, [nav])
+  }, [nav, entered])
   return null
 }
 
@@ -75,6 +86,8 @@ export default {
       '\n.rung{overflow-wrap:anywhere}.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
       '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
+      // every control is at least 24 by 24 CSS pixels (WCAG 2.5.8)
+      '\n.rung button,.rung [role=button],.rung [role=switch],.rung select{min-height:24px;min-width:24px}' +
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)

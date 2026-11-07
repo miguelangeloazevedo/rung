@@ -53,6 +53,9 @@ function RunView({ project, run }) {
   const specQ = useRung(project, r && r.spec)
   const st = useApi('/settings').data
   const [err, setErr] = useState('')
+  const needRef = useRef(null)
+  const toBuild = () => (needRef.current ? returnTo('build', { need: needRef.current, step: 'develop' }) : goBack('home'))
+  useExit(toBuild)
   if (q.error || specQ.error) return h(Missing, { project, text: errText(q.error || specQ.error) })
   if (!r || !specQ.data) return h(Page, { project }, h(Loading))
   const spec = specQ.data
@@ -61,6 +64,7 @@ function RunView({ project, run }) {
   const cur = atts[atts.length - 1]
   const budget = `${r.max_attempts} attempts · ${Math.round(r.timeout_s / 60)} min`
   const needId = spec.path[0] && spec.path[0].id
+  needRef.current = needId
   const stop = async () => { const x = await post(`/runs/${r.id}/cancel`); setErr(x.ok ? '' : x.error) }
   if (!live) {
     const tone = outcomeTone(r.status)
@@ -95,7 +99,7 @@ function RunView({ project, run }) {
       r.reason && r.status !== 'passed' ? h('div', { className: cx('text-xs', TONE_TEXT[tone === 'dim' ? 'muted' : tone]), 'data-testid': 'run-reason' }, r.reason) : null,
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-        h(Btn, { kind: 'primary', testid: 'back-to-build', onClick: () => navigate('build', { need: needId, step: 'develop' }) }, 'Back to build'),
+        h(Btn, { kind: 'primary', testid: 'back-to-build', onClick: toBuild }, 'Back to build'),
         h(Btn, { testid: 'open-spec', onClick: () => navigate('rung', { rid: spec.id }) }, 'Open specification'),
         r.status !== 'passed' ? h(Btn, { testid: 'run-again', disabled: !spec.develop.available, onClick: async () => { const x = await post(`${P(project)}/specs/${spec.id}/send`, {}); if (!x.ok) return setErr(x.error); navigate('run', { run: x.data.id }) } }, 'Run again') : null))
     return h(Page, { project, sel: spec.id }, body)
@@ -140,6 +144,8 @@ function AttemptView({ project, run, n }) {
   const q = useApi(`/runs/${run}`, { live: true })
   const r = q.data
   const specQ = useRung(project, r && r.spec)
+  const toRun = () => returnTo('run', { run })
+  useExit(toRun)
   if (q.error || specQ.error) return h(Missing, { project, text: errText(q.error || specQ.error) })
   if (!r || !specQ.data) return h(Page, { project }, h(Loading))
   const spec = specQ.data
@@ -178,7 +184,7 @@ function AttemptView({ project, run, n }) {
       h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', next ? `Sent to attempt ${next.n}` : 'Sent forward'),
       h('div', { className: 'text-xs text-fg', 'data-testid': 'fed-forward' }, fails.length ? `Failure output of ${[...new Set(fails.map(x => x.test))].join(', ')}` : (a.fed_forward || '').split('\n')[0])) : null,
     h('div', 'flex items-center gap-2 pt-3 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'back-to-run', onClick: () => navigate('run', { run: r.id }) }, 'Back to run'),
+      h(Btn, { kind: 'primary', testid: 'back-to-run', onClick: toRun }, 'Back to run'),
       h(Btn, { testid: 'open-session', disabled: !r.session, onClick: () => host.navigate(`/${r.session}`) }, 'Open session')))
   return h(Page, { project, sel: spec.id }, body)
 }
@@ -200,6 +206,7 @@ function ExecView({ project, test, n }) {
   const tq = useRung(project, test)
   useTick(1000)
   const [err, setErr] = useState('')
+  useExit(() => returnTo('rung', { rid: test }))
   const x = q.data
   const t = tq.data
   if (q.error || tq.error) return h(Missing, { project, text: errText(q.error || tq.error) })
@@ -211,7 +218,7 @@ function ExecView({ project, test, n }) {
     if (!r.ok) return setErr(r.error)
     navigate('exec', { test, n: r.data.n })
   }
-  const back = () => navigate('rung', { rid: test })
+  const back = () => returnTo('rung', { rid: test })
   if (x.status === 'running') {
     const lines = String(x.output || '').split('\n').filter(Boolean)
     const body = h('section', { className: 'flex flex-col gap-4 bg-card border border-line rounded-[6px] p-4', 'data-testid': 'execution', 'data-exec-status': 'running' },
@@ -334,6 +341,10 @@ function DefectModal({ project }) {
   useEffect(() => { setTitle(''); setPicked(null); setErr(''); setDone(null) }, [d && d.test])
   useDirty(d && title.trim())
   if (!d) return null
+  if (tq.error) {
+    return h(Dialog, { title: 'Raise defect', onClose: () => $defect.set(null), testid: 'defect-modal',
+      footer: h(Btn, { onClick: () => $defect.set(null) }, 'Close') }, h(ErrorLine, { text: errText(tq.error) }))
+  }
   const t = tq.data
   const fails = t ? (t.executions || []).filter(x => x.status === 'fail') : []
   const sel = picked || new Set(d.preselect || fails.map(x => x.n))
@@ -345,10 +356,11 @@ function DefectModal({ project }) {
     if (!x.ok) return setErr(x.error)
     setDone(x.data)
     close()
+    notify(`Raised ${x.data && x.data.id ? x.data.id : 'defect'}`)
   }
   const ready = title.trim() && sel.size
   return h(Dialog, {
-    title: 'Raise defect', onClose: close, testid: 'defect-modal',
+    title: 'Raise defect', onClose: close, dirty: !!title.trim(), testid: 'defect-modal',
     footer: frag(
       h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', onClick: close }, 'Cancel'),
       h('button', { type: 'button', 'aria-disabled': ready ? undefined : 'true', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', !ready && 'opacity-40 cursor-not-allowed'), 'data-testid': 'raise', onClick: () => ready && raise() }, 'Raise'))

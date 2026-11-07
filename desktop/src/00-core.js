@@ -34,8 +34,12 @@ function h(tag, props, ...kids) {
   let p = props == null ? {} : typeof props === 'string' ? { className: props } : props
   if (typeof tag === 'string') {
     // Anything clickable is reachable and operable from the keyboard, with the same handler.
-    if (p.onClick && !NATIVE[tag] && !p.role) {
-      p = { ...p, role: 'button', tabIndex: p.tabIndex != null ? p.tabIndex : 0, onKeyDown: p.onKeyDown || activate(p.onClick) }
+    if (p.onClick && !NATIVE[tag]) {
+      p = { ...p, role: p.role || 'button', tabIndex: p.tabIndex != null ? p.tabIndex : 0, onKeyDown: p.onKeyDown || activate(p.onClick) }
+    }
+    // a field points at its error line (fe-<name>), which exists only while there is an error
+    if ((tag === 'input' || tag === 'textarea' || tag === 'select') && p.name && !p['aria-describedby'] && p.type !== 'checkbox' && p.type !== 'radio') {
+      p = { ...p, 'aria-describedby': 'fe-' + p.name }
     }
     // checkboxes and radios are named by the label that wraps them
     if ((tag === 'input' || tag === 'textarea' || tag === 'select') && !p['aria-label'] && !p.id && p.type !== 'checkbox' && p.type !== 'radio') {
@@ -75,7 +79,9 @@ const $leave = atom(null)
 const DIRTY = new Set()
 const ON_LEAVE = []
 const HIST = []
-let EXIT = null
+const EXITS = []
+let CUR_PROJECT = null
+const $notice = atom(null)
 
 // A form reports whether it holds unsaved text while it is mounted.
 function useDirty(dirty) {
@@ -84,12 +90,25 @@ function useDirty(dirty) {
   useEffect(() => { const f = () => ref.current; DIRTY.add(f); return () => { DIRTY.delete(f) } }, [])
 }
 
-// A task view (a form or an editor) names its way out; Escape takes it, asking first if text is unsaved.
-function useExit(fn) {
+// A view names its way out (the action of its Back or Cancel); Escape takes it, asking first if text is unsaved.
+// `task` marks a form or an editor: a place that is left, never returned to.
+function useExit(fn, task) {
   const ref = useRef(fn)
   ref.current = fn
-  useEffect(() => { const f = () => ref.current(); EXIT = f; return () => { if (EXIT === f) EXIT = null } }, [])
+  useEffect(() => {
+    const x = { go: () => ref.current(), task: !!task }
+    EXITS.push(x)
+    return () => { const i = EXITS.indexOf(x); if (i >= 0) EXITS.splice(i, 1) }
+  }, [])
 }
+
+// After a refused submit, the first field marked invalid takes focus.
+function focusInvalid() {
+  setTimeout(() => { const el = document.querySelector('.rung [aria-invalid=true]'); if (el && el.focus) el.focus() }, 30)
+}
+
+// A line naming what an action did, shown on the view the action lands on until the next view change.
+function notify(text) { $notice.set(text) }
 
 function unsaved() {
   for (const f of DIRTY) if (f()) return true
@@ -102,11 +121,28 @@ function guard(go, force) {
   return true
 }
 
+// History holds places to return to: a task view (a form or an editor, which registers a way out) is never one,
+// since its text is gone once left; each entry remembers its project, so Back never crosses projects.
 function commit(next, replace) {
   const cur = $nav.get()
-  if (!replace && cur) { HIST.push(cur); if (HIST.length > 50) HIST.shift() }
+  if (!replace && cur && !EXITS.some(x => x.task)) { HIST.push({ ...cur, _p: CUR_PROJECT }); if (HIST.length > 50) HIST.shift() }
   for (const f of ON_LEAVE) f()
+  $leave.set(null)
+  $notice.set(null)
   $nav.set(next)
+}
+
+function popHistory() {
+  while (HIST.length) {
+    const e = HIST.pop()
+    if (e._p === CUR_PROJECT) { const { _p, ...v } = e; return v }
+  }
+  return null
+}
+
+function sameView(a, view, params) {
+  if (!a || a.view !== view) return false
+  return Object.entries(params || {}).every(([k, v]) => String(a[k]) === String(v))
 }
 
 // Changes the Rung page's view. It never moves the app: a request that finishes after the person went to a
@@ -116,14 +152,32 @@ function navigate(view, params, opts) {
   return guard(() => commit({ view, ...(params || {}) }, o.replace), o.force)
 }
 
-// Back: the view the person came from, else the given parent.
+// Back, Cancel and Escape: the view the person came from, else the given parent. Leaving adds no entry.
 function goBack(view, params, opts) {
   const o = opts || {}
-  if (!HIST.length) return navigate(view, params, o)
-  return guard(() => { const prev = HIST.pop(); for (const f of ON_LEAVE) f(); $nav.set(prev) }, o.force)
+  return guard(() => {
+    const prev = popHistory()
+    commit(prev || { view, ...(params || {}) }, true)
+  }, o.force)
+}
+
+// "Back to X": always X. When X is where the person came from, that entry is used up.
+function returnTo(view, params, opts) {
+  const o = opts || {}
+  return guard(() => {
+    const top = HIST[HIST.length - 1]
+    if (top && top._p === CUR_PROJECT && sameView(top, view, params)) HIST.pop()
+    commit({ view, ...(params || {}) }, true)
+  }, o.force)
+}
+
+// After a save or a create: the destination, with no entry for the finished form.
+function finish(view, params) {
+  return navigate(view, params, { force: true, replace: true })
 }
 
 // Opens Rung on a view from outside it (the dock, the status bar): a click, so the app moves.
+// When unsaved text holds the change, the app still moves, so the person sees the question.
 function openRung(view, params, opts) {
   navigate(view, params, opts)
   if (!String(location.hash || '').includes(ROUTE)) host.navigate(ROUTE)
@@ -131,10 +185,10 @@ function openRung(view, params, opts) {
 
 // Escape on a task view: its way out. Dialogs, menus and fields that use Escape themselves come first.
 function onEscape(e) {
-  if (e.key !== 'Escape' || e.defaultPrevented || !EXIT) return
+  if (e.key !== 'Escape' || e.defaultPrevented || !EXITS.length) return
   if (!String(location.hash || '').includes(ROUTE)) return
   if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox]')) return
-  guard(EXIT)
+  guard(EXITS[EXITS.length - 1].go)
 }
 
 async function rest(path, opts) {

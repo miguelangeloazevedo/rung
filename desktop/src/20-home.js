@@ -128,13 +128,7 @@ function Home({ project }) {
   // different Needs you count, so the two never show different numbers.
   const ny = d && d.tiles ? d.tiles.needs_you : null
   useEffect(() => { if (ny != null) queryClient.invalidateQueries({ queryKey: ['rung', '/state'] }) }, [ny])
-  if (!d) {
-    return h(Frame, {
-      main: q.error
-        ? frag(h(ErrorLine, { text: errText(q.error) }), h('div', null, h(Btn, { onClick: () => navigate('projects') }, 'Projects')))
-        : h(Loading)
-    })
-  }
+  if (!d) return q.error ? h(Missing, { text: errText(q.error) }) : h(Frame, { main: h(Loading) })
   const items = d.needs_you || []
   const stale = items.filter(i => i.type === 'stale')
   const approvals = items.filter(i => i.type === 'approval')
@@ -258,10 +252,11 @@ function NewProject() {
   const [errs, setErrs] = useState({})
   const touched = useRef({})
   const hasProjects = st && st.projects && st.projects.length
-  const backToStart = !hasProjects && st && st.onboarding && st.onboarding.start
-  const exit = hasProjects ? () => navigate('projects', null, { force: true }) : backToStart ? () => navigate('start', null, { force: true }) : () => {}
+  // With no project yet, the way out is the start screen (its choices stay reachable after it was dismissed).
+  const backToStart = !!st && !hasProjects
+  const exit = hasProjects ? () => goBack('projects', null, { force: true }) : () => navigate('start', null, { force: true, replace: true })
   useDirty(name.trim() || folder.trim() || cmd.trim())
-  useExit(exit)
+  useExit(exit, true)
   const fill = async path => {
     // Name, test command and profiles follow the folder until the person edits them.
     if (!path.trim()) return
@@ -281,11 +276,13 @@ function NewProject() {
   }
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
-    if (res.ok) return navigate('home', null, { force: true })
+    if (res.ok) { finish('home'); return notify(`Created ${res.data && res.data.name ? res.data.name : name.trim()}`) }
     setErrs(res.field ? { [res.field]: res.error } : {})
     setErr(res.field ? '' : res.error)
+    if (res.field) focusInvalid()
   }
-  const fe = k => errs[k] ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', 'data-field': k }, errs[k]) : null
+  const fe = k => errs[k] ? h('span', { className: 'text-[11px] text-fail', id: 'fe-' + k, role: 'alert', 'data-testid': 'field-error', 'data-field': k }, errs[k]) : null
+  const bad = k => (errs[k] ? 'true' : undefined)
   const inp = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'
   const main = h('div', { className: 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8', 'data-testid': 'new-project' },
     h('div', 'w-[640px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
@@ -293,15 +290,15 @@ function NewProject() {
       h('div', 'flex flex-col gap-4',
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Name'),
-          h('input', { className: inp, type: 'text', name: 'name', value: name, onChange: e => { touched.current.name = true; setName(e.target.value) } }), fe('name')),
+          h('input', { className: inp, type: 'text', name: 'name', 'aria-invalid': bad('name'), value: name, onChange: e => { touched.current.name = true; setName(e.target.value) } }), fe('name')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Folder'),
           h('div', 'flex items-center gap-2',
-            h('input', { className: cx(inp, 'font-mono flex-1'), type: 'text', name: 'folder', value: folder, onChange: e => setFolder(e.target.value), onBlur: e => fill(e.target.value) }),
+            h('input', { className: cx(inp, 'font-mono flex-1'), type: 'text', name: 'folder', 'aria-invalid': bad('folder'), value: folder, onChange: e => setFolder(e.target.value), onBlur: e => fill(e.target.value) }),
             h('button', { type: 'button', className: 'px-3 py-2 bg-btn border border-line rounded-[6px] text-xs font-medium text-fg', onClick: choose }, 'Choose')), fe('folder')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Test command'),
-          h('input', { className: cx(inp, 'font-mono'), type: 'text', name: 'test_command', value: cmd, onChange: e => { touched.current.cmd = true; setCmd(e.target.value) } }), fe('test_command')),
+          h('input', { className: cx(inp, 'font-mono'), type: 'text', name: 'test_command', 'aria-invalid': bad('test_command'), value: cmd, onChange: e => { touched.current.cmd = true; setCmd(e.target.value) } }), fe('test_command')),
         h('div', 'flex flex-col gap-2',
           h('label', 'text-xs font-medium text-muted', 'Profiles'),
           h('div', 'flex flex-col gap-2 pt-1',
@@ -360,13 +357,14 @@ function Settings({ project }) {
   const [draft, setDraft] = useState(null)
   const [touched, setTouched] = useState(false)
   useDirty(touched)
-  useExit(() => navigate('home', null, { force: true }))
+  useExit(() => goBack('home', null, { force: true }), true)
   const [adding, setAdding] = useState(null)
   const [label, setLabel] = useState('')
   const [err, setErr] = useState('')
   useEffect(() => {
     if (q.data && !draft) setDraft(JSON.parse(JSON.stringify(q.data)))
   }, [q.data])
+  if (q.error && !draft) return h(Missing, { project, text: errText(q.error) })
   if (!draft) return h(Frame, { main: h(Loading) })
   const setProf = (i, patch) => { setTouched(true); setDraft({ ...draft, profiles: draft.profiles.map((p, j) => (j === i ? { ...p, ...patch } : p)) }) }
   const setSet = (k, v) => { setTouched(true); setDraft({ ...draft, settings: { ...draft.settings, [k]: v } }) }
@@ -394,16 +392,18 @@ function Settings({ project }) {
     $colours.set(res.data.settings.colours)
     setDraft(JSON.parse(JSON.stringify(res.data)))
     setErr('')
-    navigate('home', null, { force: true })
+    setTouched(false)
+    goBack('home', null, { force: true })
+    notify('Settings saved')
   }
-  const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setTouched(false); setErr(''); navigate('home', null, { force: true }) }
+  const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setTouched(false); setErr(''); goBack('home', null, { force: true }) }
   const numInp = 'w-16 bg-well border border-line rounded px-2 py-1 text-xs text-fg mono outline-none'
   const main = frag(
     h('div', 'flex items-center gap-2 text-xs',
       h('span', 'text-muted uppercase font-semibold tracking-wider text-[11px]', 'Project'),
       h('span', 'text-muted', '/'),
-      h('span', 'text-fg font-medium mono', project || '')),
-    h('header', 'flex items-center justify-between pb-1', h('h1', 'text-xl font-bold tracking-tight text-fg', 'Rung settings')),
+      project ? h('button', { type: 'button', className: 'text-fg font-medium mono', 'data-testid': 'project-name', 'aria-label': `${project}, projects`, onClick: () => navigate('projects') }, project) : h('span', 'text-muted', 'none')),
+    h('header', 'flex items-center justify-between pb-1', h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Settings')),
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Profiles'),
       h('div', 'bg-card border border-line rounded-[6px] overflow-hidden',
@@ -480,7 +480,7 @@ function Settings({ project }) {
           h('span', 'text-xs text-fg font-medium mono', project),
           h(Btn, { kind: 'small', testid: 'open-project-settings', onClick: () => navigate('project-settings') }, 'Project settings')) : null)),
     h(ErrorLine, { text: err }),
-    h('div', 'flex items-center justify-end gap-3 pt-2 pb-6',
+    h('div', 'sticky bottom-0 bg-page flex items-center justify-end gap-3 pt-2 pb-6',
       h('button', { type: 'button', className: 'px-4 py-1.5 rounded-[6px] border border-line text-xs font-semibold text-muted', onClick: cancel }, 'Cancel'),
       h('button', { type: 'button', className: 'px-4 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', onClick: save }, 'Save')))
   return h(Frame, { main, wide: true })

@@ -12,11 +12,12 @@ function useHome(project, focus) {
   return useApi(`/projects/${encodeURIComponent(project)}/home${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`)
 }
 
-function Page({ project, focus, sel, children, noTiles }) {
+function Page({ project, focus, sel, children, noTiles, title }) {
   const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
-    h('header', 'flex flex-col gap-4', h(Header, { project, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
+    h('header', 'flex flex-col gap-4', h(Header, { project, title, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
+    q.error && !d ? h(ErrorLine, { text: errText(q.error) }) : null,
     children)
   return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
 }
@@ -24,11 +25,13 @@ function Page({ project, focus, sel, children, noTiles }) {
 function Crumbs({ path, last, lastTone }) {
   const kids = []
   for (const p of path || []) {
-    kids.push(h('span', { key: p.id, className: 'cursor-pointer hover:text-fg', onClick: e => { e.stopPropagation(); navigate('rung', { rid: p.id }) } }, p.id))
-    kids.push(h('span', { key: p.id + '›', 'aria-hidden': 'true' }, '›'))
+    kids.push(h('li', { key: p.id, className: 'flex items-center gap-1.5' },
+      h('button', { type: 'button', className: 'hover:text-fg', onClick: e => { e.stopPropagation(); navigate('rung', { rid: p.id }) } }, p.id),
+      h('span', { 'aria-hidden': 'true' }, '›')))
   }
-  kids.push(h('span', { key: 'last', className: lastTone || 'text-needs', 'aria-current': 'page' }, last))
-  return h('nav', { className: 'text-[11px] mono text-muted font-medium flex items-center gap-1.5', 'data-testid': 'crumbs', 'aria-label': 'Breadcrumb' }, ...kids)
+  kids.push(h('li', { key: 'last', className: lastTone || 'text-needs', 'aria-current': 'page' }, last))
+  return h('nav', { 'aria-label': 'Breadcrumb', 'data-testid': 'crumbs' },
+    h('ol', 'text-[11px] mono text-muted font-medium flex items-center gap-1.5', ...kids))
 }
 
 function useRung(project, rid) {
@@ -74,9 +77,9 @@ function NeedNew({ project }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const seq = useRef(0)
-  const cancel = () => navigate('home', null, { force: true })
+  const cancel = () => goBack('home', null, { force: true })
   useDirty(text.trim())
-  useExit(cancel)
+  useExit(cancel, true)
   useEffect(() => {
     const t = text.trim()
     if (t.length < 8) { setSugs([]); return }
@@ -98,7 +101,7 @@ function NeedNew({ project }) {
     const accepted = sugs.filter(s => marks[s] === 'accepted')
     const res = await post(`${P(project)}/needs`, { text: text.trim(), requirements: accepted })
     if (!res.ok) return setErr(res.error)
-    navigate('build', { need: res.data.id, step: 'reqs' }, { force: true })
+    finish('build', { need: res.data.id, step: 'reqs' })
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need: null, flow: null, current: 0 }),
@@ -148,21 +151,21 @@ function Build({ project, need, step }) {
   const idx = { need: 0, reqs: 1, specs: 2, tests: 3, develop: 4 }[step] ?? 1
   const key = ['need', 'requirements', 'specifications', 'tests', 'develop'][idx]
   if (flowQ.error) return h(Missing, { project, text: errText(flowQ.error) })
-  if (!flow) return h(Page, { project }, h(Loading))
+  if (!flow) return h(Page, { project, sel: need }, h(Loading))
   if (!flow.steps[key].available) {
     // A locked step can not be reached by URL either: show the step that is open.
     const open = ['need', 'requirements', 'specifications', 'tests', 'develop'].filter(k => flow.steps[k].available).pop()
-    return h(Page, { project }, h('div', 'flex flex-col gap-6',
+    return h(Page, { project, sel: need }, h('div', 'flex flex-col gap-6',
       h(BuildStrip, { need, flow, current: idx }),
       h(Card, { className: 'p-4 text-xs text-muted', testid: 'locked-step' }, `The ${STEPS[idx]} step is locked`),
-      h('div', null, h(Btn, { onClick: () => navigate('build', { need, step: STEP_VIEWS[['need', 'requirements', 'specifications', 'tests', 'develop'].indexOf(open)] }) }, 'Back'))))
+      h('div', null, h(Btn, { onClick: () => returnTo('build', { need, step: STEP_VIEWS[['need', 'requirements', 'specifications', 'tests', 'develop'].indexOf(open)] }) }, 'Back'))))
   }
   const props = { project, need, flow }
   if (idx === 1) return h(StepReqs, props)
   if (idx === 2) return h(StepSpecs, props)
   if (idx === 3) return h(StepTests, props)
   if (idx === 4) return h(StepDevelop, props)
-  return h(VIEWS.rung, { project, rid: need })
+  return h(VIEWS.rung, { project, rid: need, flow })
 }
 
 function NeedRow({ n }) {
@@ -181,7 +184,7 @@ function StepReqs({ project, need, flow }) {
   const n = q.data
   const [err, setErr] = useState('')
   if (q.error) return h(Missing, { project, text: errText(q.error) })
-  if (!n) return h(Page, { project }, h(Loading))
+  if (!n) return h(Page, { project, sel: need }, h(Loading))
   const reqs = (n.children || []).filter(r => r.status !== 'dismissed' && r.status !== 'proposed')
   const st = flow.steps.requirements
   const approveAll = async () => {
@@ -214,12 +217,12 @@ function StepReqs({ project, need, flow }) {
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center justify-between pt-2 border-t border-line',
       h('div', 'flex items-center gap-2',
-        h(Btn, { testid: 'step-back', onClick: () => navigate('rung', { rid: need }) }, 'Back'),
+        h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'need' }) }, 'Back to Need'),
         h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement')),
       h('div', 'flex items-center gap-2',
         h(Btn, { kind: 'primaryLg', testid: 'approve-all', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approveAll }, 'Approve all'),
         h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'specs' }) }, 'Next'))))
-  return h(Page, { project }, body)
+  return h(Page, { project, sel: need }, body)
 }
 
 // ------------------------------------------------------------------ step 3: Specifications
@@ -238,7 +241,7 @@ function StepSpecs({ project, need, flow }) {
   const n = q.data
   const [err, setErr] = useState('')
   if (q.error) return h(Missing, { project, text: errText(q.error) })
-  if (!n) return h(Page, { project }, h(Loading))
+  if (!n) return h(Page, { project, sel: need }, h(Loading))
   const reqs = (n.children || []).filter(r => r.status === 'approved' || r.status === 'stale')
   const st = flow.steps.specifications
   const setMode = async (r, mode) => {
@@ -283,10 +286,10 @@ function StepSpecs({ project, need, flow }) {
       })),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2.5 pt-1',
-      h(Btn, { testid: 'step-back', onClick: () => navigate('build', { need, step: 'reqs' }) }, 'Back'),
+      h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'reqs' }) }, 'Back to Requirements'),
       h(Btn, { kind: 'primaryLg', testid: 'approve-drafted', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approve }, 'Approve drafted'),
       h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'tests' }) }, 'Next')))
-  return h(Page, { project }, body)
+  return h(Page, { project, sel: need }, body)
 }
 
 // ------------------------------------------------------------------ step 4: Tests
@@ -322,7 +325,7 @@ function StepTests({ project, need, flow }) {
   const n = q.data
   const [err, setErr] = useState('')
   if (q.error) return h(Missing, { project, text: errText(q.error) })
-  if (!n) return h(Page, { project }, h(Loading))
+  if (!n) return h(Page, { project, sel: need }, h(Loading))
   const st = flow.steps.tests
   const specs = []
   for (const r of n.children || []) for (const s of r.children || []) if (s.status === 'approved' || s.status === 'stale') specs.push(s)
@@ -343,10 +346,10 @@ function StepTests({ project, need, flow }) {
         ...(s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed').map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3 pt-2',
-      h(Btn, { testid: 'step-back', onClick: () => navigate('build', { need, step: 'specs' }) }, 'Back'),
+      h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),
       h(Btn, { kind: 'primaryLg', testid: 'approve-tests', className: 'px-4 py-2', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approve }, 'Approve tests'),
       h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'develop' }) }, 'Next')))
-  return h(Page, { project }, body)
+  return h(Page, { project, sel: need }, body)
 }
 
 // ------------------------------------------------------------------ step 5: Develop
@@ -417,7 +420,7 @@ function StepDevelop({ project, need, flow }) {
   const n = q.data
   const [err, setErr] = useState('')
   if (q.error) return h(Missing, { project, text: errText(q.error) })
-  if (!n || !st) return h(Page, { project }, h(Loading))
+  if (!n || !st) return h(Page, { project, sel: need }, h(Loading))
   CTX_PROFILES = Object.fromEntries(st.profiles.map(p => [p.name, p]))
   const specs = []
   for (const r of n.children || []) for (const s of r.children || []) if (s.status === 'approved' || s.status === 'stale') specs.push(s)
@@ -436,7 +439,7 @@ function StepDevelop({ project, need, flow }) {
       h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr })))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',
-      h(Btn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => navigate('build', { need, step: 'tests' }) }, 'Back'),
+      h(Btn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),
       h(Btn, { kind: 'primaryLg', className: 'px-4 py-2', testid: 'send-all', onClick: sendAll }, 'Send all')))
-  return h(Page, { project }, body)
+  return h(Page, { project, sel: need }, body)
 }

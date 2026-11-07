@@ -102,7 +102,7 @@ function usePageTitle(project) {
   const rq = useRung(project, nav.view === 'rung' ? nav.rid : null)
   const v = nav.view
   if (v === 'home' || v === 'defect-new') return 'Home'
-  if (v === 'rung') return rq.data ? `${KIND_WORD[rq.data.kind] || 'Rung'} ${nav.rid}` : ''
+  if (v === 'rung') return rq.data ? `${KIND_WORD[rq.data.kind] || 'Rung'} ${nav.rid}` : nav.rid || ''
   if (v === 'need-new') return 'New need'
   if (v === 'req-new') return 'New requirement'
   if (v === 'spec-edit') return nav.spec ? `Edit ${nav.spec}` : 'New specification'
@@ -321,19 +321,27 @@ function Rail({ tree, alloc, sel, retired }) {
 
 function Frame({ main, rail, wide }) {
   return h('div', 'flex flex-row h-full w-full overflow-hidden',
-    h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
+    h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, h(Notice), main),
     rail || null)
+}
+
+// What the last action did (created, saved, raised), on the view it landed on.
+function Notice() {
+  const n = useValue($notice)
+  return h('div', { role: 'status', 'data-testid': 'notice', className: n ? 'text-xs text-pass font-medium' : 'hidden' }, n || '')
 }
 
 // A destination that does not exist (a missing id, a failed load, an unknown view): what is missing, and a way on.
 function Missing({ project, text }) {
+  const back = () => goBack(project ? 'home' : 'projects')
+  useExit(back)
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('h2', { className: 'text-sm font-semibold text-fg', role: 'alert' }, text),
+    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, text),
     h('div', 'flex items-center gap-2',
-      h(Btn, { kind: 'primary', testid: 'missing-back', onClick: () => goBack(project ? 'home' : 'projects') }, 'Back'),
+      h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
       h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
-  return project ? h(Page, { project }, body) : h(Frame, { main: body })
+  return project ? h(Page, { project, title: null }, body) : h(Frame, { main: body })
 }
 
 function Loading() {

@@ -4,16 +4,30 @@
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
 
-function Dialog({ title, onClose, children, footer, testid }) {
+// A dialog: the rest of Rung is inert while it is open. Escape, the cross and a click outside close it, asking
+// first when it holds unsaved text (`dirty`); its own Cancel closes without asking.
+function Dialog({ title, onClose, children, footer, testid, dirty }) {
   const box = useRef(null)
+  const down = useRef(false)
   useEffect(() => {
     const opener = document.activeElement
     const first = box.current && (box.current.querySelector('[data-autofocus]') || box.current.querySelector(FOCUSABLE))
     if (first) first.focus()
-    return () => { if (opener && opener.focus && document.contains(opener)) opener.focus() }
+    const made = []
+    const root = box.current && box.current.closest('.rung')
+    for (let el = box.current && box.current.parentElement; el && root && el !== root && root.contains(el); el = el.parentElement) {
+      for (const sib of el.parentElement ? el.parentElement.children : []) {
+        if (sib !== el && !sib.hasAttribute('inert') && !sib.querySelector('[role=dialog]')) { sib.setAttribute('inert', ''); made.push(sib) }
+      }
+    }
+    return () => {
+      for (const sib of made) sib.removeAttribute('inert')
+      if (opener && opener.focus && document.contains(opener)) opener.focus()
+    }
   }, [])
+  const ask = () => { if (dirty) $leave.set({ go: onClose }); else onClose() }
   const onKeyDown = e => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ask(); return }
     if (e.key !== 'Tab' || !box.current) return
     const els = [...box.current.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null)
     if (!els.length) return
@@ -22,11 +36,15 @@ function Dialog({ title, onClose, children, footer, testid }) {
     else if (!e.shiftKey && i === els.length - 1) { e.preventDefault(); els[0].focus() }
   }
   const tid = (testid || 'dialog') + '-title'
-  return h('div', { className: 'absolute inset-0 bg-well/75 flex items-center justify-center z-50 p-4', onMouseDown: e => { if (e.target === e.currentTarget) onClose() } },
+  return h('div', {
+    className: 'absolute inset-0 bg-well/75 flex items-center justify-center z-50 p-4',
+    onMouseDown: e => { down.current = e.target === e.currentTarget },
+    onMouseUp: e => { if (down.current && e.target === e.currentTarget) ask(); down.current = false }
+  },
     h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
         h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
-        h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: onClose }, '✕')),
+        h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
       h('div', 'p-5 flex flex-col gap-4', children),
       footer ? h('div', 'flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line bg-card', footer) : null))
 }
@@ -51,11 +69,11 @@ function DangerBtn({ onClick, disabled, children, testid }) {
   }, children)
 }
 
-function Field({ label, error, children }) {
+function Field({ label, error, name, children }) {
   return h('div', 'flex flex-col gap-1.5',
     h('span', 'text-xs font-medium text-muted', label),
     children,
-    error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', role: 'alert' }, error) : null)
+    error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', role: 'alert', id: name ? 'fe-' + name : undefined }, error) : null)
 }
 
 const INPUT = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'
@@ -156,6 +174,7 @@ function ArchivedBar({ project }) {
 
 function ReadOut({ project, need }) {
   const q = useApi(`${P(project)}/needs/${need}/readout`, { live: true })
+  useExit(() => goBack('rung', { rid: need }))
   const [exported, setExported] = useState(null)
   const [err, setErr] = useState('')
   const d = q.data
@@ -225,7 +244,7 @@ function RetireDialog({ project, need, onClose }) {
     navigate('home')
   }
   return h(Dialog, {
-    title: `Retire ${need}`, onClose, testid: 'retire-dialog',
+    title: `Retire ${need}`, onClose, dirty: !!reason.trim(), testid: 'retire-dialog',
     footer: frag(h(Btn, { onClick: onClose }, 'Cancel'), h(DangerBtn, { testid: 'retire-confirm', disabled: !reason.trim(), onClick: go }, 'Retire'))
   },
   h(Field, { label: 'Reason' }, h('textarea', { className: INPUT, rows: 3, name: 'reason', value: reason, 'data-autofocus': '1', onChange: e => setReason(e.target.value) })),
@@ -246,11 +265,12 @@ function RetiredBar({ project, r }) {
 
 function Retired({ project }) {
   const q = useApi(`${P(project)}/retired`, { live: true })
+  useExit(() => goBack('home'))
+  if (q.error) return h(Missing, { project, text: errText(q.error) })
   const rows = q.data || []
   const main = frag(
     h('header', 'flex flex-col gap-4',
-      h(Header, { project, title: null, right: h(Btn, { onClick: () => goBack('home') }, 'Back') }),
-      h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Retired needs')),
+      h(Header, { project, title: 'Retired needs', right: h(Btn, { onClick: () => goBack('home') }, 'Back') })),
     h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'retired-list' },
       q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No retired needs') : null,
       ...rows.map(n => h(Card, { key: n.id, className: 'p-4 flex items-center justify-between', testid: 'retired-row', onClick: () => navigate('rung', { rid: n.id }) },
@@ -302,7 +322,7 @@ function ProjectSettings({ project }) {
     if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles })
   }, [proj && proj.name])
   useDirty(f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()]))
-  useExit(() => goBack('home', null, { force: true }))
+  useExit(() => goBack('home', null, { force: true }), true)
   if (!st) return h(Frame, { main: h(Loading) })
   if (!proj || !f) {
     return h(Missing, { text: st.current_archived ? `${project} is archived` : `no project ${project}` })
@@ -311,8 +331,9 @@ function ProjectSettings({ project }) {
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const save = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/update`, f)
-    if (!x.ok) { setErrs(x.field ? { [x.field]: x.error } : {}); return setErr(x.field ? '' : x.error) }
+    if (!x.ok) { setErrs(x.field ? { [x.field]: x.error } : {}); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
     setErrs({}); setErr('')
+    notify('Saved')
     if (x.data.name !== project) navigate('project-settings', { k: Date.now() }, { force: true, replace: true })
   }
   const archive = async () => {
@@ -323,12 +344,11 @@ function ProjectSettings({ project }) {
   const events = (pq.data || []).filter(e => e.kind === 'project_changed').slice().reverse()
   const main = frag(
     h('header', 'flex flex-col gap-4',
-      h(Header, { project, title: null, right: h(Btn, { onClick: () => goBack('home') }, 'Back') }),
-      h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Project settings')),
+      h(Header, { project, title: 'Project settings', right: h(Btn, { onClick: () => goBack('home', null, { force: true }) }, 'Back') })),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
-      h(Field, { label: 'Name', error: errs.name }, h('input', { className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
-      h(Field, { label: 'Folder', error: errs.folder }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
-      h(Field, { label: 'Test command', error: errs.test_command }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'test_command', value: f.test_command, onChange: set('test_command') })),
+      h(Field, { label: 'Name', error: errs.name, name: 'name' }, h('input', { 'aria-invalid': errs.name ? 'true' : undefined, className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
+      h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h('input', { 'aria-invalid': errs.folder ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
+      h(Field, { label: 'Test command', error: errs.test_command, name: 'test_command' }, h('input', { 'aria-invalid': errs.test_command ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'test_command', value: f.test_command, onChange: set('test_command') })),
       h(Field, { label: 'Profiles', error: errs.profiles },
         h('div', 'flex flex-col gap-2 pt-1',
           ...all.map(p => h('label', { key: p, className: 'flex items-center gap-2.5 text-xs text-fg cursor-pointer' },
@@ -356,8 +376,9 @@ function ProjectSettings({ project }) {
 
 function ArchivedList({ qtext }) {
   const q = useApi('/projects/archived', { live: true })
-  const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   const [del, setDel] = useState(null)
+  if (q.error) return h(ErrorLine, { text: errText(q.error) })
+  const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   const [err, setErr] = useState('')
   const act = async (name, what) => {
     const x = await post(`/projects/${encodeURIComponent(name)}/${what}`)

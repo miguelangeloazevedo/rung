@@ -44,7 +44,7 @@ function RungView(props) {
 
 // ------------------------------------------------------------------ need
 
-function NeedView({ project, r }) {
+function NeedView({ project, r, flow }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(r.text)
   const [err, setErr] = useState('')
@@ -53,6 +53,7 @@ function NeedView({ project, r }) {
   const [base, setBase] = useState(null)
   const ro = !!r.read_only
   useDirty(editing && text !== r.text)
+  useExit(() => { if (editing) { setEditing(false); setText(r.text) } })
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
   const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
@@ -102,7 +103,7 @@ function NeedView({ project, r }) {
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-needs text-on-needs', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: true }); setErr(x.ok ? '' : x.error) } }, 'Accept'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-btn border border-line text-muted', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: false }); setErr(x.ok ? '' : x.error) } }, 'Dismiss'))))) : null,
     h(ErrorLine, { text: err }))
-  return h(Page, { project, sel: r.id }, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
+  return h(Page, { project, sel: r.id }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
 }
 
 // ------------------------------------------------------------------ requirement editor (also New requirement)
@@ -131,9 +132,11 @@ function ReqEditor({ project, r, need, ret }) {
     rest(`${P(project)}/rungs/${r.id}/suggest-edits`, { method: 'POST', body: {} }).then(x => { if (live) setSugs(x.suggestions || []) }).catch(() => { if (live) setSugs([]) })
     return () => { live = false }
   }, [r && r.id])
-  const done = () => (ret ? navigate('build', { need: needId, step: ret }, { force: true }) : navigate('rung', { rid: needId }, { force: true }))
+  const dest = ret ? ['build', { need: needId, step: ret }] : ['rung', { rid: needId }]
+  const done = () => goBack(dest[0], dest[1], { force: true })
+  const saved = () => finish(dest[0], dest[1])
   useDirty(isNew ? (text.trim() || detail.trim()) : !clean)
-  useExit(done)
+  useExit(done, true)
   const save = async approve => {
     let res
     if (isNew) {
@@ -143,7 +146,7 @@ function ReqEditor({ project, r, need, ret }) {
       res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: base })
     }
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
-    done()
+    saved()
   }
   const specs = r ? (r.children || []).filter(s => s.status !== 'dismissed' && s.status !== 'proposed') : []
   const crumbPath = r ? r.path : [{ id: needId }]
@@ -433,8 +436,10 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const t = text != null ? text : (s ? s.text : '')
   const d = detail != null ? detail : (s ? s.detail : '')
   useDirty((text != null && text !== (s ? s.text : '')) || (detail != null && detail !== (s ? s.detail : '')))
-  const done = () => (ret ? navigate('build', { need: need || (r && r.parent), step: ret }, { force: true }) : navigate('rung', { rid: s ? s.id : reqId }, { force: true }))
-  useExit(done)
+  const dest = () => (ret ? ['build', { need: need || (r && r.parent), step: ret }] : ['rung', { rid: s ? s.id : reqId }])
+  const done = () => goBack(...dest(), { force: true })
+  const saved = () => finish(...dest())
+  useExit(done, true)
   if (sq.error || rq.error) return h(Missing, { project, text: errText(sq.error || rq.error) })
   if ((spec && !s) || !r) return h(Page, { project }, h(Loading))
   const save = async () => {
@@ -445,7 +450,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       if (x.ok) x = await post(`${P(project)}/rungs/${x.data.id}/approve`)
     }
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
-    done()
+    saved()
   }
   const path = s ? s.path : [...r.path, { id: r.id }]
   const body = h('div', { className: 'flex flex-col gap-4 bg-card border border-line rounded-[6px] p-5', 'data-testid': 'spec-editor' },
@@ -479,6 +484,8 @@ function TestView({ project, r }) {
   const [result, setResult] = useState('')
   const [note, setNote] = useState('')
   useDirty(r.type === 'manual' && (result || note.trim()))
+  const leave = () => goBack('rung', { rid: r.parent }, { force: true })
+  useExit(() => { if (r.type === 'manual') leave() })
   const execs = r.executions || []
   const act = async (path, body, go) => {
     const x = await post(path, body)
@@ -525,10 +532,10 @@ function TestView({ project, r }) {
           pending
             ? frag(
               h(Btn, { kind: 'primary', testid: 'approve-result', onClick: () => act(`${P(project)}/tests/${r.id}/executions/${pending.n}/approve`) }, 'Approve result'),
-              h(Btn, { onClick: () => navigate('rung', { rid: r.parent }) }, 'Back'))
+              h(Btn, { onClick: () => goBack('rung', { rid: r.parent }) }, 'Back'))
             : frag(
               h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote('') }) }, 'Record'),
-              h(Btn, { onClick: () => navigate('rung', { rid: r.parent }, { force: true }) }, 'Cancel')))))
+              h(Btn, { onClick: leave }, 'Cancel')))))
     return h(Page, { project, sel: r.id }, body)
   }
   const badge = h('span', 'flex items-center gap-1.5', h(SeenFailing, { value: r.seen_failing }),
@@ -587,12 +594,14 @@ function TestEdit({ project, test, spec, ret, need }) {
   const [conflict, setConflict] = useState(null)
   const init = useRef(null)
   useDirty(f && init.current && JSON.stringify(f) !== init.current)
-  const done = () => {
+  const dest = () => {
     const s = sq.data
-    if (!s) return navigate('home', null, { force: true })
-    return ret ? navigate('build', { need: need || (s.path[0] && s.path[0].id), step: ret }, { force: true }) : navigate('rung', { rid: t ? t.id : s.id }, { force: true })
+    if (!s) return ['home', null]
+    return ret ? ['build', { need: need || (s.path[0] && s.path[0].id), step: ret }] : ['rung', { rid: t ? t.id : s.id }]
   }
-  useExit(done)
+  const done = () => goBack(...dest(), { force: true })
+  const saved = () => finish(...dest())
+  useExit(done, true)
   useEffect(() => {
     if (f) return
     if (test && !t) return
@@ -616,7 +625,8 @@ function TestEdit({ project, test, spec, ret, need }) {
   const save = async () => {
     const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: { ...fields(), version: base } }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
-    done()
+    saved()
+    notify(t ? `Saved ${t.id}` : `Added ${x.data && x.data.id ? x.data.id : 'test'}`)
   }
   const runOnce = async () => {
     let id = t && t.id
@@ -630,7 +640,7 @@ function TestEdit({ project, test, spec, ret, need }) {
     }
     const r = await post(`${P(project)}/tests/${id}/run`, { once: true })
     if (!r.ok) return setErr(r.error)
-    navigate('exec', { test: id, n: r.data.n }, { force: true })
+    finish('exec', { test: id, n: r.data.n })
   }
   const crumbs = [...s.path.map(p => p.id), s.id, t ? t.id : 'New test'].join(' › ')
   const input = (k, extra) => h('input', { className: cx('bg-well border border-line rounded-[6px] px-3 py-2 mono text-xs text-fg focus:outline-none focus:border-needs', (extra && extra.w) || 'w-full'), type: 'text', name: k, value: f[k], onChange: set(k), 'aria-label': (extra && extra.label) || undefined })
