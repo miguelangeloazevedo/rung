@@ -104,17 +104,14 @@ function StartScreen() {
     if (!r.ok) return setErr(r.error)
     navigate('home')
   }
-  const dismiss = async () => {
-    const r = await post('/onboarding', { start_dismissed: true })
-    if (!r.ok) return setErr(r.error)
-    navigate('project-new')
-  }
+  // The cross only closes (Round 12, FST-02): it leaves Rung for the view the person came from and creates nothing.
+  useExit(closeRung)
   return h('div', { className: 'flex flex-row h-full w-full overflow-hidden', 'data-testid': 'start' },
     h('div', 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8',
       h('div', 'w-[520px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
         h('div', 'flex items-center justify-between',
           h('h1', 'text-xl font-bold tracking-tight text-fg', 'Rung'),
-          h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Dismiss', 'data-testid': 'start-dismiss', onClick: dismiss }, '✕')),
+          h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Close', 'data-testid': 'start-dismiss', onClick: closeRung }, '✕')),
         h('div', 'flex flex-col gap-2.5',
           h(Btn, { kind: 'primaryLg', testid: 'start-sample', disabled: busy, onClick: sample }, 'Try the sample project'),
           h(Btn, { testid: 'start-new', onClick: () => navigate('project-new') }, 'New project')),

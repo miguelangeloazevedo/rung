@@ -185,7 +185,28 @@ function finish(view, params, notice) {
 // When unsaved text holds the change, the app still moves, so the person sees the question.
 function openRung(view, params, opts) {
   navigate(view, params, opts)
-  if (!String(location.hash || '').includes(ROUTE)) host.navigate(ROUTE)
+  if (!String(location.hash || '').includes(ROUTE)) { noteOutside(location.hash); host.navigate(ROUTE) }
+}
+
+// The Desktop view the person was on before entering Rung: closing Rung returns there, else to the chat home.
+let OUTSIDE = null
+function noteOutside(hash) {
+  const h = String(hash || '')
+  if (!h.includes(ROUTE)) OUTSIDE = h.replace(/^#/, '') || '/'
+}
+function onHashChange(e) {
+  if (!String(location.hash || '').includes(ROUTE)) return
+  try { noteOutside(new URL(e.oldURL).hash) } catch (_) { /* no previous view */ }
+}
+// The Desktop's router moves with pushState, which fires no hashchange; the browser's Navigation API sees every move.
+function onNavigate(e) {
+  try {
+    const to = new URL(e.destination.url).hash
+    if (String(to).includes(ROUTE)) noteOutside(new URL(window.navigation.currentEntry.url).hash)
+  } catch (_) { /* no previous view */ }
+}
+function closeRung() {
+  host.navigate(OUTSIDE || '/')
 }
 
 // Escape on a task view: its way out. Dialogs, menus and fields that use Escape themselves come first.

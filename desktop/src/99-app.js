@@ -86,6 +86,8 @@ export default {
       '\n.rung{overflow-wrap:anywhere}.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
       '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
+      // the front page: the list first, the projects beside it, below it when the pane is narrow (NAV-14)
+      '\n.rung .r-col-main{flex:999 1 420px;min-width:0}.rung .r-side{flex:1 1 260px;min-width:0;max-width:100%}' +
       // every control is at least 24 by 24 CSS pixels (WCAG 2.5.8)
       '\n.rung button,.rung [role=button],.rung [role=switch],.rung select{min-height:24px;min-width:24px}' +
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
@@ -93,7 +95,13 @@ export default {
     document.head.appendChild(style)
     window.__rungNavigate = (v, p) => openRung(v, p, { force: true })  // tests: open a view, moving the app
     document.addEventListener('keydown', onEscape)
-    ctx.onDispose(() => document.removeEventListener('keydown', onEscape))
+    window.addEventListener('hashchange', onHashChange)
+    if (window.navigation) window.navigation.addEventListener('navigate', onNavigate)
+    ctx.onDispose(() => {
+      document.removeEventListener('keydown', onEscape)
+      window.removeEventListener('hashchange', onHashChange)
+      if (window.navigation) window.navigation.removeEventListener('navigate', onNavigate)
+    })
     window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest

@@ -118,7 +118,6 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .line-through{text-decoration:line-through}
 .rung .max-w-\\[280px\\]{max-width:280px}
 .rung .max-w-\\[860px\\]{max-width:860px}
-.rung .max-w-md{max-width:28rem}
 .rung .mb-1{margin-bottom:4px}
 .rung .min-h-\\[180px\\]{min-height:180px}
 .rung .min-h-\\[300px\\]{min-height:300px}
@@ -423,7 +422,28 @@ function finish(view, params, notice) {
 // When unsaved text holds the change, the app still moves, so the person sees the question.
 function openRung(view, params, opts) {
   navigate(view, params, opts)
-  if (!String(location.hash || '').includes(ROUTE)) host.navigate(ROUTE)
+  if (!String(location.hash || '').includes(ROUTE)) { noteOutside(location.hash); host.navigate(ROUTE) }
+}
+
+// The Desktop view the person was on before entering Rung: closing Rung returns there, else to the chat home.
+let OUTSIDE = null
+function noteOutside(hash) {
+  const h = String(hash || '')
+  if (!h.includes(ROUTE)) OUTSIDE = h.replace(/^#/, '') || '/'
+}
+function onHashChange(e) {
+  if (!String(location.hash || '').includes(ROUTE)) return
+  try { noteOutside(new URL(e.oldURL).hash) } catch (_) { /* no previous view */ }
+}
+// The Desktop's router moves with pushState, which fires no hashchange; the browser's Navigation API sees every move.
+function onNavigate(e) {
+  try {
+    const to = new URL(e.destination.url).hash
+    if (String(to).includes(ROUTE)) noteOutside(new URL(window.navigation.currentEntry.url).hash)
+  } catch (_) { /* no previous view */ }
+}
+function closeRung() {
+  host.navigate(OUTSIDE || '/')
 }
 
 // Escape on a task view: its way out. Dialogs, menus and fields that use Escape themselves come first.
@@ -684,7 +704,7 @@ function resultWord(r) {
 
 // Rung desktop pane: layout shell, header, tiles, build strip, traceability rail.
 
-function Btn({ kind, onClick, disabled, children, title, testid, className }) {
+function Btn({ kind, onClick, disabled, children, title, testid, className, label, current }) {
   const base = {
     primary: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs',
     primaryLg: 'px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs text-xs font-semibold',
@@ -703,6 +723,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className }) {
     'aria-disabled': disabled ? 'true' : undefined,
     'data-locked': disabled ? '1' : undefined,
     'data-testid': testid,
+    'aria-label': label,
+    'aria-current': current ? 'page' : undefined,
     title,
     onClick: e => { e.stopPropagation(); if (!disabled && onClick) onClick(e) }
   }, children)
@@ -1263,43 +1285,109 @@ function StatChip({ label, n, t, of }) {
     of != null ? `${label} ${n} of ${of}` : `${label} ${n}`)
 }
 
+// What an item in Needs you asks of you, and where Open takes it.
+const NEED_WORD = { stale: 'Stale', proposed: 'Proposed', approval: 'Pending approval', error: 'Could not run', needs_input: 'Needs input' }
+// Same destinations as the dock's rows.
+function openNyItem(item) {
+  if (item.type === 'error') return navigate('exec', { test: item.id, n: item.n })
+  if (item.type === 'needs_input') return navigate('run', { run: item.run })
+  return navigate('rung', { rid: item.id })
+}
+const needCount = n => `${n} ${n === 1 ? 'needs' : 'need'} you`
+
+// The front page (Rounds 12 and 16): what needs you across every open project, grouped by project, with the
+// project list beside it. Rung opens here only when no project is current; the project name in a header opens it.
 function Projects({ tab }) {
   const stQ = useApi('/state')
+  const ovQ = useApi('/overview', { live: true })
   const st = stQ.data
+  const ov = ovQ.data
   const [qtext, setQ] = useState('')
   const [err, setErr] = useState('')
   const archived = tab === 'archived'
+  const enter = async (name, then) => {
+    const x = await post(`/projects/${encodeURIComponent(name)}/open`)
+    if (!x.ok) return setErr(x.error)
+    if (then) then(); else navigate('home')
+  }
   const rows = ((st && st.projects) || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   rows.sort((a, b) => (b.stats.last_activity || 0) - (a.stats.last_activity || 0))
-  const main = frag(
-    h('header', 'flex items-center justify-between',
-      h('h1', 'text-xl font-bold tracking-tight text-fg', 'Projects'),
-      h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project')),
-    archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', { tab: v }) }) : null,
-    h('div', 'flex items-center',
-      h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
-        h('span', 'text-muted text-xs', '⌕'),
-        h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
+  const groups = (ov && ov.projects) || []
+  const waiting = groups.filter(g => g.items.length)
+  const idle = groups.filter(g => !g.items.length)
+  const openBtn = (name) => h(Btn, { kind: 'small', className: 'shrink-0 whitespace-nowrap', testid: 'open-project', label: `Open project ${name}`, onClick: () => enter(name) }, 'Open project')
+  const runLink = (g, x) => h(Btn, {
+    kind: 'ghostLine', key: `${x.kind}${x.run || x.id}${x.n || ''}`, testid: 'ny-running',
+    onClick: () => enter(g.name, () => (x.kind === 'run' ? navigate('run', { run: x.run }) : navigate('exec', { test: x.id, n: x.n })))
+  }, x.kind === 'run' ? `${x.id} running · ${x.profile}` : `${x.id} #${x.n} running`)
+  const group = g => h('section', { key: g.name, className: 'bg-card border border-line rounded-[6px] flex flex-col', 'data-testid': 'ny-group', 'data-project': g.name, 'aria-labelledby': `ny-${g.name}` },
+    h('div', 'flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-line',
+      h('div', 'flex flex-wrap items-center gap-2 min-w-0',
+        h('h2', { id: `ny-${g.name}`, className: 'text-sm font-semibold text-fg' }, g.name),
+        h('span', { className: 'px-2 py-0.5 rounded text-[11px] font-medium border border-needs text-needs', 'data-testid': 'ny-count' }, needCount(g.items.length)),
+        ...g.running.map(x => runLink(g, x))),
+      openBtn(g.name)),
+    h('ul', 'flex flex-col',
+      ...g.items.map((item, i) => h('li', { key: `${item.type}${item.id}${item.n || ''}`, className: cx('r-ny flex items-center justify-between gap-3 px-4 py-2.5', i && 'border-t border-line'), 'data-testid': 'ny-item', 'data-item': item.id },
+        h('div', 'flex flex-col gap-0.5 min-w-0',
+          h('div', 'flex items-center gap-2 text-[11px]',
+            h('span', 'mono text-needs font-medium', item.n ? `${item.id} #${item.n}` : item.id),
+            h('span', { className: 'text-muted', 'data-testid': 'ny-need' }, NEED_WORD[item.type] || item.type)),
+          h('span', { className: 'text-xs text-fg truncate', title: item.text }, item.text)),
+        h(Btn, { kind: 'small', className: 'shrink-0 whitespace-nowrap', testid: 'ny-open', label: `Open ${item.id}`, onClick: () => enter(g.name, () => openNyItem(item)) }, 'Open')))))
+  const idleRow = (g, i) => h('div', { key: g.name, className: cx('flex flex-wrap items-center justify-between gap-2 px-4 py-2.5', i && 'border-t border-line'), 'data-testid': 'ny-idle', 'data-project': g.name },
+    h('div', 'flex flex-wrap items-center gap-3 text-xs',
+      h('span', 'font-semibold text-fg', g.name),
+      h('span', { className: 'text-muted', 'data-stat': 'Stale' }, `${g.stats.stale} stale`),
+      h('span', { className: 'text-muted', 'data-stat': 'Covered' }, `${g.stats.covered} of ${g.stats.requirements} covered`)),
+    openBtn(g.name))
+  const front = ovQ.error
+    ? h('div', 'flex flex-col gap-2', h(ErrorLine, { text: errText(ovQ.error) }), h('div', null, h(Btn, { testid: 'retry', onClick: () => ovQ.refetch() }, 'Retry')))
+    : !ov ? h(Loading)
+      : frag(
+        waiting.length ? h('div', { className: 'flex flex-col gap-4', 'data-testid': 'ny-groups' }, ...waiting.map(group))
+          : h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-muted', 'data-testid': 'ny-empty' }, 'Nothing needs you'),
+        idle.length ? h('section', { className: 'flex flex-col gap-2', 'aria-labelledby': 'ny-idle-title' },
+          h('h2', { id: 'ny-idle-title', className: 'text-xs font-semibold uppercase tracking-wider text-muted' }, 'Nothing waiting'),
+          h('div', { className: 'bg-card border border-line rounded-[6px] flex flex-col', 'data-testid': 'ny-idle-list' }, ...idle.map(idleRow))) : null)
+  const side = h('aside', { className: 'r-side flex flex-col gap-3', 'data-testid': 'project-side', 'aria-labelledby': 'rung-projects-title' },
+    h('h2', { id: 'rung-projects-title', className: 'text-xs font-semibold uppercase tracking-wider text-muted' }, 'Projects'),
+    h('div', 'flex items-center bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
+      h('span', { className: 'text-muted text-xs', 'aria-hidden': 'true' }, '⌕'),
+      h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) })),
+    archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', v === 'archived' ? { tab: 'archived' } : null, { replace: true }) }) : null,
     h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
-    archived ? h(ArchivedList, { qtext, onClear: () => setQ('') }) : null,
-    archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
-      st && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim flex items-center justify-between',
+    archived ? null : h('div', { className: 'flex flex-col gap-2', 'data-testid': 'project-list' },
+      st && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-muted flex items-center justify-between gap-2',
         h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects'),
         qtext ? h(Btn, { kind: 'small', testid: 'clear-search', onClick: () => setQ('') }, 'Clear search') : h(Btn, { kind: 'small', onClick: () => navigate('project-new') }, 'New project')) : null,
       ...rows.map(p => h(Card, {
-        key: p.name, className: 'p-4 flex items-center justify-between', testid: 'project-row',
-        onClick: async () => { const x = await post(`/projects/${encodeURIComponent(p.name)}/open`); if (!x.ok) return setErr(x.error); navigate('home') }
+        key: p.name, className: 'p-3 flex flex-col gap-2', testid: 'project-row',
+        onClick: () => enter(p.name)
       },
-      h('div', 'flex flex-col gap-1',
-        h('div', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name),
-        h('div', 'text-xs mono text-muted', shortPath(p.folder))),
-      h('div', 'flex items-center gap-6',
-        h('div', 'flex items-center gap-2',
-          h(StatChip, { label: 'Needs you', n: p.stats.needs_you, t: 'needs' }),
-          h(StatChip, { label: 'Running', n: p.stats.running, t: 'running' }),
-          h(StatChip, { label: 'Stale', n: p.stats.stale, t: 'stale' }),
-          h(StatChip, { label: 'Covered', n: p.stats.covered, of: p.stats.requirements })),
+      h('div', 'flex items-center justify-between gap-2',
+        h('div', 'flex flex-col gap-0.5 min-w-0',
+          h('div', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name),
+          h('div', { className: 'text-xs mono text-muted truncate', title: p.folder }, shortPath(p.folder))),
+        st && st.current === p.name ? h('span', { className: 'text-[10px] font-medium text-needs border border-needs rounded px-1.5 py-0.5 whitespace-nowrap', 'data-testid': 'last-opened' }, 'Last opened') : null),
+      h('div', 'flex flex-wrap items-center gap-1.5',
+        h(StatChip, { label: 'Needs you', n: p.stats.needs_you, t: 'needs' }),
+        h(StatChip, { label: 'Running', n: p.stats.running, t: 'running' }),
+        h(StatChip, { label: 'Stale', n: p.stats.stale, t: 'stale' }),
+        h(StatChip, { label: 'Covered', n: p.stats.covered, of: p.stats.requirements }),
         h('span', { className: 'text-xs text-muted', 'data-stat': 'Last activity' }, ago(p.stats.last_activity)))))))
+  const main = frag(
+    h('header', 'flex flex-wrap items-center justify-between gap-3',
+      h('div', 'flex items-baseline gap-3',
+        h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, archived ? 'Archived projects' : 'Needs you'),
+        !archived && ov ? h('span', { className: 'text-xl font-bold mono text-needs', 'data-testid': 'ny-total' }, String(ov.total)) : null),
+      h('div', 'flex items-center gap-2',
+        h(Btn, { onClick: () => navigate('settings') }, 'Settings'),
+        h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project'))),
+    h('div', 'r-cols flex flex-wrap items-start gap-6',
+      h('div', { className: 'r-col-main flex flex-col gap-4', 'data-testid': 'needs-you-front' },
+        archived ? h(ArchivedList, { qtext, onClear: () => setQ('') }) : front),
+      side))
   return h('div', 'relative h-full w-full', h(Frame, { main, wide: true }))
 }
 
@@ -3312,17 +3400,14 @@ function StartScreen() {
     if (!r.ok) return setErr(r.error)
     navigate('home')
   }
-  const dismiss = async () => {
-    const r = await post('/onboarding', { start_dismissed: true })
-    if (!r.ok) return setErr(r.error)
-    navigate('project-new')
-  }
+  // The cross only closes (Round 12, FST-02): it leaves Rung for the view the person came from and creates nothing.
+  useExit(closeRung)
   return h('div', { className: 'flex flex-row h-full w-full overflow-hidden', 'data-testid': 'start' },
     h('div', 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8',
       h('div', 'w-[520px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
         h('div', 'flex items-center justify-between',
           h('h1', 'text-xl font-bold tracking-tight text-fg', 'Rung'),
-          h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Dismiss', 'data-testid': 'start-dismiss', onClick: dismiss }, '✕')),
+          h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Close', 'data-testid': 'start-dismiss', onClick: closeRung }, '✕')),
         h('div', 'flex flex-col gap-2.5',
           h(Btn, { kind: 'primaryLg', testid: 'start-sample', disabled: busy, onClick: sample }, 'Try the sample project'),
           h(Btn, { testid: 'start-new', onClick: () => navigate('project-new') }, 'New project')),
@@ -4038,6 +4123,8 @@ export default {
       '\n.rung{overflow-wrap:anywhere}.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
       '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
+      // the front page: the list first, the projects beside it, below it when the pane is narrow (NAV-14)
+      '\n.rung .r-col-main{flex:999 1 420px;min-width:0}.rung .r-side{flex:1 1 260px;min-width:0;max-width:100%}' +
       // every control is at least 24 by 24 CSS pixels (WCAG 2.5.8)
       '\n.rung button,.rung [role=button],.rung [role=switch],.rung select{min-height:24px;min-width:24px}' +
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
@@ -4045,7 +4132,13 @@ export default {
     document.head.appendChild(style)
     window.__rungNavigate = (v, p) => openRung(v, p, { force: true })  // tests: open a view, moving the app
     document.addEventListener('keydown', onEscape)
-    ctx.onDispose(() => document.removeEventListener('keydown', onEscape))
+    window.addEventListener('hashchange', onHashChange)
+    if (window.navigation) window.navigation.addEventListener('navigate', onNavigate)
+    ctx.onDispose(() => {
+      document.removeEventListener('keydown', onEscape)
+      window.removeEventListener('hashchange', onHashChange)
+      if (window.navigation) window.navigation.removeEventListener('navigate', onNavigate)
+    })
     window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest

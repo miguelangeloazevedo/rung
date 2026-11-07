@@ -1712,6 +1712,30 @@ class Engine(LifecycleMixin, ClaimsMixin):
                 "needs_you": len(self.needs_you(project)), "running": running, "last_activity": p["last_activity"],
                 "archived": p["archived_at"] is not None}
 
+    def overview(self) -> dict:
+        """Needs you across every open project (Round 12, 16): each project's items and the work in flight.
+
+        Read-only. Each group's count is `needs_you(project)`, so it equals that project's Home tile."""
+        groups = []
+        for proj in self.projects():
+            name = proj["name"]
+            p = self._project_row(name)
+            items = [{k: v for k, v in i.items() if k in ("type", "id", "kind", "text", "n", "run", "parent")}
+                     for i in self.needs_you(name)]
+            running = [{"kind": "run", "run": r["pk"], "id": self._rid_of(r["spec_pk"]), "profile": r["profile"],
+                        "status": r["status"]}
+                       for r in self._q("SELECT * FROM runs WHERE project_pk=? AND status IN ('queued','running') "
+                                        "ORDER BY pk", (p["pk"],))]
+            running += [{"kind": "exec", "id": e["trid"], "n": e["n"]}
+                        for e in self._q("SELECT e.n, r.rid AS trid FROM executions e JOIN rungs r ON r.pk=e.test_pk "
+                                         "WHERE r.project_pk=? AND e.status='running' AND e.run_pk IS NULL ORDER BY e.pk",
+                                         (p["pk"],))]
+            groups.append({"name": name, "folder": proj["folder"], "stats": proj["stats"], "items": items,
+                           "running": running})
+        return {"projects": groups, "current": self.current_project(),
+                "total": sum(len(g["items"]) for g in groups),
+                "archived": len(self.projects(archived=True))}
+
     def home(self, project: str) -> dict:
         p = self._project_row(project)
         running = [self._run_dict(r) for r in self._q(

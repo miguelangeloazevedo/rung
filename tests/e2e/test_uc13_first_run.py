@@ -71,18 +71,23 @@ def test_onb01_onb02_onb04_onb05_sample_to_first_green(rung, page):
     H.evidence(page, 13)
 
 
-def test_onb03_onb06_dismiss_start_and_empty_lists(rung, page):
+def test_onb03_fst02_onb06_close_start_and_empty_lists(rung, page):
     e = rung.engine
-    H.open_rung(page)
+    # 5. Superseded by FST-02 (acceptance 4): the cross leaves Rung for the view the person came from,
+    # creates nothing, and the start screen shows again on the next open.
+    page.evaluate("location.hash = '#/'")
+    H.reload(page)
+    page.evaluate("location.hash = '#/artifacts'")
+    H.wait_until(lambda: page.evaluate("location.hash") == "#/artifacts", msg="artifacts view")
+    H.open_rung(page, fresh=False)
     H.wait_view(page, "start")
-    # 5. Dismiss opens the new project form and creates nothing; the start screen does not return.
     page.locator(".rung [data-testid=start-dismiss]").click()
-    H.wait_view(page, "project-new")
+    H.wait_until(lambda: page.evaluate("location.hash") == "#/artifacts", msg="back where the person came from")
     assert H.stored(rung.store, "SELECT COUNT(*) AS n FROM projects")[0]["n"] == 0
     assert H.stored(rung.store, "SELECT COUNT(*) AS n FROM rungs")[0]["n"] == 0
     assert not (rung.store.parent / "samples").exists()
     H.open_rung(page)
-    H.wait_view(page, "project-new")
+    H.wait_view(page, "start")
     # 6. Empty lists show a label and at most one primary action.
     folder = H.copy_fixture("csvtidy", rung.work)
     e.create_project(folder=str(folder))

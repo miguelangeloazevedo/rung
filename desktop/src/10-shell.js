@@ -1,6 +1,6 @@
 // Rung desktop pane: layout shell, header, tiles, build strip, traceability rail.
 
-function Btn({ kind, onClick, disabled, children, title, testid, className }) {
+function Btn({ kind, onClick, disabled, children, title, testid, className, label, current }) {
   const base = {
     primary: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs',
     primaryLg: 'px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs text-xs font-semibold',
@@ -19,6 +19,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className }) {
     'aria-disabled': disabled ? 'true' : undefined,
     'data-locked': disabled ? '1' : undefined,
     'data-testid': testid,
+    'aria-label': label,
+    'aria-current': current ? 'page' : undefined,
     title,
     onClick: e => { e.stopPropagation(); if (!disabled && onClick) onClick(e) }
   }, children)

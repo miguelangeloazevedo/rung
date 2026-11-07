@@ -123,6 +123,11 @@ def _state(svc, human, body):
     return out
 
 
+@route("GET", "/overview")
+def _overview(svc, human, body):
+    return svc.engine.overview()
+
+
 @route("POST", "/projects")
 def _create_project(svc, human, body):
     """Only the folder is required; the rest fill in from it (POST /projects/defaults shows the values)."""
