@@ -69,23 +69,25 @@ class LifecycleMixin:
         p = self._project_row(name)
         before = {"name": p["name"], "folder": p["folder"], "test_command": p["test_command"],
                   "profiles": json.loads(p["profiles"] or "[]")}
-        from .core import _profile_list, _text_field
+        from .core import FieldErrors, _profile_list, _text_field
         after = dict(before)
+        errs = FieldErrors()
         if new_name is not None:
             after["name"] = _text_field(new_name, "name")
-            self._check_name(after["name"], p["pk"])
+            errs.check(self._check_name, after["name"], p["pk"])
         if folder is not None:
             after["folder"] = _text_field(folder, "folder")
-            self._check_folder(after["folder"])
+            errs.check(self._check_folder, after["folder"])
             after["folder"] = str(Path(after["folder"]).expanduser())
         if test_command is not None:
             after["test_command"] = _text_field(test_command, "test_command")
             if not after["test_command"]:
-                raise RungError("test command is required", code="bad_request", status=400, field="test_command")
+                errs.errors.setdefault("test_command", "test command is required")
         if profiles is not None:
-            after["profiles"] = _profile_list(profiles)
-            if not after["profiles"]:
-                raise RungError("tick at least one profile", code="bad_request", status=400, field="profiles")
+            after["profiles"] = errs.check(_profile_list, profiles) or []
+            if not after["profiles"] and "profiles" not in errs.errors:
+                errs.errors.setdefault("profiles", "tick at least one profile")
+        errs.raise_any()
         changed = {k: {"before": before[k], "after": after[k]} for k in before if before[k] != after[k]}
         if not changed:
             return self.project(name)

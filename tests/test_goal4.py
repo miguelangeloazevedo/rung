@@ -247,3 +247,21 @@ def test_bot07_accepted_suggestions_are_written_by_the_drafting_profile(bot):
     assert status == 200
     req = e.rung("csvtidy", need["children"][0]["id"]) if need.get("children") else e.tree("csvtidy")[-1]["children"][0]
     assert any(x["profile"] == "researcher" and x["reason"].startswith("author of") for x in e.suggest_choice("csvtidy", need["id"])["excluded"]), req
+
+
+def test_nav10_a_refused_project_names_every_field(tmp_path):
+    from rung_engine import Engine, RungError
+    e = Engine(tmp_path / "r.db")
+    e.save_profiles([{"name": "coder"}])
+    (tmp_path / "p").mkdir()
+    e.create_project("p", str(tmp_path / "p"), "true", ["coder"])
+    with pytest.raises(RungError) as got:
+        e.create_project("p", str(tmp_path / "missing"), "", [])
+    assert set(got.value.fields) == {"name", "folder", "test_command", "profiles"}
+    svc = Service(e)
+    status, body = api.handle(svc, "POST", "/projects", {"name": "p", "folder": str(tmp_path / "missing"), "test_command": "true", "profiles": ["coder"]})
+    assert status in (400, 409) and set(body["fields"]) == {"name", "folder"} and body["field"] in body["fields"]
+    with pytest.raises(RungError) as got:
+        e.update_project("p", new_name="", folder=str(tmp_path / "missing"), test_command="")
+    assert set(got.value.fields) == {"name", "folder", "test_command"}
+    e.close()

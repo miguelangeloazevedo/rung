@@ -34,7 +34,7 @@ def open_form(page, view, params, field):
 ROUTES = {
     "rail": lambda page: page.locator(".rung [data-testid=rail]").get_by_text("N-1", exact=True).first.click(),
     "header": lambda page: page.locator(".rung [data-testid=project-name]").first.click(),
-    "dock": lambda page: page.locator("[data-testid=rung-dock] [data-testid=dock-project]").first.click(),
+    "dock": lambda page: page.locator("[data-testid=rung-dock] [data-testid=dock-open]").first.click(),
     "chip": lambda page: page.locator("[data-testid=rung-status-chip]").first.click(),
 }
 
@@ -58,21 +58,22 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
             f = open_form(page, view, params, field)
             f.fill(TYPED)
             go(page)
-            leave_dialog(page).wait_for(timeout=10000)
+            H.wait_until(lambda: leave_dialog(page).count() == 1, timeout=10,
+                         msg=f"{view} by {route} asks (now {H.view(page)})")
             H.button(page, "Keep editing", leave_dialog(page)).click()
             H.wait_until(lambda: leave_dialog(page).count() == 0, msg="the question closes")
             assert H.view(page) == view, (view, route)
             assert page.locator(f".rung {field}").first.input_value() == TYPED, (view, route)
             go(page)
             H.button(page, "Discard", leave_dialog(page)).click()
-            H.wait_until(lambda: H.view(page) != view or route == "chip" and H.view(page) == "home",
+            H.wait_until(lambda: H.view(page) != view or page.locator(f".rung {field}").count() == 0,
                          msg=f"{view} left by {route}")
         # Cancel leaves without asking.
         f = open_form(page, view, params, field)
         f.fill(TYPED)
         sc = page.locator(f".rung {scope}").first if scope else None
         H.button(page, "Cancel", sc).click()
-        H.wait_until(lambda: H.view(page) != view, msg=f"Cancel leaves {view}")
+        H.wait_until(lambda: H.view(page) != view or page.locator(f".rung {field}").count() == 0, msg=f"Cancel leaves {view}")
         assert leave_dialog(page).count() == 0
     # The question over a typed requirement (the evidence).
     f = open_form(page, "req-new", "{need: 'N-1'}", "input[name=req-text]")
@@ -92,8 +93,12 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     H.wait_view(page, "rung")
     dlg = page.locator(".rung [data-testid=retire-dialog]")
     for how in ("escape", "cross", "outside"):
-        H.button(page, "Retire").click()
+        opener = H.button(page, "Retire")
+        opener.click()
         dlg.wait_for(timeout=10000)
+        # The rest of the pane is inert while the dialog is open.
+        assert page.evaluate("""() => { const d = document.querySelector('.rung [data-testid=retire-dialog]');
+            const h1 = document.querySelector('.rung h1'); return !!h1 && !!h1.closest('[inert]') && !d.closest('[inert]') }"""), how
         dlg.locator("textarea, input").first.fill("No longer needed")
         if how == "escape":
             page.keyboard.press("Escape")
@@ -111,6 +116,9 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
         H.button(page, "Cancel", dlg).click()
         H.wait_until(lambda: dlg.count() == 0, msg="Cancel closes")
         assert leave_dialog(page).count() == 0
+        # Focus returns to the opener.
+        H.wait_until(lambda: page.evaluate("(document.activeElement.innerText || '').trim()") == "Retire",
+                     msg=f"focus back on Retire: {page.evaluate('document.activeElement.outerHTML.slice(0, 120)')}")
     # 4. Focus on the backdrop: Escape still closes, asking first when the dialog holds text.
     H.button(page, "Retire").click()
     dlg.wait_for(timeout=10000)
@@ -121,10 +129,12 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     H.button(page, "Keep editing", leave_dialog(page)).click()
     # Retire confirmed from the need page: focus on the h1 of the view it lands on; the result line shows.
     page.locator(".rung [data-testid=retire-confirm]").click()
-    H.wait_until(lambda: e.rung("csvtidy", "N-1").get("retired"), msg="N-1 retired")
+    H.wait_until(lambda: H.stored(rung.store, "SELECT retired_at FROM rungs WHERE rid='N-1'")[0]["retired_at"],
+                 msg=f"N-1 retired: {dlg.inner_text() if dlg.count() else H.view(page)}")
     notice(page, "Retired N-1")
     H.wait_until(lambda: page.evaluate("document.activeElement && document.activeElement.hasAttribute('data-page-title')"),
                  msg="focus on the h1")
+    page.evaluate("window.__rungNavigate('rung', {rid: 'N-1'})")
     page.locator(".rung [data-testid=restore-need]").first.click()
     notice(page, "Restored N-1")
 
@@ -142,7 +152,7 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     for _ in range(8):
         page.keyboard.press("Tab")
         assert page.evaluate("!!document.activeElement.closest('[role=dialog]')")
-    H.button(page, "Raise defect", modal).click()
+    modal.locator("[data-testid=raise]").click()
     notice(page, "Raised")
 
     # 3. New project with an existing name and a missing folder: each field marked, focus on the first.
@@ -164,9 +174,11 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     # 5. The remaining result lines.
     page.evaluate("window.__rungNavigate('rung', {rid: 'T-2.1b'})")
     H.wait_view(page, "rung")
-    page.locator(".rung [data-testid=manual-test]").get_by_role("radio", name="Pass").click()
-    page.locator(".rung textarea[name=note]").fill("Sorted correctly")
-    page.locator(".rung [data-testid=record]").click()
+    card = page.locator(".rung [data-testid=manual-test]")
+    card.wait_for(timeout=20000)
+    H.button(page, "Pass", card).click()
+    card.locator("textarea[name=evidence]").fill("Sorted correctly")
+    H.button(page, "Record", card).click()
     notice(page, "Recorded")
     e.edit("csvtidy", "R-1", text="Detect the delimiter of every file", approve=True)
     page.evaluate("window.__rungNavigate('rung', {rid: 'S-1.1'})")
@@ -177,7 +189,7 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     H.wait_view(page, "rung")
     page.locator(".rung [data-testid=view-change]").first.click()
     H.wait_view(page, "change")
-    H.button(page, "Revert").click()
+    page.locator(".rung [data-testid=revert]").first.click()
     confirm = page.locator(".rung [role=dialog]")
     if confirm.count():
         H.button(page, "Revert", confirm.last).click()
@@ -194,8 +206,9 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     if dlg.count():
         H.button(page, "Archive", dlg.last).click()
     notice(page, "Archived csvtidy")
-    page.locator(".rung [data-testid=restore-project]").first.click()
+    page.locator(".rung [data-testid=archived-row] [data-testid=restore]").first.click()
     notice(page, "Restored csvtidy")
+    e.open_project("csvtidy")
     page.evaluate("window.__rungNavigate('project-settings')")
     H.wait_view(page, "project-settings")
     H.button(page, "Archive").click()
@@ -204,9 +217,9 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     notice(page, "Archived csvtidy")
     page.evaluate("window.__rungNavigate('projects', {tab: 'archived'})")
     H.wait_view(page, "projects")
-    H.button(page, "Delete").first.click()
-    dlg = page.locator(".rung [role=dialog]").last
+    page.locator(".rung [data-testid=archived-row] [data-testid=delete]").first.click()
+    dlg = page.locator(".rung [data-testid=delete-dialog]")
     dlg.locator("input").first.fill("csvtidy")
-    H.button(page, "Delete", dlg).click()
+    dlg.locator("[data-testid=delete-confirm]").click()
     notice(page, "Deleted csvtidy")
     page.evaluate("window.__rungDock(false)")

@@ -100,6 +100,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .hover\\:bg-btnh:hover{background-color:var(--r-btnh)}
 .rung .hover\\:opacity-100:hover{opacity:1.0}
 .rung .hover\\:text-fg:hover{color:var(--r-fg)}
+.rung .hover\\:underline:hover{text-decoration:underline}
 .rung .inline-block{display:inline-block}
 .rung .inline-flex{display:inline-flex}
 .rung .inset-0{inset:0}
@@ -125,6 +126,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .min-w-0{min-width:0}
 .rung .min-w-2{min-width:8px}
 .rung .min-w-40{min-width:160px}
+.rung .min-w-\\[24px\\]{min-width:24px}
 .rung .min-w-\\[280px\\]{min-width:280px}
 .rung .ml-0\\.5{margin-left:2px}
 .rung .ml-1{margin-left:4px}
@@ -483,13 +485,39 @@ function errInfo(e) {
   const raw = (e && (e.body || e.data || e.detail || e.message)) || String(e)
   let j = typeof raw === 'object' ? raw : null
   if (!j) { try { j = JSON.parse(String(raw).replace(/^[^{]*/, '')) } catch (_) { j = null } }
-  return { field: (j && j.field) || null, code: (j && j.code) || null }
+  return { field: (j && j.field) || null, fields: (j && j.fields) || null, code: (j && j.code) || null }
+}
+
+// The result line of each create, save, approve and record (NAV-11), named once here so no door forgets it.
+// Views that know a better name (Retired, Archived, Raised...) call notify() after, which replaces this one.
+const RESULTS = [
+  [/\/rungs\/([^/]+)\/approve$/, m => `Approved ${m[1]}`],
+  [/\/needs\/([^/]+)\/approve-requirements$/, m => `Approved the requirements of ${m[1]}`],
+  [/\/needs\/([^/]+)\/approve-drafted$/, m => `Approved the specifications of ${m[1]}`],
+  [/\/needs\/([^/]+)\/approve-tests$/, m => `Approved the tests of ${m[1]}`],
+  [/\/tests\/([^/]+)\/executions\/(\d+)\/approve$/, m => `Approved execution ${m[2]} of ${m[1]}`],
+  [/\/rungs\/([^/]+)\/edit$/, m => `Saved ${m[1]}`],
+  [/\/projects\/[^/]+\/needs$/, (m, b, d) => `Created ${(d && d.id) || 'the need'}`],
+  [/\/needs\/[^/]+\/requirements$/, (m, b, d) => `Added ${(d && d.id) || 'the requirement'}`],
+  [/\/rungs\/[^/]+\/spec$/, (m, b, d) => `Added ${(d && d.id) || 'the specification'}`],
+  [/\/specs\/[^/]+\/tests$/, (m, b, d) => `Added ${(d && d.id) || 'the test'}`],
+  [/\/projects\/[^/]+\/tests\/([^/]+)$/, m => `Saved ${m[1]}`],
+  [/\/tests\/([^/]+)\/record$/, (m, b) => `Recorded ${b && b.result === 'fail' ? 'Fail' : 'Pass'} for ${m[1]}`],
+  [/\/suggestions\/[^/]+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
+  [/\/bot\/[^/]+\/items\/\d+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
+]
+function resultLine(path, body, data) {
+  const p = decodeURIComponent(String(path).split('?')[0])
+  for (const [re, f] of RESULTS) { const m = p.match(re); if (m) return f(m, body, data) }
+  return null
 }
 
 async function post(path, body) {
   try {
     const data = await rest(path, { method: 'POST', body: body || {} })
     refresh()
+    const line = resultLine(path, body, data)
+    if (line) notify(line)
     return { ok: true, data }
   } catch (e) {
     refresh()
@@ -1455,7 +1483,7 @@ function NewProject() {
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
     if (res.ok) { finish('home'); return notify(`Created ${res.data && res.data.name ? res.data.name : name.trim()}`) }
-    setErrs(res.field ? { [res.field]: res.error } : {})
+    setErrs(res.fields || (res.field ? { [res.field]: res.error } : {}))
     setErr(res.field ? '' : res.error)
     if (res.field) focusInvalid()
   }
@@ -2206,7 +2234,7 @@ function NeedView({ project, r, flow }) {
     head,
     r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
-      h('a', { className: 'text-[11px] font-medium text-needs cursor-pointer', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
+      h('button', { type: 'button', className: 'text-[11px] font-medium text-needs inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
     h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
       h('div', 'flex items-center justify-between pb-1',
         h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Requirements'),
@@ -2284,7 +2312,7 @@ function ReqEditor({ project, r, need, ret }) {
         h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, autoFocus: isNew, onChange: e => setText(e.target.value) }))),
     r && r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
-      h('a', { className: 'text-[11px] font-medium text-needs cursor-pointer', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
+      h('button', { type: 'button', className: 'text-[11px] font-medium text-needs inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
     h('div', 'flex flex-col gap-2',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Acceptance'),
       h('textarea', { className: 'w-full bg-well border border-line2 rounded-[6px] p-3 text-xs text-fg focus:outline-none focus:border-needs font-mono leading-relaxed', rows: 3, name: 'req-detail', value: detail, onChange: e => setDetail(e.target.value) })),
@@ -2490,7 +2518,7 @@ function SpecView({ project, r, ret, need }) {
         h('h2', 'text-base font-semibold text-fg tracking-tight', r.text),
         ch && r.status === 'stale' ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
           h('div', 'flex items-center gap-2 text-muted', h('span', 'w-1.5 h-1.5 rounded-full bg-stale'), h('span', null, `${ch.rung} · ${ch.after} · ${editedAgo(ch)}`)),
-          h('a', { className: 'text-[11px] font-medium text-needs cursor-pointer', 'data-testid': 'view-change', onClick: () => navigate('change', { change: ch.id, rid: ch.rung }) }, 'View change')) : null),
+          h('button', { type: 'button', className: 'text-[11px] font-medium text-needs inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'view-change', onClick: () => navigate('change', { change: ch.id, rid: ch.rung }) }, 'View change')) : null),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-1 border-t border-line',
         h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs mt-3', r.status !== 'stale' && 'opacity-40 cursor-not-allowed'), 'data-testid': 'approve', 'data-locked': r.status !== 'stale' ? '1' : undefined, onClick: () => r.status === 'stale' && act(`${P(project)}/rungs/${r.id}/approve`) }, 'Approve'),
@@ -2509,7 +2537,7 @@ function SpecView({ project, r, ret, need }) {
       h(ExcludedList, { excluded: a.excluded })) : h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
         h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
-        h('a', { className: 'text-[11px] text-needs font-medium cursor-pointer', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
+        h('button', { type: 'button', className: 'text-[11px] text-needs font-medium inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
       h('div', 'flex flex-col gap-3',
         ...(picking
           ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { agent: s.profile }) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
@@ -3622,10 +3650,13 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
   // Escape closes the topmost dialog wherever focus is, not only from inside it.
   useEffect(() => {
     const key = e => {
-      if (e.key !== 'Escape' || e.defaultPrevented || !box.current || box.current.contains(e.target)) return
+      if ((e.key !== 'Escape' && e.key !== 'Tab') || e.defaultPrevented || !box.current || box.current.contains(e.target)) return
       const all = document.querySelectorAll('.rung [role=dialog]')
       if (all[all.length - 1] !== box.current) return
-      e.preventDefault(); askRef.current()
+      e.preventDefault()
+      // Tab from outside the open dialog (focus on its backdrop) comes back into it.
+      if (e.key === 'Tab') { const els = [...box.current.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null); if (els.length) els[e.shiftKey ? els.length - 1 : 0].focus(); return }
+      askRef.current()
     }
     document.addEventListener('keydown', key)
     return () => document.removeEventListener('keydown', key)
@@ -3642,16 +3673,19 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
   const tid = (testid || 'dialog') + '-title'
   return h('div', {
     className: 'absolute inset-0 bg-well/75 flex items-center justify-center z-50 p-4',
-    onMouseDown: e => { down.current = e.target === e.currentTarget },
+    onMouseDown: e => { down.current = e.target === e.currentTarget; if (down.current) e.preventDefault() },
     onMouseUp: e => { if (down.current && e.target === e.currentTarget) ask(); down.current = false }
   },
     h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
         h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
-      h('div', 'p-5 flex flex-col gap-4', children),
-      footer ? h('div', 'flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line bg-card', footer) : null))
+      hasBody(children) ? h('div', 'p-5 flex flex-col gap-4', children) : null,
+      footer ? h('div', cx('flex items-center justify-end gap-2 px-5 py-3.5 bg-card', hasBody(children) && 'border-t border-line'), footer) : null))
 }
+
+// A dialog with only a title and buttons draws no empty body between them.
+const hasBody = c => (Array.isArray(c) ? c : [c]).some(x => x != null && x !== false && x !== '')
 
 // Leaving a form with unsaved text: keep editing, or discard and go.
 function LeaveDialog() {
@@ -3935,7 +3969,7 @@ function ProjectSettings({ project }) {
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const save = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/update`, f)
-    if (!x.ok) { setErrs(x.field ? { [x.field]: x.error } : {}); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
+    if (!x.ok) { setErrs(x.fields || (x.field ? { [x.field]: x.error } : {})); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
     setErrs({}); setErr('')
     notify('Saved')
     if (x.data.name !== project) navigate('project-settings', { k: Date.now() }, { force: true, replace: true })

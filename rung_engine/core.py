@@ -93,11 +93,38 @@ def writes(rid: bool = True):
 class RungError(ValueError):
     """A refused operation. `code` is stable for the API layer."""
 
-    def __init__(self, message: str, code: str = "refused", status: int = 409, field: str | None = None):
+    def __init__(self, message: str, code: str = "refused", status: int = 409, field: str | None = None,
+                 fields: dict | None = None):
         super().__init__(message)
         self.code = code
         self.status = status
         self.field = field
+        self.fields = fields  # every field a refused form names, field -> message
+
+
+class FieldErrors:
+    """Collects each field's refusal so a form is told about every field at once, not the first only."""
+
+    def __init__(self):
+        self.errors: dict[str, str] = {}
+        self.first: RungError | None = None  # its status and code answer for the form (a taken name stays 409)
+
+    def check(self, fn, *args):
+        try:
+            return fn(*args)
+        except RungError as exc:
+            if not exc.field:
+                raise
+            self.errors.setdefault(exc.field, str(exc))
+            self.first = self.first or exc
+            return None
+
+    def raise_any(self):
+        if self.errors:
+            field, message = next(iter(self.errors.items()))
+            code, status = (self.first.code, self.first.status) if self.first and self.first.field == field \
+                else ("bad_request", 400)
+            raise RungError(message, code=code, status=status, field=field, fields=dict(self.errors))
 
 
 class NotFound(RungError):
@@ -418,18 +445,20 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         and every value stays the caller's to change. Errors name the field they belong to."""
         name, folder, test_command = (_text_field(v, f) for v, f in
                                       ((name, "name"), (folder, "folder"), (test_command, "test_command")))
-        self._check_folder(folder)
+        errs = FieldErrors()
+        errs.check(self._check_folder, folder)
         folder = str(Path(folder).expanduser())  # stored as the folder tests run in
         defaults = self.project_defaults(folder)
         name = name or defaults["name"]
         test_command = test_command or defaults["test_command"]
         # Not sent: the enabled profiles. Sent: exactly what was ticked, so an empty list is refused.
-        profiles = defaults["profiles"] if profiles is None else _profile_list(profiles)
-        self._check_name(name)
+        profiles = defaults["profiles"] if profiles is None else errs.check(_profile_list, profiles)
+        errs.check(self._check_name, name)
         if not test_command:
-            raise RungError("test command is required", code="bad_request", status=400, field="test_command")
-        if not profiles:
-            raise RungError("tick at least one profile", code="bad_request", status=400, field="profiles")
+            errs.errors.setdefault("test_command", "test command is required")
+        if profiles is not None and not profiles:
+            errs.errors.setdefault("profiles", "tick at least one profile")
+        errs.raise_any()
         now = self.clock()
         with self._tx() as c:
             for p in profiles:

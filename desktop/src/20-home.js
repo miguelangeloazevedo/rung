@@ -349,7 +349,7 @@ function NewProject() {
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
     if (res.ok) { finish('home'); return notify(`Created ${res.data && res.data.name ? res.data.name : name.trim()}`) }
-    setErrs(res.field ? { [res.field]: res.error } : {})
+    setErrs(res.fields || (res.field ? { [res.field]: res.error } : {}))
     setErr(res.field ? '' : res.error)
     if (res.field) focusInvalid()
   }

@@ -32,10 +32,13 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
   // Escape closes the topmost dialog wherever focus is, not only from inside it.
   useEffect(() => {
     const key = e => {
-      if (e.key !== 'Escape' || e.defaultPrevented || !box.current || box.current.contains(e.target)) return
+      if ((e.key !== 'Escape' && e.key !== 'Tab') || e.defaultPrevented || !box.current || box.current.contains(e.target)) return
       const all = document.querySelectorAll('.rung [role=dialog]')
       if (all[all.length - 1] !== box.current) return
-      e.preventDefault(); askRef.current()
+      e.preventDefault()
+      // Tab from outside the open dialog (focus on its backdrop) comes back into it.
+      if (e.key === 'Tab') { const els = [...box.current.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null); if (els.length) els[e.shiftKey ? els.length - 1 : 0].focus(); return }
+      askRef.current()
     }
     document.addEventListener('keydown', key)
     return () => document.removeEventListener('keydown', key)
@@ -52,16 +55,19 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
   const tid = (testid || 'dialog') + '-title'
   return h('div', {
     className: 'absolute inset-0 bg-well/75 flex items-center justify-center z-50 p-4',
-    onMouseDown: e => { down.current = e.target === e.currentTarget },
+    onMouseDown: e => { down.current = e.target === e.currentTarget; if (down.current) e.preventDefault() },
     onMouseUp: e => { if (down.current && e.target === e.currentTarget) ask(); down.current = false }
   },
     h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
         h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
-      h('div', 'p-5 flex flex-col gap-4', children),
-      footer ? h('div', 'flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line bg-card', footer) : null))
+      hasBody(children) ? h('div', 'p-5 flex flex-col gap-4', children) : null,
+      footer ? h('div', cx('flex items-center justify-end gap-2 px-5 py-3.5 bg-card', hasBody(children) && 'border-t border-line'), footer) : null))
 }
+
+// A dialog with only a title and buttons draws no empty body between them.
+const hasBody = c => (Array.isArray(c) ? c : [c]).some(x => x != null && x !== false && x !== '')
 
 // Leaving a form with unsaved text: keep editing, or discard and go.
 function LeaveDialog() {
@@ -345,7 +351,7 @@ function ProjectSettings({ project }) {
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const save = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/update`, f)
-    if (!x.ok) { setErrs(x.field ? { [x.field]: x.error } : {}); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
+    if (!x.ok) { setErrs(x.fields || (x.field ? { [x.field]: x.error } : {})); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
     setErrs({}); setErr('')
     notify('Saved')
     if (x.data.name !== project) navigate('project-settings', { k: Date.now() }, { force: true, replace: true })

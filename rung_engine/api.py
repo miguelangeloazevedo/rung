@@ -66,6 +66,8 @@ def handle(svc: Service, method: str, path: str, body: Any = None, human: Actor 
             out = {"detail": str(exc), "code": exc.code}
             if getattr(exc, "field", None):
                 out["field"] = exc.field
+            if getattr(exc, "fields", None):
+                out["fields"] = exc.fields
             return exc.status, out
         except ApiError as exc:
             return exc.status, {"detail": exc.detail, "code": exc.code}

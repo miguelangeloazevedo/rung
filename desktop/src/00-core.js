@@ -245,13 +245,39 @@ function errInfo(e) {
   const raw = (e && (e.body || e.data || e.detail || e.message)) || String(e)
   let j = typeof raw === 'object' ? raw : null
   if (!j) { try { j = JSON.parse(String(raw).replace(/^[^{]*/, '')) } catch (_) { j = null } }
-  return { field: (j && j.field) || null, code: (j && j.code) || null }
+  return { field: (j && j.field) || null, fields: (j && j.fields) || null, code: (j && j.code) || null }
+}
+
+// The result line of each create, save, approve and record (NAV-11), named once here so no door forgets it.
+// Views that know a better name (Retired, Archived, Raised...) call notify() after, which replaces this one.
+const RESULTS = [
+  [/\/rungs\/([^/]+)\/approve$/, m => `Approved ${m[1]}`],
+  [/\/needs\/([^/]+)\/approve-requirements$/, m => `Approved the requirements of ${m[1]}`],
+  [/\/needs\/([^/]+)\/approve-drafted$/, m => `Approved the specifications of ${m[1]}`],
+  [/\/needs\/([^/]+)\/approve-tests$/, m => `Approved the tests of ${m[1]}`],
+  [/\/tests\/([^/]+)\/executions\/(\d+)\/approve$/, m => `Approved execution ${m[2]} of ${m[1]}`],
+  [/\/rungs\/([^/]+)\/edit$/, m => `Saved ${m[1]}`],
+  [/\/projects\/[^/]+\/needs$/, (m, b, d) => `Created ${(d && d.id) || 'the need'}`],
+  [/\/needs\/[^/]+\/requirements$/, (m, b, d) => `Added ${(d && d.id) || 'the requirement'}`],
+  [/\/rungs\/[^/]+\/spec$/, (m, b, d) => `Added ${(d && d.id) || 'the specification'}`],
+  [/\/specs\/[^/]+\/tests$/, (m, b, d) => `Added ${(d && d.id) || 'the test'}`],
+  [/\/projects\/[^/]+\/tests\/([^/]+)$/, m => `Saved ${m[1]}`],
+  [/\/tests\/([^/]+)\/record$/, (m, b) => `Recorded ${b && b.result === 'fail' ? 'Fail' : 'Pass'} for ${m[1]}`],
+  [/\/suggestions\/[^/]+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
+  [/\/bot\/[^/]+\/items\/\d+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
+]
+function resultLine(path, body, data) {
+  const p = decodeURIComponent(String(path).split('?')[0])
+  for (const [re, f] of RESULTS) { const m = p.match(re); if (m) return f(m, body, data) }
+  return null
 }
 
 async function post(path, body) {
   try {
     const data = await rest(path, { method: 'POST', body: body || {} })
     refresh()
+    const line = resultLine(path, body, data)
+    if (line) notify(line)
     return { ok: true, data }
   } catch (e) {
     refresh()
