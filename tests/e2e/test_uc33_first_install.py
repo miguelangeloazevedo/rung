@@ -245,6 +245,50 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
             assert labels[testid] == {label}, (testid, labels[testid])
 
 
+def test_the_test_command_is_optional_and_explained(rung, page):
+    """A folder Rung does not recognise leaves the test command empty, and the project is made without one.
+    Both project forms mark the field optional and explain it in a dialog that Escape and Close leave."""
+    e = rung.engine
+    notes = rung.work / "notes"
+    notes.mkdir(parents=True, exist_ok=True)
+    (notes / "ideas.txt").write_text("synthetic notes\n")
+    H.open_rung(page)
+    page.evaluate("window.__rungNavigate('project-new')")
+    H.wait_view(page, "project-new")
+    form = page.locator(".rung [data-testid=new-project]")
+    form.locator("input[name=folder]").fill(str(notes))
+    form.locator("input[name=folder]").press("Tab")
+    H.wait_until(lambda: form.locator("input[name=name]").input_value() == "notes", msg="name filled in")
+    cmd = form.locator("input[name=test_command]")
+    assert cmd.input_value() == "" and cmd.get_attribute("aria-label") == "Test command, optional"
+    assert "optional" in form.inner_text()
+
+    def explained(scope, close):
+        about = H.button(page, "About the test command", scope)
+        about.click()
+        dlg = page.locator(".rung [data-testid=about-test-command-dialog]")
+        dlg.wait_for(timeout=5000)
+        assert dlg.locator("h2").inner_text() == "Test command"
+        assert "pytest" in dlg.locator("[data-testid=test-command-examples]").inner_text()
+        assert "Leave it empty" in dlg.inner_text()
+        close(dlg)
+        H.wait_until(lambda: dlg.count() == 0, msg="the dialog closes")
+        H.wait_until(lambda: page.evaluate("document.activeElement && document.activeElement.dataset.testid") == "about-test-command",
+                     msg="focus back on the button")
+
+    explained(form, lambda dlg: page.keyboard.press("Escape"))
+    assert page.evaluate("window.__rungNav()")["view"] == "project-new", "Escape closed the dialog only"
+    H.button(page, "Create project", form).click()
+    H.wait_until(lambda: H.view(page) == "home", msg=lambda: form.inner_text()[:400] if form.count() else H.view(page))
+    assert e.project("notes")["test_command"] == ""
+
+    page.evaluate("window.__rungNavigate('project-settings')")
+    H.wait_view(page, "project-settings")
+    sec = page.locator(".rung [data-testid=project-settings]")
+    assert sec.locator("input[name=test_command]").get_attribute("aria-label") == "Test command, optional"
+    explained(sec, lambda dlg: H.button(page, "Close", dlg).click())
+
+
 def test_fst03_choose_folder_on_both_project_forms(rung, page):
     """Choose asks the host for a folder on New project and Project settings; cancel changes nothing, a failed
     pick says so, and without a host picker there is no Choose button (never a control that does nothing)."""

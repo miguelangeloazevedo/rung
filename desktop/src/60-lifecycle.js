@@ -121,17 +121,38 @@ function DangerBtn({ onClick, disabled, children, testid }) {
 
 // The visible label is the control's accessible name (never the field's internal name).
 const FORM_TAGS = { input: 1, textarea: 1, select: 1 }
-function Field({ label, error, name, children }) {
+function Field({ label, error, name, children, optional, aside }) {
+  const spoken = optional ? `${label}, optional` : label
   const named = typeof label === 'string'
-    ? React.Children.map(children, c => (React.isValidElement(c) && FORM_TAGS[c.type] ? React.cloneElement(c, { 'aria-label': label }) : c))
+    ? React.Children.map(children, c => (React.isValidElement(c) && FORM_TAGS[c.type] ? React.cloneElement(c, { 'aria-label': spoken }) : c))
     : children
   return h('div', 'flex flex-col gap-1.5',
-    h('span', { className: 'text-xs font-medium text-muted', 'aria-hidden': 'true' }, label),
+    h('div', 'flex items-center gap-1.5',
+      h('span', { className: 'text-xs font-medium text-muted', 'aria-hidden': 'true' }, label),
+      optional ? h('span', { className: 'text-[11px] text-dim', 'aria-hidden': 'true' }, 'optional') : null,
+      aside || null),
     named,
     error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', role: 'alert', id: name ? 'fe-' + name : undefined }, error) : null)
 }
 
 const INPUT = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'
+
+// What the test command is, on request: the one explanation the forms carry (Miguel, Round 20).
+const TEST_COMMANDS = ['pytest', 'npm test', 'cargo test', 'go test ./...', 'make test']
+function AboutTestCommand() {
+  const [open, setOpen] = useState(false)
+  return frag(
+    h('button', { type: 'button', 'data-testid': 'about-test-command', 'aria-label': 'About the test command', title: 'About the test command',
+      className: 'inline-flex items-center justify-center min-w-[24px] min-h-[24px] rounded-full border border-line text-[11px] text-muted hover:text-fg',
+      onClick: () => setOpen(true) }, '?'),
+    open ? h(Dialog, { title: 'Test command', testid: 'about-test-command-dialog', onClose: () => setOpen(false),
+      footer: h(Btn, { kind: 'primary', testid: 'about-close', onClick: () => setOpen(false) }, 'Close') },
+      h('p', 'text-xs text-fg leading-relaxed', "The command that runs your project's tests, as you would type it in a terminal inside the project folder."),
+      h('div', { className: 'flex flex-wrap gap-1.5', 'data-testid': 'test-command-examples' },
+        ...TEST_COMMANDS.map(c => h('code', { key: c, className: 'mono text-[11px] px-1.5 py-0.5 rounded bg-well border border-line2 text-fg' }, c))),
+      h('p', 'text-xs text-fg leading-relaxed', 'Rung fills it in when it recognises the folder, and puts it in the command tests it drafts for you. Each test keeps its own command, which you can change before you approve it.'),
+      h('p', 'text-xs text-fg leading-relaxed', 'Not sure? Leave it empty. You can add it later in Project settings.')) : null)
+}
 
 // ------------------------------------------------------------------ start screen
 
@@ -411,7 +432,7 @@ function ProjectSettings({ project }) {
       h(Field, { label: 'Name', error: errs.name, name: 'name' }, h('input', { 'aria-invalid': errs.name ? 'true' : undefined, className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h(FolderInput, { className: INPUT, value: f.folder, invalid: !!errs.folder,
         onChange: v => setF(x => ({ ...x, folder: v })), onPicked: p => setF(x => ({ ...x, folder: p })) })),
-      h(Field, { label: 'Test command', error: errs.test_command, name: 'test_command' }, h('input', { 'aria-invalid': errs.test_command ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'test_command', value: f.test_command, onChange: set('test_command') })),
+      h(Field, { label: 'Test command', optional: true, aside: h(AboutTestCommand), error: errs.test_command, name: 'test_command' }, h('input', { 'aria-invalid': errs.test_command ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'test_command', value: f.test_command, onChange: set('test_command') })),
       h(Field, { label: 'Profiles', error: errs.profiles },
         h('div', 'flex flex-col gap-2 pt-1',
           ...all.map(p => h('label', { key: p, className: 'flex items-center gap-2.5 text-xs text-fg cursor-pointer' },

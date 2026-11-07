@@ -13,7 +13,7 @@ def test_create_project_stores_exact_values(engine, tmp_path):
     assert len(engine.projects()) == 1
 
 
-@pytest.mark.parametrize("field", ["folder", "test_command", "profiles"])
+@pytest.mark.parametrize("field", ["folder", "profiles"])
 def test_prj02_create_project_names_the_missing_field(engine, tmp_path, field):
     """Only the folder is required; a value that cannot be filled in is refused on its own field."""
     args = {"name": "x", "folder": str(tmp_path), "test_command": "pytest", "profiles": ["coder"]}
@@ -22,6 +22,15 @@ def test_prj02_create_project_names_the_missing_field(engine, tmp_path, field):
         engine.create_project(**args)
     assert exc.value.field == field
     assert engine.projects() == []
+
+
+def test_the_test_command_is_optional(engine, tmp_path):
+    """Nothing detected and nothing typed: the project is made without one, and it can be cleared later."""
+    p = engine.create_project("x", str(tmp_path), "", ["coder"])
+    assert p["test_command"] == ""
+    engine.update_project("x", test_command="pytest")
+    engine.update_project("x", test_command="")
+    assert engine.project("x")["test_command"] == ""
 
 
 def test_duplicate_project_refused(engine, tmp_path):

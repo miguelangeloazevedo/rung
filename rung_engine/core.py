@@ -454,8 +454,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         # Not sent: the enabled profiles. Sent: exactly what was ticked, so an empty list is refused.
         profiles = defaults["profiles"] if profiles is None else errs.check(_profile_list, profiles)
         errs.check(self._check_name, name)
-        if not test_command:
-            errs.errors.setdefault("test_command", "test command is required")
+        # The test command is optional: detected when the folder shows one, else left for the person to add later.
         if profiles is not None and not profiles:
             errs.errors.setdefault("profiles", "tick at least one profile")
         errs.raise_any()

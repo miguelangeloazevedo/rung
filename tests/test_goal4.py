@@ -257,11 +257,11 @@ def test_nav10_a_refused_project_names_every_field(tmp_path):
     e.create_project("p", str(tmp_path / "p"), "true", ["coder"])
     with pytest.raises(RungError) as got:
         e.create_project("p", str(tmp_path / "missing"), "", [])
-    assert set(got.value.fields) == {"name", "folder", "test_command", "profiles"}
+    assert set(got.value.fields) == {"name", "folder", "profiles"}
     svc = Service(e)
     status, body = api.handle(svc, "POST", "/projects", {"name": "p", "folder": str(tmp_path / "missing"), "test_command": "true", "profiles": ["coder"]})
     assert status in (400, 409) and set(body["fields"]) == {"name", "folder"} and body["field"] in body["fields"]
     with pytest.raises(RungError) as got:
         e.update_project("p", new_name="", folder=str(tmp_path / "missing"), test_command="")
-    assert set(got.value.fields) == {"name", "folder", "test_command"}
+    assert set(got.value.fields) == {"name", "folder"}
     e.close()

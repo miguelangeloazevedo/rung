@@ -263,3 +263,11 @@ Three independent reviewers (22 findings, 2 rated major) on the Round 18 code an
 | One name | Needs you's empty state no longer adds `Priority queue`. |
 | Declined | `Write the first need` beside `New need` (frozen acceptance.md UC01 step 3). The chip's count is the current project's (frozen FRT-05; the harness reads `Rung: N`). `Suggesting` on New need (it comes from the drafting profile, not a keyword match). `Accept R-4` style names on row actions (frozen UC03 finds `Accept` and `Dismiss` by name within the row; Round 14). Settings' Back lands on Home (frozen UC07). `Keep my text` (frozen BOT-05 names `Keep`). Clearing `Drafted by` on every keystroke (it names the last draft until the next one). The proposal card's click (it already follows the Round 17 rule: not a button, its title is). Count differences between gallery shots (different seeded states). `refused: /state` (the test hook's refusal text, not a product message). |
 
+## Round 20: the test command is optional and explained (8 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Optional | A project no longer needs a test command. New project and Project settings mark it `optional`; the engine accepts it empty on create and lets it be cleared later; doctor reports `not set` as a pass. Frozen PRJ-02 names only the folder and duplicate names, so no frozen criterion changes. |
+| Still prefilled | Rung keeps filling it in when it recognises the folder (pytest, npm test, cargo test, go test, make test, unittest). |
+| Explained on request | A `?` button beside the label (`About the test command`) opens a dialog: what it is, five examples, that Rung puts it in the command tests it drafts and each test keeps its own command, and `Not sure? Leave it empty.` The form itself stays labels and data. |
+

@@ -87,6 +87,9 @@ def run_checks(store: Path, hermes_bin: str | None = None, plugin_root: Path = R
         folder_ok = Path(pfolder).expanduser().is_dir()
         out.append(_check(f"project {name} folder", folder_ok, pfolder,
                           f"restore the folder, or change it: Rung pane, {name}, Project settings"))
+        if not (command or "").strip():
+            out.append(_check(f"project {name} test command", True, "not set", ""))
+            continue
         cmd_ok, detail = _test_command(command or "", Path(pfolder).expanduser())
         out.append(_check(f"project {name} test command", cmd_ok, detail,
                           f"install it, or change it: Rung pane, {name}, Project settings"))
