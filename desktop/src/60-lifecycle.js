@@ -13,7 +13,7 @@ function Dialog({ title, onClose, children, footer, testid }) {
     return () => { if (opener && opener.focus && document.contains(opener)) opener.focus() }
   }, [])
   const onKeyDown = e => {
-    if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return }
     if (e.key !== 'Tab' || !box.current) return
     const els = [...box.current.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null)
     if (!els.length) return
@@ -29,6 +29,18 @@ function Dialog({ title, onClose, children, footer, testid }) {
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: onClose }, '✕')),
       h('div', 'p-5 flex flex-col gap-4', children),
       footer ? h('div', 'flex items-center justify-end gap-2 px-5 py-3.5 border-t border-line bg-card', footer) : null))
+}
+
+// Leaving a form with unsaved text: keep editing, or discard and go.
+function LeaveDialog() {
+  const l = useValue($leave)
+  if (!l) return null
+  const keep = () => $leave.set(null)
+  const discard = () => { $leave.set(null); l.go() }
+  return h(Dialog, {
+    title: 'Discard changes?', onClose: keep, testid: 'leave-dialog',
+    footer: frag(h(Btn, { testid: 'keep-editing', onClick: keep }, 'Keep editing'), h(DangerBtn, { testid: 'discard', onClick: discard }, 'Discard'))
+  })
 }
 
 function DangerBtn({ onClick, disabled, children, testid }) {
@@ -147,7 +159,7 @@ function ReadOut({ project, need }) {
   const [exported, setExported] = useState(null)
   const [err, setErr] = useState('')
   const d = q.data
-  if (q.error) return h(Page, { project }, h(ErrorLine, { text: errText(q.error) }), h(Btn, { onClick: () => navigate('home') }, 'Back'))
+  if (q.error) return h(Missing, { project, text: errText(q.error) })
   if (!d) return h(Page, { project, sel: need }, h(Loading))
   const n = d.need
   const exp = async () => {
@@ -162,7 +174,7 @@ function ReadOut({ project, need }) {
       h('div', 'flex items-center gap-2',
         n.retired ? h(Badge, { status: 'retired' }) : h(Badge, { status: n.status }),
         h(Btn, { kind: 'primary', testid: 'export', onClick: exp }, 'Export'),
-        h(Btn, { testid: 'back', onClick: () => navigate('rung', { rid: n.id }) }, 'Back'))),
+        h(Btn, { testid: 'back', onClick: () => goBack('rung', { rid: n.id }) }, 'Back'))),
     exported ? h(Well, { className: 'flex items-center justify-between text-xs', testid: 'export-path' },
       h('span', 'text-muted', 'Exported'), h('span', 'mono text-fg', shortPath(exported))) : null,
     h(ErrorLine, { text: err }),
@@ -237,8 +249,8 @@ function Retired({ project }) {
   const rows = q.data || []
   const main = frag(
     h('header', 'flex flex-col gap-4',
-      h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
-      h('h2', 'text-xl font-bold tracking-tight text-fg', 'Retired needs')),
+      h(Header, { project, title: null, right: h(Btn, { onClick: () => goBack('home') }, 'Back') }),
+      h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Retired needs')),
     h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'retired-list' },
       q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, 'No retired needs') : null,
       ...rows.map(n => h(Card, { key: n.id, className: 'p-4 flex items-center justify-between', testid: 'retired-row', onClick: () => navigate('rung', { rid: n.id }) },
@@ -289,9 +301,11 @@ function ProjectSettings({ project }) {
   useEffect(() => {
     if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles })
   }, [proj && proj.name])
+  useDirty(f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()]))
+  useExit(() => goBack('home', null, { force: true }))
   if (!st) return h(Frame, { main: h(Loading) })
   if (!proj || !f) {
-    return h(Frame, { main: frag(h(ErrorLine, { text: st.current_archived ? `${project} is archived` : `no project ${project}` }), h('div', null, h(Btn, { onClick: () => navigate('projects') }, 'Projects'))) })
+    return h(Missing, { text: st.current_archived ? `${project} is archived` : `no project ${project}` })
   }
   const all = (st.profiles || []).map(p => p.name)
   const set = k => e => setF({ ...f, [k]: e.target.value })
@@ -299,18 +313,18 @@ function ProjectSettings({ project }) {
     const x = await post(`/projects/${encodeURIComponent(project)}/update`, f)
     if (!x.ok) { setErrs(x.field ? { [x.field]: x.error } : {}); return setErr(x.field ? '' : x.error) }
     setErrs({}); setErr('')
-    if (x.data.name !== project) navigate('project-settings', { k: Date.now() })
+    if (x.data.name !== project) navigate('project-settings', { k: Date.now() }, { force: true, replace: true })
   }
   const archive = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/archive`)
     if (!x.ok) return setErr(x.error)
-    navigate('projects', { tab: 'archived' })
+    navigate('projects', { tab: 'archived' }, { force: true })
   }
   const events = (pq.data || []).filter(e => e.kind === 'project_changed').slice().reverse()
   const main = frag(
     h('header', 'flex flex-col gap-4',
-      h(Header, { project, right: h(Btn, { onClick: () => navigate('home') }, 'Back') }),
-      h('h2', 'text-xl font-bold tracking-tight text-fg', 'Project settings')),
+      h(Header, { project, title: null, right: h(Btn, { onClick: () => goBack('home') }, 'Back') }),
+      h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Project settings')),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name }, h('input', { className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),

@@ -4,7 +4,7 @@ function App() {
   const nav = useValue($nav)
   const { state, project, loading, error } = useCurrent()
   if (loading && !state) return h(Root, { className: 'h-full' }, h(Loading))
-  if (error && !state) return h(Root, { className: 'h-full' }, h('div', 'p-8', h(ErrorLine, { text: 'Rung backend unavailable: ' + errText(error) })))
+  if (error && !state) return h(Root, { className: 'h-full' }, h('div', 'p-8 flex flex-col gap-3', h(ErrorLine, { text: 'Rung backend unavailable: ' + errText(error) }), h('div', null, h(Btn, { testid: 'retry', onClick: () => refresh() }, 'Retry'))))
   if (state && state.settings && $colours.get() == null) $colours.set(state.settings.colours || {})
   let view = nav.view
   const noProjects = state && !(state.projects || []).length && !state.current
@@ -22,8 +22,29 @@ function App() {
   else if (view === 'project-new') body = h(NewProject)
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
-  else body = h(Home, { project })
-  return h(Root, { className: 'relative h-full w-full' }, h('div', { className: 'h-full w-full', 'data-rung-view': view }, body), project ? h(DefectModal, { project }) : null)
+  else body = h(Missing, { project, text: `no view ${view}` })
+  return h(Root, { className: 'relative h-full w-full' },
+    h(ViewFocus, { nav }),
+    h('div', { className: 'h-full w-full', 'data-rung-view': view }, body),
+    project ? h(DefectModal, { project }) : null,
+    h(LeaveDialog))
+}
+
+// After a view change, focus goes to the new view: its first field when it puts one in focus, else its title.
+function ViewFocus({ nav }) {
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const root = document.querySelector('.rung [data-rung-view]')
+      if (!root || !String(location.hash || '').includes(ROUTE)) return
+      const a = document.activeElement
+      if (a && a !== document.body && root.contains(a)) return
+      if (document.querySelector('.rung [role=dialog]')) return
+      const t = root.querySelector('[data-page-title]') || root.querySelector('h1')
+      if (t) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }) }
+    }, 60)
+    return () => clearTimeout(id)
+  }, [nav])
+  return null
 }
 
 function StatusChip() {
@@ -57,7 +78,9 @@ export default {
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)
-    window.__rungNavigate = openRung  // tests: open a view, moving the app
+    window.__rungNavigate = (v, p) => openRung(v, p, { force: true })  // tests: open a view, moving the app
+    document.addEventListener('keydown', onEscape)
+    ctx.onDispose(() => document.removeEventListener('keydown', onEscape))
     window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest

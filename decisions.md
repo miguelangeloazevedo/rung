@@ -127,3 +127,17 @@ Entry rules (Nous announcement, 4 Nov): a PR adding `plugin-catalog/<name>.yaml`
 | Listing | The catalog has no regulatory, SDLC or development-practice category (the vocabulary is desktop, memory, platform, web, tools, voice, automation, models, general), so: category `desktop`, title Rung, a 2:1 banner and up to 6 screenshots from the real Desktop with synthetic demo data, README rendered on the listing page. |
 
 Open: who makes the demo video and how (Tue 10 Nov); narration.
+
+## Round 10: navigation contract, first review round (7 Nov 2026)
+
+
+| Topic | Decision |
+| --- | --- |
+| Unsaved text | Every form and editor reports unsaved text. Any view change it did not ask for (rail, crumbs, header, dock, status chip, Back, Escape) first asks Discard or Keep editing. An explicit Cancel discards without asking; the move after a save never asks. |
+| Way out | Every task view (need, requirement, specification and test editors, new project, settings, project settings) has a visible way out, and Escape takes it. The requirement editor gains Cancel. Build steps 2 to 5 have Back to the previous step, first in the footer. |
+| Back | Back returns to the view the person came from, else to the view's parent. Labels that name a place (Back to test, Back to run, Back to build) keep going there. |
+| Overlays | A dialog belongs to the view that opened it: any view change closes it, and closing the Raise defect route returns to Home without a history entry. |
+| Bad destinations | A missing rung, execution, run, attempt, change or project, a failed load and an unknown view all show one page: what is missing, then Back, Home and Projects. No view waits on Loading after its data failed. |
+| Where am I | In-project views carry an h1 with the page's own name after the project name. The project name is a button to the project list. Crumbs are a breadcrumb nav with the current item marked; the strip marks the current step; the rail marks the open rung. After a view change focus moves to the new view's first field, else its title. |
+| Settings | Settings is a named button in the header of every in-project view. |
+| Not changed | Start screen cross (frozen UC13.5); Archive and Revert stay one click because both are undone in place (Restore, revert again) and frozen UC18 and UC27 click them directly; row verbs (Edit, Open) keep their names because frozen tests find them by exact name and the row gives the item; empty-state actions, the project home and reopening on the last view wait for the projects-view choice; browser Back and links into a view need host routing a plugin cannot set. |

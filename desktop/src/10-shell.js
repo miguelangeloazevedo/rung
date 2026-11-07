@@ -96,18 +96,50 @@ function Card({ children, className, onClick, testid, style }) {
 
 // ------------------------------------------------------------------ header and tiles
 
-function Header({ project, right, ro }) {
+// The page's own name: the h1 of every in-project view, after the project it belongs to.
+function usePageTitle(project) {
+  const nav = useValue($nav)
+  const rq = useRung(project, nav.view === 'rung' ? nav.rid : null)
+  const v = nav.view
+  if (v === 'home' || v === 'defect-new') return 'Home'
+  if (v === 'rung') return rq.data ? `${KIND_WORD[rq.data.kind] || 'Rung'} ${nav.rid}` : ''
+  if (v === 'need-new') return 'New need'
+  if (v === 'req-new') return 'New requirement'
+  if (v === 'spec-edit') return nav.spec ? `Edit ${nav.spec}` : 'New specification'
+  if (v === 'test-edit') return nav.test ? `Edit ${nav.test}` : 'New test'
+  if (v === 'build') return `${STEPS[{ need: 0, reqs: 1, specs: 2, tests: 3, develop: 4 }[nav.step] ?? 1]} · ${nav.need}`
+  if (v === 'readout') return `Read-out · ${nav.need}`
+  if (v === 'change') return `Change · ${nav.rid}`
+  if (v === 'run') return `Run ${nav.run}`
+  if (v === 'attempt') return `Run ${nav.run} · attempt ${nav.n}`
+  if (v === 'exec') return `Execution ${nav.test} #${nav.n}`
+  return VIEWS[v] ? '' : 'Not found'
+}
+
+function Header({ project, right, ro, title }) {
+  const auto = usePageTitle(project)
+  const name = title === undefined ? auto : title
   return h('div', 'flex items-center justify-between',
-    h('div', 'flex items-center gap-3',
+    h('div', 'flex items-center gap-3 min-w-0',
       h('span', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
       h('span', 'text-line', '/'),
-      h('h1', {
-        className: 'text-xl font-bold tracking-tight text-fg cursor-pointer',
+      h('button', {
+        type: 'button',
+        className: 'text-xl font-bold tracking-tight text-fg',
         'data-testid': 'project-name',
+        'aria-label': `${project}, projects`,
+        title: 'Projects',
         onClick: () => navigate('projects')
-      }, project)),
+      }, project),
+      name ? h('span', 'text-line', '/') : null,
+      name ? h('h1', { className: 'text-sm font-semibold text-muted', 'data-page-title': '1', tabIndex: -1 }, name) : null),
     h('div', 'flex items-center gap-2',
       h(DockToggle),
+      h('button', {
+        type: 'button', 'data-testid': 'open-settings',
+        className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
+        onClick: () => navigate('settings')
+      }, 'Settings'),
       ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
       right === undefined && !ro
         ? h('button', {
@@ -171,6 +203,7 @@ function Strip({ current, reached, need, done: doneList }) {
       key: 's' + i,
       className: cx('flex items-center gap-2 shrink-0 rs-step', on && 'rs-on', locked ? 'cursor-not-allowed' : 'cursor-pointer'),
       'data-step': name, title: name, 'aria-label': name, 'data-locked': locked ? '1' : undefined, 'aria-disabled': locked ? 'true' : undefined,
+      'aria-current': on ? 'step' : undefined, tabIndex: locked ? -1 : 0,
       onClick: () => {
         if (locked) return
         if (i === 0) navigate(need ? 'rung' : 'need-new', need ? { rid: need } : null)
@@ -192,7 +225,8 @@ function Strip({ current, reached, need, done: doneList }) {
 function TreeTest({ n, sel }) {
   const t = tone(n)
   return h('div', {
-    className: 'pl-3 ml-0.5 py-1 border-l border-line flex items-center gap-1.5 cursor-pointer',
+    className: cx('pl-3 ml-0.5 py-1 border-l border-line flex items-center gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'),
+    'aria-current': sel === n.id ? 'page' : undefined,
     'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n),
     onClick: () => navigate('rung', { rid: n.id })
   },
@@ -206,7 +240,7 @@ function TreeSpec({ n, sel, hl }) {
   const tests = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
-    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -218,7 +252,7 @@ function TreeReq({ n, sel, hl }) {
   const t = tone(n)
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
-    h('div', { className: 'flex items-start gap-1.5 cursor-pointer', 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
@@ -230,7 +264,7 @@ function TreeNeed({ n, sel, hl }) {
   const t = tone(n)
   const reqs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1.5 text-xs',
-    h('div', { className: 'flex items-start gap-2 cursor-pointer', 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
+    h('div', { className: cx('flex items-start gap-2 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
       h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
       h('div', 'flex flex-col min-w-0',
         h('span', 'font-semibold text-fg', n.id),
@@ -289,6 +323,17 @@ function Frame({ main, rail, wide }) {
   return h('div', 'flex flex-row h-full w-full overflow-hidden',
     h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, main),
     rail || null)
+}
+
+// A destination that does not exist (a missing id, a failed load, an unknown view): what is missing, and a way on.
+function Missing({ project, text }) {
+  const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
+    h('h2', { className: 'text-sm font-semibold text-fg', role: 'alert' }, text),
+    h('div', 'flex items-center gap-2',
+      h(Btn, { kind: 'primary', testid: 'missing-back', onClick: () => goBack(project ? 'home' : 'projects') }, 'Back'),
+      project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
+      h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
+  return project ? h(Page, { project }, body) : h(Frame, { main: body })
 }
 
 function Loading() {

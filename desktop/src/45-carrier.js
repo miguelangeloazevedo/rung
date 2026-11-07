@@ -20,7 +20,7 @@ function ChipList({ items, onRemove, onAdd, testid, addLabel, attr }) {
               if (v && !items.includes(v)) onAdd(v)
               done()
             }
-            if (e.key === 'Escape') done()
+            if (e.key === 'Escape') { e.preventDefault(); done() }
           }
         })
         : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': addLabel, 'data-testid': testid + '-add', onClick: () => setAdding(true) }, '+')

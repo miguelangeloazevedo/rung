@@ -211,6 +211,7 @@ function StatChip({ label, n, t, of }) {
 function Projects({ tab }) {
   const st = useApi('/state').data
   const [qtext, setQ] = useState('')
+  const [err, setErr] = useState('')
   const archived = tab === 'archived'
   const rows = ((st && st.projects) || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   rows.sort((a, b) => (b.stats.last_activity || 0) - (a.stats.last_activity || 0))
@@ -223,12 +224,13 @@ function Projects({ tab }) {
       h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
         h('span', 'text-muted text-xs', '⌕'),
         h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
+    h(ErrorLine, { text: err }),
     archived ? h(ArchivedList, { qtext }) : null,
     archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
       st && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects') : null,
       ...rows.map(p => h(Card, {
         key: p.name, className: 'p-4 flex items-center justify-between', testid: 'project-row',
-        onClick: async () => { await post(`/projects/${encodeURIComponent(p.name)}/open`); navigate('home') }
+        onClick: async () => { const x = await post(`/projects/${encodeURIComponent(p.name)}/open`); if (!x.ok) return setErr(x.error); navigate('home') }
       },
       h('div', 'flex flex-col gap-1',
         h('div', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name),
@@ -256,6 +258,10 @@ function NewProject() {
   const [errs, setErrs] = useState({})
   const touched = useRef({})
   const hasProjects = st && st.projects && st.projects.length
+  const backToStart = !hasProjects && st && st.onboarding && st.onboarding.start
+  const exit = hasProjects ? () => navigate('projects', null, { force: true }) : backToStart ? () => navigate('start', null, { force: true }) : () => {}
+  useDirty(name.trim() || folder.trim() || cmd.trim())
+  useExit(exit)
   const fill = async path => {
     // Name, test command and profiles follow the folder until the person edits them.
     if (!path.trim()) return
@@ -275,7 +281,7 @@ function NewProject() {
   }
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
-    if (res.ok) return navigate('home')
+    if (res.ok) return navigate('home', null, { force: true })
     setErrs(res.field ? { [res.field]: res.error } : {})
     setErr(res.field ? '' : res.error)
   }
@@ -307,8 +313,8 @@ function NewProject() {
               h('span', null, p)))), fe('profiles'))),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center justify-end gap-2 pt-4 border-t border-line',
-        hasProjects ? h(Btn, { onClick: () => navigate('projects') }, 'Cancel')
-          : st && st.onboarding && st.onboarding.start ? h(Btn, { testid: 'back-to-start', onClick: () => navigate('start') }, 'Back') : null,
+        hasProjects ? h(Btn, { onClick: exit }, 'Cancel')
+          : backToStart ? h(Btn, { testid: 'back-to-start', onClick: exit }, 'Back') : null,
         h(Btn, { kind: 'primary', testid: 'create-project', onClick: create }, 'Create project'))))
   return h('div', 'flex flex-row h-full w-full overflow-hidden', main)
 }
@@ -352,6 +358,9 @@ function Settings({ project }) {
   const q = useApi('/settings')
   const onb = (useApi('/state').data || {}).onboarding
   const [draft, setDraft] = useState(null)
+  const [touched, setTouched] = useState(false)
+  useDirty(touched)
+  useExit(() => navigate('home', null, { force: true }))
   const [adding, setAdding] = useState(null)
   const [label, setLabel] = useState('')
   const [err, setErr] = useState('')
@@ -359,8 +368,8 @@ function Settings({ project }) {
     if (q.data && !draft) setDraft(JSON.parse(JSON.stringify(q.data)))
   }, [q.data])
   if (!draft) return h(Frame, { main: h(Loading) })
-  const setProf = (i, patch) => setDraft({ ...draft, profiles: draft.profiles.map((p, j) => (j === i ? { ...p, ...patch } : p)) })
-  const setSet = (k, v) => setDraft({ ...draft, settings: { ...draft.settings, [k]: v } })
+  const setProf = (i, patch) => { setTouched(true); setDraft({ ...draft, profiles: draft.profiles.map((p, j) => (j === i ? { ...p, ...patch } : p)) }) }
+  const setSet = (k, v) => { setTouched(true); setDraft({ ...draft, settings: { ...draft.settings, [k]: v } }) }
   const colours = draft.settings.colours || {}
   const save = async () => {
     const s = draft.settings
@@ -385,9 +394,9 @@ function Settings({ project }) {
     $colours.set(res.data.settings.colours)
     setDraft(JSON.parse(JSON.stringify(res.data)))
     setErr('')
-    navigate('home')
+    navigate('home', null, { force: true })
   }
-  const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setErr(''); navigate('home') }
+  const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setTouched(false); setErr(''); navigate('home', null, { force: true }) }
   const numInp = 'w-16 bg-well border border-line rounded px-2 py-1 text-xs text-fg mono outline-none'
   const main = frag(
     h('div', 'flex items-center gap-2 text-xs',
@@ -426,7 +435,7 @@ function Settings({ project }) {
                           if (v && !p.labels.includes(v)) setProf(i, { labels: [...p.labels, v] })
                           setAdding(null); setLabel('')
                         }
-                        if (e.key === 'Escape') { setAdding(null); setLabel('') }
+                        if (e.key === 'Escape') { e.preventDefault(); setAdding(null); setLabel('') }
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),

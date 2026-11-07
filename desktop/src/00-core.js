@@ -65,16 +65,76 @@ let CTX = null
 const $nav = atom({ view: 'home' })
 const $rev = atom(0)
 
+// ------------------------------------------------------------------ navigation contract
+// Every view change goes through navigate():
+// - a form with unsaved text holds the change behind Discard / Keep editing (opts.force skips the question:
+//   an explicit Cancel, or the move after a save);
+// - an overlay belongs to the view that opened it and closes with it;
+// - the view that is left is remembered, so Back returns to it (opts.replace leaves no entry).
+const $leave = atom(null)
+const DIRTY = new Set()
+const ON_LEAVE = []
+const HIST = []
+let EXIT = null
+
+// A form reports whether it holds unsaved text while it is mounted.
+function useDirty(dirty) {
+  const ref = useRef(false)
+  ref.current = !!dirty
+  useEffect(() => { const f = () => ref.current; DIRTY.add(f); return () => { DIRTY.delete(f) } }, [])
+}
+
+// A task view (a form or an editor) names its way out; Escape takes it, asking first if text is unsaved.
+function useExit(fn) {
+  const ref = useRef(fn)
+  ref.current = fn
+  useEffect(() => { const f = () => ref.current(); EXIT = f; return () => { if (EXIT === f) EXIT = null } }, [])
+}
+
+function unsaved() {
+  for (const f of DIRTY) if (f()) return true
+  return false
+}
+
+function guard(go, force) {
+  if (!force && unsaved()) { $leave.set({ go }); return false }
+  go()
+  return true
+}
+
+function commit(next, replace) {
+  const cur = $nav.get()
+  if (!replace && cur) { HIST.push(cur); if (HIST.length > 50) HIST.shift() }
+  for (const f of ON_LEAVE) f()
+  $nav.set(next)
+}
+
 // Changes the Rung page's view. It never moves the app: a request that finishes after the person went to a
 // chat updates the page they left and leaves them where they are.
-function navigate(view, params) {
-  $nav.set({ view, ...(params || {}) })
+function navigate(view, params, opts) {
+  const o = opts || {}
+  return guard(() => commit({ view, ...(params || {}) }, o.replace), o.force)
+}
+
+// Back: the view the person came from, else the given parent.
+function goBack(view, params, opts) {
+  const o = opts || {}
+  if (!HIST.length) return navigate(view, params, o)
+  return guard(() => { const prev = HIST.pop(); for (const f of ON_LEAVE) f(); $nav.set(prev) }, o.force)
 }
 
 // Opens Rung on a view from outside it (the dock, the status bar): a click, so the app moves.
-function openRung(view, params) {
-  navigate(view, params)
+function openRung(view, params, opts) {
+  navigate(view, params, opts)
   if (!String(location.hash || '').includes(ROUTE)) host.navigate(ROUTE)
+}
+
+// Escape on a task view: its way out. Dialogs, menus and fields that use Escape themselves come first.
+function onEscape(e) {
+  if (e.key !== 'Escape' || e.defaultPrevented || !EXIT) return
+  if (!String(location.hash || '').includes(ROUTE)) return
+  if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox]')) return
+  guard(EXIT)
 }
 
 async function rest(path, opts) {

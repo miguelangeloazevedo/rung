@@ -53,6 +53,7 @@ function RunView({ project, run }) {
   const specQ = useRung(project, r && r.spec)
   const st = useApi('/settings').data
   const [err, setErr] = useState('')
+  if (q.error || specQ.error) return h(Missing, { project, text: errText(q.error || specQ.error) })
   if (!r || !specQ.data) return h(Page, { project }, h(Loading))
   const spec = specQ.data
   const live = r.status === 'running' || r.status === 'queued'
@@ -139,10 +140,11 @@ function AttemptView({ project, run, n }) {
   const q = useApi(`/runs/${run}`, { live: true })
   const r = q.data
   const specQ = useRung(project, r && r.spec)
+  if (q.error || specQ.error) return h(Missing, { project, text: errText(q.error || specQ.error) })
   if (!r || !specQ.data) return h(Page, { project }, h(Loading))
   const spec = specQ.data
   const a = (r.attempts || []).find(x => String(x.n) === String(n))
-  if (!a) return h(Page, { project }, h(Loading))
+  if (!a) return h(Missing, { project, text: `no attempt ${n} in run ${run}` })
   const next = (r.attempts || []).find(x => x.n === a.n + 1)
   const fails = (a.executions || []).filter(x => x.status === 'fail')
   const tone = outcomeTone(a.status) === 'dim' ? 'muted' : outcomeTone(a.status)
@@ -200,6 +202,7 @@ function ExecView({ project, test, n }) {
   const [err, setErr] = useState('')
   const x = q.data
   const t = tq.data
+  if (q.error || tq.error) return h(Missing, { project, text: errText(q.error || tq.error) })
   if (!x || !t) return h(Page, { project, sel: test }, h(Loading))
   const voided = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; fails stay failed
   const crumbs = h(Crumbs, { path: [...t.path, { id: t.id }], last: `#${x.n}`, lastTone: x.status === 'fail' ? 'text-fail' : 'text-needs' })
@@ -274,7 +277,7 @@ function ExecView({ project, test, n }) {
           h(Btn, { kind: 'primary', testid: 'back-to-test', onClick: back }, 'Back to test'))),
       h(Card, { className: 'p-5 flex items-center justify-between' },
         h('div', 'flex items-center gap-3',
-          h('h1', 'text-xl font-bold text-fg tracking-tight', `Execution #${x.n}`),
+          h('h2', 'text-xl font-bold text-fg tracking-tight', `Execution #${x.n}`),
           h(Badge, { status: 'pass' }),
           h('span', { className: 'px-2.5 py-0.5 rounded text-xs font-semibold bg-pass/10 text-pass', 'data-testid': 'counts' }, 'Counts'))),
       h('div', { className: cx('rounded-[6px] px-4 py-3 flex items-center gap-3 text-xs font-medium border', x.coverage === 'covered' ? 'bg-pass/10 border-pass/30 text-pass' : 'bg-well border-line2 text-muted'), 'data-testid': 'exec-coverage' },
@@ -318,6 +321,8 @@ function openDefect(test, preselect) {
   $defect.set({ test, preselect: preselect || null })
 }
 
+ON_LEAVE.push(() => { if ($defect.get()) $defect.set(null) })
+
 function DefectModal({ project }) {
   const d = useValue($defect)
   const tq = useRung(project, d && d.test)
@@ -327,12 +332,14 @@ function DefectModal({ project }) {
   const [err, setErr] = useState('')
   const [done, setDone] = useState(null)
   useEffect(() => { setTitle(''); setPicked(null); setErr(''); setDone(null) }, [d && d.test])
+  useDirty(d && title.trim())
   if (!d) return null
   const t = tq.data
   const fails = t ? (t.executions || []).filter(x => x.status === 'fail') : []
   const sel = picked || new Set(d.preselect || fails.map(x => x.n))
   const toggle = n => { const s = new Set(sel); if (s.has(n)) s.delete(n); else s.add(n); setPicked(s) }
-  const close = () => $defect.set(null)
+  // Closing returns to the page that opened the dialog: the Raise defect route stands on Home.
+  const close = () => { $defect.set(null); if ($nav.get().view === 'defect-new') navigate('home', null, { force: true, replace: true }) }
   const raise = async () => {
     const x = await post(`${P(project)}/tests/${d.test}/defects`, { title, executions: [...sel], category: cat })
     if (!x.ok) return setErr(x.error)

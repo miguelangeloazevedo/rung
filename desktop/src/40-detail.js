@@ -33,7 +33,7 @@ function RungView(props) {
   const r = q.data
   const needId = r && (r.kind === 'need' ? r.id : r.path && r.path[0] && r.path[0].id)
   useEffect(() => { noteNeed(project, needId) }, [project, needId])
-  if (q.error) return h(Page, { project }, h(ErrorLine, { text: errText(q.error) }))
+  if (q.error) return h(Missing, { project, text: errText(q.error) })
   if (!r) return h(Page, { project, sel: rid }, h(Loading))
   const p = { ...props, r }
   if (r.kind === 'need') return h(NeedView, p)
@@ -52,6 +52,7 @@ function NeedView({ project, r }) {
   const [retiring, setRetiring] = useState(false)
   const [base, setBase] = useState(null)
   const ro = !!r.read_only
+  useDirty(editing && text !== r.text)
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
   const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
@@ -66,7 +67,7 @@ function NeedView({ project, r }) {
       h(Badge, { status: r.status })),
     editing
       ? h('div', 'flex flex-col gap-2',
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value) }),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); setEditing(false); setText(r.text) } } }),
         h('div', 'flex items-center gap-2',
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
@@ -130,7 +131,9 @@ function ReqEditor({ project, r, need, ret }) {
     rest(`${P(project)}/rungs/${r.id}/suggest-edits`, { method: 'POST', body: {} }).then(x => { if (live) setSugs(x.suggestions || []) }).catch(() => { if (live) setSugs([]) })
     return () => { live = false }
   }, [r && r.id])
-  const done = () => (ret ? navigate('build', { need: needId, step: ret }) : navigate('rung', { rid: needId }))
+  const done = () => (ret ? navigate('build', { need: needId, step: ret }, { force: true }) : navigate('rung', { rid: needId }, { force: true }))
+  useDirty(isNew ? (text.trim() || detail.trim()) : !clean)
+  useExit(done)
   const save = async approve => {
     let res
     if (isNew) {
@@ -175,7 +178,8 @@ function ReqEditor({ project, r, need, ret }) {
     h(Conflict, { res: conflict, path: r ? `${P(project)}/rungs/${r.id}` : null }),
     h('div', 'flex items-center gap-2.5 pt-3 border-t border-line',
       h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'approve', onClick: () => save(true) }, 'Approve'),
-      h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'save-draft', onClick: () => save(false) }, 'Save draft')))
+      h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'save-draft', onClick: () => save(false) }, 'Save draft'),
+      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] text-muted text-xs font-medium', 'data-testid': 'cancel-edit', onClick: done }, 'Cancel')))
   return h(Page, { project, sel: r ? r.id : needId }, body)
 }
 
@@ -187,9 +191,12 @@ function ReqNew({ project, need, ret }) {
 
 function ChangeView({ project, change, rid }) {
   const q = useApi(`${P(project)}/changes`)
-  const target = useRung(project, rid).data
+  const tq = useRung(project, rid)
+  const target = tq.data
   const [err, setErr] = useState('')
   const ch = (q.data || []).find(c => String(c.id) === String(change))
+  if (q.error || tq.error) return h(Missing, { project, text: errText(q.error || tq.error) })
+  if (q.data && !ch) return h(Missing, { project, text: `no change ${change} in ${project}` })
   if (!ch || !target) return h(Page, { project, sel: rid }, h(Loading))
   const stale = ch.stale || []
   const firstStale = stale.find(x => !x.startsWith('T-')) || stale[0]
@@ -423,11 +430,13 @@ function SpecEdit({ project, req, spec, ret, need }) {
     rest(`${P(project)}/rungs/${reqId}/support`).then(x => { if (live) setSug(x.suggestion || '') }).catch(() => { if (live) setSug('') })
     return () => { live = false }
   }, [reqId])
-  if ((spec && !s) || !r) return h(Page, { project }, h(Loading))
   const t = text != null ? text : (s ? s.text : '')
   const d = detail != null ? detail : (s ? s.detail : '')
-  const needId = r.parent
-  const done = () => (ret ? navigate('build', { need: need || needId, step: ret }) : navigate('rung', { rid: s ? s.id : reqId }))
+  useDirty((text != null && text !== (s ? s.text : '')) || (detail != null && detail !== (s ? s.detail : '')))
+  const done = () => (ret ? navigate('build', { need: need || (r && r.parent), step: ret }, { force: true }) : navigate('rung', { rid: s ? s.id : reqId }, { force: true }))
+  useExit(done)
+  if (sq.error || rq.error) return h(Missing, { project, text: errText(sq.error || rq.error) })
+  if ((spec && !s) || !r) return h(Page, { project }, h(Loading))
   const save = async () => {
     let x
     if (s) x = await post(`${P(project)}/rungs/${s.id}/edit`, { text: t, detail: d, approve: true, version: base })
@@ -469,6 +478,7 @@ function TestView({ project, r }) {
   const [err, setErr] = useState('')
   const [result, setResult] = useState('')
   const [note, setNote] = useState('')
+  useDirty(r.type === 'manual' && (result || note.trim()))
   const execs = r.executions || []
   const act = async (path, body, go) => {
     const x = await post(path, body)
@@ -518,7 +528,7 @@ function TestView({ project, r }) {
               h(Btn, { onClick: () => navigate('rung', { rid: r.parent }) }, 'Back'))
             : frag(
               h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote('') }) }, 'Record'),
-              h(Btn, { onClick: () => navigate('rung', { rid: r.parent }) }, 'Cancel')))))
+              h(Btn, { onClick: () => navigate('rung', { rid: r.parent }, { force: true }) }, 'Cancel')))))
     return h(Page, { project, sel: r.id }, body)
   }
   const badge = h('span', 'flex items-center gap-1.5', h(SeenFailing, { value: r.seen_failing }),
@@ -575,6 +585,14 @@ function TestEdit({ project, test, spec, ret, need }) {
   const [err, setErr] = useState('')
   const [ran, setRan] = useState(null)
   const [conflict, setConflict] = useState(null)
+  const init = useRef(null)
+  useDirty(f && init.current && JSON.stringify(f) !== init.current)
+  const done = () => {
+    const s = sq.data
+    if (!s) return navigate('home', null, { force: true })
+    return ret ? navigate('build', { need: need || (s.path[0] && s.path[0].id), step: ret }, { force: true }) : navigate('rung', { rid: t ? t.id : s.id }, { force: true })
+  }
+  useExit(done)
   useEffect(() => {
     if (f) return
     if (test && !t) return
@@ -584,6 +602,8 @@ function TestEdit({ project, test, spec, ret, need }) {
       ? { type: t.type, command: t.command || '', folder: t.folder || '.', rule: (t.pass_rule || {}).kind || 'exit_code', value: String((t.pass_rule || {}).value ?? 0), timeout: `${t.timeout || 120}s`, limit: `${Math.round((t.output_limit || 64000) / 1000)} KB`, steps: (t.steps || []).join('\n'), text: t.type === 'ai_judged' ? t.text : '' }
       : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder })
   }, [t, st])
+  useEffect(() => { if (f && !init.current) init.current = JSON.stringify(f) }, [f])
+  if (tq.error || sq.error) return h(Missing, { project, text: errText(tq.error || sq.error) })
   if (!f || !sq.data) return h(Page, { project }, h(Loading))
   const s = sq.data
   const set = k => e => setF({ ...f, [k]: e.target.value })
@@ -593,7 +613,6 @@ function TestEdit({ project, test, spec, ret, need }) {
     if (f.type === 'ai_judged') out.text = f.text || f.command
     return out
   }
-  const done = () => (ret ? navigate('build', { need: need || (s.path[0] && s.path[0].id), step: ret }) : navigate('rung', { rid: t ? t.id : s.id }))
   const save = async () => {
     const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: { ...fields(), version: base } }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
@@ -611,10 +630,10 @@ function TestEdit({ project, test, spec, ret, need }) {
     }
     const r = await post(`${P(project)}/tests/${id}/run`, { once: true })
     if (!r.ok) return setErr(r.error)
-    navigate('exec', { test: id, n: r.data.n })
+    navigate('exec', { test: id, n: r.data.n }, { force: true })
   }
   const crumbs = [...s.path.map(p => p.id), s.id, t ? t.id : 'New test'].join(' › ')
-  const input = (k, extra) => h('input', { className: cx('bg-well border border-line rounded-[6px] px-3 py-2 mono text-xs text-fg focus:outline-none focus:border-needs', (extra && extra.w) || 'w-full'), type: 'text', name: k, value: f[k], onChange: set(k) })
+  const input = (k, extra) => h('input', { className: cx('bg-well border border-line rounded-[6px] px-3 py-2 mono text-xs text-fg focus:outline-none focus:border-needs', (extra && extra.w) || 'w-full'), type: 'text', name: k, value: f[k], onChange: set(k), 'aria-label': (extra && extra.label) || undefined })
   const body = h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-5', 'data-testid': 'test-editor' },
     h('div', 'flex flex-col gap-1.5 pb-4 border-b border-line',
       h('h2', 'text-base font-semibold text-fg', 'Test editor'),
@@ -637,7 +656,7 @@ function TestEdit({ project, test, spec, ret, need }) {
           input('text'),
           h('span', { className: 'text-[11px] text-dim', 'data-testid': 'no-gate' }, 'Cannot release a gate')) : null,
         h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Command'), input('command')),
-        h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Working folder'), input('folder')),
+        h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Working folder'), input('folder', { label: 'Working folder' })),
         h('div', 'flex flex-col gap-1.5',
           h('span', 'text-xs font-medium text-muted', 'Pass rule'),
           h('div', 'flex items-center gap-3',
