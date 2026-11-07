@@ -189,6 +189,8 @@ function useApi(path, opts) {
     queryFn: () => rest(path),
     enabled: !!path && !(opts && opts.enabled === false),
     staleTime: 0,
+    // A missing id or a refused request (4xx) is an answer, not a hiccup: show it at once instead of retrying.
+    retry: (n, e) => n < 2 && !(e && e.status >= 400 && e.status < 500) && !/^(Error:\s*)?4\d\d\b/.test(String((e && e.message) || '')),
     refetchInterval: opts && opts.live ? 1000 : false
   })
   return q
