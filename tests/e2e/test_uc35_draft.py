@@ -112,5 +112,6 @@ def test_bot04_bot05_bot13_draft_fills_new_forms(rung, csvtidy, page):
     draft(page)
     drafted(page)
     assert page.locator(".rung input[name=spec-text]").first.input_value().strip()
+    assert page.locator(".rung textarea[name=spec-detail]").first.input_value().strip()
     assert rungs(e) == before
     H.evidence(page, 35)

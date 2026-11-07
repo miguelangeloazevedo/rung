@@ -132,7 +132,10 @@ class StubDrafter(Drafter):
             return {"text": f"Do this reliably: {parent}", "detail": "One observable result per requirement."}
         if kind == "specification":
             need = chain[0]["text"] if chain else ""
-            return self.derive_spec(need, parent, project)
+            got = dict(self.derive_spec(need, parent, project))
+            if not got.get("detail"):
+                got["detail"] = f"Read the input, apply the rule, write the output: {parent}"
+            return got
         if kind == "test":
             t = (self.propose_tests(parent, chain[-2]["text"] if len(chain) > 1 else "", project) or [{}])[0]
             if not t.get("command") and not t.get("steps"):
@@ -145,8 +148,11 @@ class StubDrafter(Drafter):
         got = self._get("suggest", need_text.strip(), None)
         if got is not None:
             return [str(x) for x in got]
-        return [f"Handle empty input: {need_text.strip()}", f"Report each error with the line it came from",
-                f"Leave the input file unchanged"]
+        pool = [f"Handle empty input: {need_text.strip()}", "Report each error with the line it came from",
+                "Leave the input file unchanged", "Finish a 10 MB input within 5 seconds",
+                "Exit with a non-zero code when any row fails", "Print a summary of rows changed"]
+        have = {t.strip().lower() for t in req_texts}
+        return [t for t in pool if t.lower() not in have][:3]
 
 
 class ProfileDrafter(Drafter):

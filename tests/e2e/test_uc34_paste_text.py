@@ -19,12 +19,16 @@ def dialog(page):
     return page.locator(".rung [data-testid=paste-dialog]").first
 
 
-def paste_and_place(page, text):
+def paste_and_place(page, text, e=None):
     H.button(page, "Paste text").click()
     dialog(page).wait_for(timeout=10000)
     dialog(page).locator("textarea[name=paste]").fill(text)
     H.button(page, "Place", scope=dialog(page)).click()
-    dialog(page).locator("[data-testid=placed]").wait_for(timeout=20000)
+    def placed():
+        if dialog(page).locator("[data-testid=placed]").count() == 1:
+            return True
+        raise AssertionError((dialog(page).inner_text() if dialog(page).count() else H.view(page)) + (repr([dict(x) for x in e._q('SELECT pk, status, error, result FROM bot_jobs')]) if e else ''))
+    H.wait_until(placed, timeout=20, msg="the placed text")
 
 
 def test_bot01_bot02_bot03_paste_text_places_and_opens_a_new_form(rung, csvtidy, page):
@@ -46,7 +50,7 @@ def test_bot01_bot02_bot03_paste_text_places_and_opens_a_new_form(rung, csvtidy,
     H.open_rung(page)
     page.evaluate("window.__rungNavigate('home')")
     H.wait_view(page, "home")
-    paste_and_place(page, TEXT_A)
+    paste_and_place(page, TEXT_A, e)
     placed = dialog(page).locator("[data-testid=placed-as]").first
     H.wait_until(lambda: "Requirement" in placed.inner_text() and "N-1" in placed.inner_text(), msg=f"placed: {placed.inner_text()}")
     assert "writer" in placed.inner_text()

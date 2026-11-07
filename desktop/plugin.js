@@ -835,7 +835,8 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
         type: 'button',
         className: 'text-xs font-semibold text-muted hover:text-fg mono',
         'data-testid': 'project-name',
-        title: 'Projects',
+        title: 'Needs you',
+        'aria-label': `${project}, Needs you`,
         onClick: () => navigate('projects')
       }, project),
       name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
@@ -2818,9 +2819,12 @@ function useBotJob() {
   const [err, setErr] = useState('')
   const live = useRef(true)
   const cur = useRef(null)
-  useEffect(() => () => {
-    live.current = false
-    if (cur.current) rest(`/bot/${cur.current}/cancel`, { method: 'POST', body: {} }).catch(() => {})
+  useEffect(() => {
+    live.current = true  // a remount (React's strict mode runs effects twice) must follow again
+    return () => {
+      live.current = false
+      if (cur.current) rest(`/bot/${cur.current}/cancel`, { method: 'POST', body: {} }).catch(() => {})
+    }
   }, [])
   const follow = async id => {
     cur.current = id
@@ -3038,6 +3042,7 @@ function SuggestPanel({ project, need, ro }) {
         h(Btn, { kind: 'ghost', disabled: it.status !== 'open', label: `Dismiss ${it.text}`, onClick: () => resolve(i, false) }, it.status === 'dismissed' ? 'Dismissed' : 'Dismiss'))))) : null,
     h(ErrorLine, { text: itemErr }),
     choice && (choice.excluded || []).length && (none || j) ? h('div', { className: 'flex flex-col gap-1', 'data-testid': 'suggest-excluded' },
+      h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Excluded'),
       ...choice.excluded.map(x => h('div', { key: x.profile, className: 'flex items-center gap-2 text-[11px]', 'data-profile': x.profile },
         h('span', 'font-medium text-muted', x.profile), h('span', 'text-dim', x.reason)))) : null)
 }

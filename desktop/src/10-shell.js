@@ -131,7 +131,8 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
         type: 'button',
         className: 'text-xs font-semibold text-muted hover:text-fg mono',
         'data-testid': 'project-name',
-        title: 'Projects',
+        title: 'Needs you',
+        'aria-label': `${project}, Needs you`,
         onClick: () => navigate('projects')
       }, project),
       name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
