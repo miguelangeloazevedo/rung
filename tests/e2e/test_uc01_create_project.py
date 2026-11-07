@@ -11,7 +11,7 @@ def test_onb01_prj01_create_project(rung, page):
     start = page.locator(".rung [data-testid=start]")
     assert H.button(page, "Try the sample project", start).is_visible()
     assert H.button(page, "New project", start).is_visible()
-    assert start.get_by_role("button", name="Dismiss").is_visible()
+    assert start.get_by_role("button", name="Close").is_visible()
     H.button(page, "New project", start).click()
     H.wait_view(page, "project-new")
     form = page.locator(".rung [data-testid=new-project]")

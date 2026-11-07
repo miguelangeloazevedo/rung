@@ -71,10 +71,10 @@ function BotFailure({ job, err, onRetry, testid }) {
 const NEW_VIEW = { need: 'need-new', requirement: 'req-new', specification: 'spec-edit', test: 'test-edit' }
 const PARENT_OF = { requirement: 'need', specification: 'requirement', test: 'specification' }
 
-function PasteBtn({ project, projects }) {
+function PasteBtn({ project, projects, kind }) {
   const [open, setOpen] = useState(false)
   return frag(
-    h(Btn, { testid: 'paste-text', onClick: () => setOpen(true) }, 'Paste text'),
+    h(Btn, { kind, testid: 'paste-text', onClick: () => setOpen(true) }, 'Paste text'),
     open ? h(PasteDialog, { project, projects, onClose: () => setOpen(false) }) : null)
 }
 

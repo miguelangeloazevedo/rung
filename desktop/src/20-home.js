@@ -136,7 +136,7 @@ function Home({ project }) {
   const errors = items.filter(i => i.type === 'error')
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
-  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project }) }), ro ? h(ArchivedBar, { project }) : null,
+  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project, kind: 'head' }), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
     h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
@@ -199,7 +199,7 @@ function StatChip({ label, n, t, of }) {
   if (of != null) cls = n > 0 || of === 0 ? 'text-pass border border-pass/30' : 'text-dim border border-line'
   if (of != null && n === 0 && of > 0) cls = 'text-dim border border-line'
   return h('span', { className: cx('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium', cls), 'data-stat': label },
-    of != null ? `${label} ${n} of ${of}` : `${label} ${n}`)
+    of != null ? `${n} of ${of} ${label.toLowerCase()}` : `${label} ${n}`)
 }
 
 // What an item in Needs you asks of you, and where Open takes it.

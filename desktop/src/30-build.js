@@ -203,6 +203,7 @@ function StepReqs({ project, need, flow }) {
         h('h2', 'text-xs font-semibold uppercase tracking-wider text-fg', 'Requirements'),
         h('span', 'text-[11px] text-muted', `${reqs.length} defined`)),
       h('div', 'flex flex-col gap-2',
+        reqs.length ? null : h(Empty, { text: 'No requirements', action: 'New requirement', actionTestid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }),
         ...reqs.map(r => h('div', { key: r.id, className: 'bg-card border border-line rounded-[6px] px-3.5 py-2.5 flex items-center justify-between', 'data-req': r.id },
           h('div', 'flex items-center gap-3',
             h('span', 'font-mono text-xs font-medium text-muted', r.id),
@@ -221,7 +222,7 @@ function StepReqs({ project, need, flow }) {
     h('div', 'flex items-center justify-between pt-2 border-t border-line',
       h('div', 'flex items-center gap-2',
         h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('rung', { rid: need }) }, 'Back to Need'),
-        h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement')),
+        reqs.length ? h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement') : null),
       h('div', 'flex items-center gap-2',
         h(Btn, { kind: 'primaryLg', testid: 'approve-all', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approveAll }, 'Approve all'),
         h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'specs' }) }, 'Next'))))
@@ -323,6 +324,9 @@ function TestRow({ project, t, need, ret, onErr }) {
       h(Btn, { kind: 'small', testid: 'edit', onClick: () => navigate('test-edit', { test: t.id, ret, need }) }, 'Edit')))
 }
 
+// A specification's tests that are on the ladder (not dismissed, not only proposed).
+const liveTests = s => (s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed')
+
 function StepTests({ project, need, flow }) {
   const q = useRung(project, need)
   const n = q.data
@@ -345,8 +349,9 @@ function StepTests({ project, need, flow }) {
           h('div', 'flex items-center gap-2',
             h('span', 'text-xs font-semibold mono text-needs', s.id),
             h('span', 'text-xs font-medium text-fg', s.text)),
-          h(Btn, { kind: 'small', testid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }, 'Add test')),
-        ...(s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed').map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
+          liveTests(s).length ? h(Btn, { kind: 'small', testid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }, 'Add test') : null),
+        liveTests(s).length ? null : h(Empty, { text: 'No tests', action: 'Add test', actionTestid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }),
+        ...liveTests(s).map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3 pt-2',
       h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),

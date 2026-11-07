@@ -1,5 +1,8 @@
 // Rung desktop pane: layout shell, header, tiles, build strip, traceability rail.
 
+// The project header's buttons: one size and look, at least 24 pixels tall.
+const HEAD_BTN = 'inline-flex items-center min-h-[24px] px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg'
+
 function Btn({ kind, onClick, disabled, children, title, testid, className, label, current }) {
   const base = {
     primary: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs',
@@ -11,7 +14,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className, labe
     acceptSolid: 'px-3 py-1 rounded bg-needs text-on-needs text-xs font-semibold',
     ghost: 'px-2.5 py-1 rounded text-xs text-muted hover:text-fg',
     ghostLine: 'px-2.5 py-1 rounded text-xs text-muted border border-line',
-    small: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium hover:bg-btnh'
+    small: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium hover:bg-btnh',
+    head: HEAD_BTN
   }[kind || 'secondary']
   return h('button', {
     type: 'button',
@@ -138,11 +142,11 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
       name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
       name ? h('h1', { className: 'text-xl font-bold tracking-tight text-fg truncate', title: name, 'data-page-title': '1', tabIndex: -1 }, name) : null),
     h('div', 'flex items-center gap-2',
-      back ? h(ExitBtn, { testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
+      back ? h(ExitBtn, { kind: 'head', testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
       h(DockToggle),
       h('button', {
         type: 'button', 'data-testid': 'open-settings',
-        className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
+        className: HEAD_BTN,
         onClick: () => navigate('settings')
       }, 'Settings'),
       ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
@@ -150,7 +154,7 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
       right === undefined && !ro
         ? h('button', {
           type: 'button',
-          className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
+          className: HEAD_BTN,
           onClick: () => navigate('need-new')
         }, 'New need')
         : ro ? null : right))
@@ -160,7 +164,7 @@ function DockToggle() {
   const open = useValue($dockOpen)
   return h('button', {
     type: 'button', 'aria-pressed': open ? 'true' : 'false', 'data-testid': 'dock-toggle',
-    className: cx('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border', open ? 'bg-needs/10 text-needs border-needs/30' : 'bg-card border-line text-muted hover:text-fg'),
+    className: cx('inline-flex items-center min-h-[24px] px-2 py-0.5 rounded text-[11px] font-medium border', open ? 'bg-needs/10 text-needs border-needs/30' : 'bg-card border-line text-muted hover:text-fg'),
     onClick: () => setDock(!open)
   }, 'Dock')
 }
@@ -353,6 +357,13 @@ function missingText(text) {
 }
 
 // A button that is also the view's Escape action (Back, Back to X, Cancel).
+// An empty list or section: what is missing, and the one action that fills it (FST-04).
+function Empty({ text, action, onClick, testid, actionTestid }) {
+  return h('div', { className: 'bg-well border border-line2 rounded-[6px] p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs', 'data-testid': 'empty-state' },
+    h('span', { className: 'text-muted', 'data-testid': testid || undefined }, text),
+    action && onClick ? h(Btn, { kind: 'small', testid: actionTestid, onClick }, action) : null)
+}
+
 function ExitBtn({ onClick, exit, children, ...rest }) {
   useExit(exit === false ? null : onClick)
   return h(Btn, { ...rest, onClick }, children)

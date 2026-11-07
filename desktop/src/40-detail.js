@@ -90,7 +90,7 @@ function NeedView({ project, r, flow }) {
       h('div', 'flex items-center justify-between pb-1',
         h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Requirements'),
         ro ? null : h('button', { type: 'button', className: 'px-2.5 py-1 rounded text-xs font-medium text-needs border border-needs', 'data-testid': 'new-requirement', onClick: () => navigate('req-new', { need: r.id }) }, 'New requirement')),
-      reqs.length ? null : h(Well, { className: 'text-xs text-dim' }, 'No requirements'),
+      reqs.length ? null : h(Empty, { text: 'No requirements', action: ro ? null : 'New requirement', onClick: () => navigate('req-new', { need: r.id }) }),
       ...reqs.map(x => h('div', { key: x.id, className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2 cursor-pointer', 'data-req': x.id, onClick: () => navigate('rung', { rid: x.id }) },
         h('div', 'flex items-center gap-2.5',
           h('span', { className: cx('text-xs font-medium mono', reqTone(x)) }, x.id),
@@ -345,6 +345,7 @@ function SpecView({ project, r, ret, need }) {
             h('span', null, `Carried by ${r.carried_by || 'you'}`), h('span', null, '·'), h('span', null, `Approved ${dayClock(r.approved_at)}`))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests'),
+          tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }),
           ...tests.map(t => h('div', { key: t.id, className: 'bg-well p-2.5 rounded-[6px] border border-line2 flex items-center justify-between text-[11px] cursor-pointer', 'data-test': t.id, onClick: () => navigate('rung', { rid: t.id }) },
             h('span', 'mono text-fg', `${t.id} · ${t.type === 'manual' ? t.text : (t.command || t.text)}`),
             h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, capital(resultWord(t.result)))))),
@@ -378,7 +379,7 @@ function SpecView({ project, r, ret, need }) {
         (r.status === 'approved' || r.status === 'stale') && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
-      h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
+      h('div', 'flex flex-col gap-2', tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }), ...tests.map(t => h(TestLine, { key: t.id, t })))),
     h(ClaimsSection, { project, r, onErr: setErr }),
     a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
@@ -501,6 +502,7 @@ function TestView({ project, r }) {
     setErr('')
     if (go) go(x.data)
   }
+  const runOne = () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n }))
   const headline = (badge) => h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between', pathCrumbs(r), badge),
     h('div', 'flex items-center gap-2', h('h2', 'text-sm font-semibold text-fg mono', r.type === 'manual' ? r.text : (r.command || r.text))),
@@ -560,7 +562,7 @@ function TestView({ project, r }) {
         h('div', 'flex items-center justify-between', h(Label, null, 'Executions'), h(SeenFailing, { value: r.seen_failing, small: true })),
         h('div', { className: 'flex flex-col gap-2', 'data-testid': 'executions' },
           ...(execs.length ? execs : []).map(x => h(ExecRow, { key: x.n, test: r.id, x })),
-          execs.length ? null : h(Well, { className: 'font-mono text-[11px] text-dim' }, 'No executions yet'))),
+          execs.length ? null : h(Empty, { text: 'No executions yet', action: 'Run tests', actionTestid: 'run-tests', onClick: runOne }))),
       h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': (r.defects || []).length ? 'defects' : 'no-defects' },
         h(Label, null, 'Defects'),
         (r.defects || []).length ? null : h(Well, { className: 'text-xs text-dim' }, 'No defects'),
@@ -569,7 +571,7 @@ function TestView({ project, r }) {
           h('span', 'mono text-[11px] text-muted', `${dx.category} · ${dx.executions.map(n => '#' + n).join(' ')}`)))),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
-        h(Btn, { kind: 'primary', testid: 'run-tests', onClick: () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n })) }, 'Run tests'),
+        execs.length ? h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runOne }, 'Run tests') : null,
         h(Btn, { testid: 'raise-defect', disabled: !failing.length, onClick: () => openDefect(r.id) }, 'Raise defect'))))
   return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }

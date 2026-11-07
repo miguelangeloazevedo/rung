@@ -120,6 +120,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .max-w-\\[860px\\]{max-width:860px}
 .rung .mb-1{margin-bottom:4px}
 .rung .min-h-\\[180px\\]{min-height:180px}
+.rung .min-h-\\[24px\\]{min-height:24px}
 .rung .min-h-\\[300px\\]{min-height:300px}
 .rung .min-w-0{min-width:0}
 .rung .min-w-2{min-width:8px}
@@ -363,9 +364,12 @@ function guard(go, force) {
 
 // History holds places to return to: a task view (a form or an editor, which registers a way out) is never one,
 // since its text is gone once left; each entry remembers its project, so Back never crosses projects.
+// Needs you spans every project, so it stays a place to return to from whichever project it opened.
+const CROSS = new Set(['projects'])
+const ours = e => e._p === CUR_PROJECT || e._p === '*'
 function commit(next, replace) {
   const cur = $nav.get()
-  if (!replace && cur && !EXITS.some(x => x.task)) { HIST.push({ ...cur, _p: CUR_PROJECT }); if (HIST.length > 50) HIST.shift() }
+  if (!replace && cur && !EXITS.some(x => x.task)) { HIST.push({ ...cur, _p: CROSS.has(cur.view) ? '*' : CUR_PROJECT }); if (HIST.length > 50) HIST.shift() }
   for (const f of ON_LEAVE) f()
   $leave.set(null)
   $notice.set(null)
@@ -375,9 +379,15 @@ function commit(next, replace) {
 function popHistory() {
   while (HIST.length) {
     const e = HIST.pop()
-    if (e._p === CUR_PROJECT) { const { _p, ...v } = e; return v }
+    if (ours(e)) { const { _p, ...v } = e; return v }
   }
   return null
+}
+
+// Whether the view the person came from (the entry Back would use) is this one.
+function cameFrom(view) {
+  for (let i = HIST.length - 1; i >= 0; i--) if (ours(HIST[i])) return HIST[i].view === view
+  return false
 }
 
 function sameView(a, view, params) {
@@ -406,7 +416,7 @@ function returnTo(view, params, opts) {
   const o = opts || {}
   return guard(() => {
     const top = HIST[HIST.length - 1]
-    if (top && top._p === CUR_PROJECT && sameView(top, view, params)) HIST.pop()
+    if (top && ours(top) && sameView(top, view, params)) HIST.pop()
     commit({ view, ...(params || {}) }, true)
   }, o.force)
 }
@@ -704,6 +714,9 @@ function resultWord(r) {
 
 // Rung desktop pane: layout shell, header, tiles, build strip, traceability rail.
 
+// The project header's buttons: one size and look, at least 24 pixels tall.
+const HEAD_BTN = 'inline-flex items-center min-h-[24px] px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg'
+
 function Btn({ kind, onClick, disabled, children, title, testid, className, label, current }) {
   const base = {
     primary: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs',
@@ -715,7 +728,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className, labe
     acceptSolid: 'px-3 py-1 rounded bg-needs text-on-needs text-xs font-semibold',
     ghost: 'px-2.5 py-1 rounded text-xs text-muted hover:text-fg',
     ghostLine: 'px-2.5 py-1 rounded text-xs text-muted border border-line',
-    small: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium hover:bg-btnh'
+    small: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium hover:bg-btnh',
+    head: HEAD_BTN
   }[kind || 'secondary']
   return h('button', {
     type: 'button',
@@ -842,11 +856,11 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
       name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
       name ? h('h1', { className: 'text-xl font-bold tracking-tight text-fg truncate', title: name, 'data-page-title': '1', tabIndex: -1 }, name) : null),
     h('div', 'flex items-center gap-2',
-      back ? h(ExitBtn, { testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
+      back ? h(ExitBtn, { kind: 'head', testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
       h(DockToggle),
       h('button', {
         type: 'button', 'data-testid': 'open-settings',
-        className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
+        className: HEAD_BTN,
         onClick: () => navigate('settings')
       }, 'Settings'),
       ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
@@ -854,7 +868,7 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
       right === undefined && !ro
         ? h('button', {
           type: 'button',
-          className: 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg',
+          className: HEAD_BTN,
           onClick: () => navigate('need-new')
         }, 'New need')
         : ro ? null : right))
@@ -864,7 +878,7 @@ function DockToggle() {
   const open = useValue($dockOpen)
   return h('button', {
     type: 'button', 'aria-pressed': open ? 'true' : 'false', 'data-testid': 'dock-toggle',
-    className: cx('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border', open ? 'bg-needs/10 text-needs border-needs/30' : 'bg-card border-line text-muted hover:text-fg'),
+    className: cx('inline-flex items-center min-h-[24px] px-2 py-0.5 rounded text-[11px] font-medium border', open ? 'bg-needs/10 text-needs border-needs/30' : 'bg-card border-line text-muted hover:text-fg'),
     onClick: () => setDock(!open)
   }, 'Dock')
 }
@@ -1057,6 +1071,13 @@ function missingText(text) {
 }
 
 // A button that is also the view's Escape action (Back, Back to X, Cancel).
+// An empty list or section: what is missing, and the one action that fills it (FST-04).
+function Empty({ text, action, onClick, testid, actionTestid }) {
+  return h('div', { className: 'bg-well border border-line2 rounded-[6px] p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs', 'data-testid': 'empty-state' },
+    h('span', { className: 'text-muted', 'data-testid': testid || undefined }, text),
+    action && onClick ? h(Btn, { kind: 'small', testid: actionTestid, onClick }, action) : null)
+}
+
 function ExitBtn({ onClick, exit, children, ...rest }) {
   useExit(exit === false ? null : onClick)
   return h(Btn, { ...rest, onClick }, children)
@@ -1221,7 +1242,7 @@ function Home({ project }) {
   const errors = items.filter(i => i.type === 'error')
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
-  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project }) }), ro ? h(ArchivedBar, { project }) : null,
+  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project, kind: 'head' }), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
     h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
@@ -1284,7 +1305,7 @@ function StatChip({ label, n, t, of }) {
   if (of != null) cls = n > 0 || of === 0 ? 'text-pass border border-pass/30' : 'text-dim border border-line'
   if (of != null && n === 0 && of > 0) cls = 'text-dim border border-line'
   return h('span', { className: cx('inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium', cls), 'data-stat': label },
-    of != null ? `${label} ${n} of ${of}` : `${label} ${n}`)
+    of != null ? `${n} of ${of} ${label.toLowerCase()}` : `${label} ${n}`)
 }
 
 // What an item in Needs you asks of you, and where Open takes it.
@@ -1848,6 +1869,7 @@ function StepReqs({ project, need, flow }) {
         h('h2', 'text-xs font-semibold uppercase tracking-wider text-fg', 'Requirements'),
         h('span', 'text-[11px] text-muted', `${reqs.length} defined`)),
       h('div', 'flex flex-col gap-2',
+        reqs.length ? null : h(Empty, { text: 'No requirements', action: 'New requirement', actionTestid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }),
         ...reqs.map(r => h('div', { key: r.id, className: 'bg-card border border-line rounded-[6px] px-3.5 py-2.5 flex items-center justify-between', 'data-req': r.id },
           h('div', 'flex items-center gap-3',
             h('span', 'font-mono text-xs font-medium text-muted', r.id),
@@ -1866,7 +1888,7 @@ function StepReqs({ project, need, flow }) {
     h('div', 'flex items-center justify-between pt-2 border-t border-line',
       h('div', 'flex items-center gap-2',
         h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('rung', { rid: need }) }, 'Back to Need'),
-        h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement')),
+        reqs.length ? h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement') : null),
       h('div', 'flex items-center gap-2',
         h(Btn, { kind: 'primaryLg', testid: 'approve-all', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approveAll }, 'Approve all'),
         h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'specs' }) }, 'Next'))))
@@ -1968,6 +1990,9 @@ function TestRow({ project, t, need, ret, onErr }) {
       h(Btn, { kind: 'small', testid: 'edit', onClick: () => navigate('test-edit', { test: t.id, ret, need }) }, 'Edit')))
 }
 
+// A specification's tests that are on the ladder (not dismissed, not only proposed).
+const liveTests = s => (s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed')
+
 function StepTests({ project, need, flow }) {
   const q = useRung(project, need)
   const n = q.data
@@ -1990,8 +2015,9 @@ function StepTests({ project, need, flow }) {
           h('div', 'flex items-center gap-2',
             h('span', 'text-xs font-semibold mono text-needs', s.id),
             h('span', 'text-xs font-medium text-fg', s.text)),
-          h(Btn, { kind: 'small', testid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }, 'Add test')),
-        ...(s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed').map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
+          liveTests(s).length ? h(Btn, { kind: 'small', testid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }, 'Add test') : null),
+        liveTests(s).length ? null : h(Empty, { text: 'No tests', action: 'Add test', actionTestid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }),
+        ...liveTests(s).map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3 pt-2',
       h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),
@@ -2185,7 +2211,7 @@ function NeedView({ project, r, flow }) {
       h('div', 'flex items-center justify-between pb-1',
         h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Requirements'),
         ro ? null : h('button', { type: 'button', className: 'px-2.5 py-1 rounded text-xs font-medium text-needs border border-needs', 'data-testid': 'new-requirement', onClick: () => navigate('req-new', { need: r.id }) }, 'New requirement')),
-      reqs.length ? null : h(Well, { className: 'text-xs text-dim' }, 'No requirements'),
+      reqs.length ? null : h(Empty, { text: 'No requirements', action: ro ? null : 'New requirement', onClick: () => navigate('req-new', { need: r.id }) }),
       ...reqs.map(x => h('div', { key: x.id, className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2 cursor-pointer', 'data-req': x.id, onClick: () => navigate('rung', { rid: x.id }) },
         h('div', 'flex items-center gap-2.5',
           h('span', { className: cx('text-xs font-medium mono', reqTone(x)) }, x.id),
@@ -2440,6 +2466,7 @@ function SpecView({ project, r, ret, need }) {
             h('span', null, `Carried by ${r.carried_by || 'you'}`), h('span', null, '·'), h('span', null, `Approved ${dayClock(r.approved_at)}`))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests'),
+          tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }),
           ...tests.map(t => h('div', { key: t.id, className: 'bg-well p-2.5 rounded-[6px] border border-line2 flex items-center justify-between text-[11px] cursor-pointer', 'data-test': t.id, onClick: () => navigate('rung', { rid: t.id }) },
             h('span', 'mono text-fg', `${t.id} · ${t.type === 'manual' ? t.text : (t.command || t.text)}`),
             h('span', { className: cx('font-medium', TONE_TEXT[t.result === 'pass' ? 'pass' : t.result === 'fail' ? 'fail' : 'dim']) }, capital(resultWord(t.result)))))),
@@ -2473,7 +2500,7 @@ function SpecView({ project, r, ret, need }) {
         (r.status === 'approved' || r.status === 'stale') && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
-      h('div', 'flex flex-col gap-2', ...tests.map(t => h(TestLine, { key: t.id, t })))),
+      h('div', 'flex flex-col gap-2', tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }), ...tests.map(t => h(TestLine, { key: t.id, t })))),
     h(ClaimsSection, { project, r, onErr: setErr }),
     a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
@@ -2596,6 +2623,7 @@ function TestView({ project, r }) {
     setErr('')
     if (go) go(x.data)
   }
+  const runOne = () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n }))
   const headline = (badge) => h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between', pathCrumbs(r), badge),
     h('div', 'flex items-center gap-2', h('h2', 'text-sm font-semibold text-fg mono', r.type === 'manual' ? r.text : (r.command || r.text))),
@@ -2655,7 +2683,7 @@ function TestView({ project, r }) {
         h('div', 'flex items-center justify-between', h(Label, null, 'Executions'), h(SeenFailing, { value: r.seen_failing, small: true })),
         h('div', { className: 'flex flex-col gap-2', 'data-testid': 'executions' },
           ...(execs.length ? execs : []).map(x => h(ExecRow, { key: x.n, test: r.id, x })),
-          execs.length ? null : h(Well, { className: 'font-mono text-[11px] text-dim' }, 'No executions yet'))),
+          execs.length ? null : h(Empty, { text: 'No executions yet', action: 'Run tests', actionTestid: 'run-tests', onClick: runOne }))),
       h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': (r.defects || []).length ? 'defects' : 'no-defects' },
         h(Label, null, 'Defects'),
         (r.defects || []).length ? null : h(Well, { className: 'text-xs text-dim' }, 'No defects'),
@@ -2664,7 +2692,7 @@ function TestView({ project, r }) {
           h('span', 'mono text-[11px] text-muted', `${dx.category} · ${dx.executions.map(n => '#' + n).join(' ')}`)))),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
-        h(Btn, { kind: 'primary', testid: 'run-tests', onClick: () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n })) }, 'Run tests'),
+        execs.length ? h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runOne }, 'Run tests') : null,
         h(Btn, { testid: 'raise-defect', disabled: !failing.length, onClick: () => openDefect(r.id) }, 'Raise defect'))))
   return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
@@ -2869,10 +2897,10 @@ function BotFailure({ job, err, onRetry, testid }) {
 const NEW_VIEW = { need: 'need-new', requirement: 'req-new', specification: 'spec-edit', test: 'test-edit' }
 const PARENT_OF = { requirement: 'need', specification: 'requirement', test: 'specification' }
 
-function PasteBtn({ project, projects }) {
+function PasteBtn({ project, projects, kind }) {
   const [open, setOpen] = useState(false)
   return frag(
-    h(Btn, { testid: 'paste-text', onClick: () => setOpen(true) }, 'Paste text'),
+    h(Btn, { kind, testid: 'paste-text', onClick: () => setOpen(true) }, 'Paste text'),
     open ? h(PasteDialog, { project, projects, onClose: () => setOpen(false) }) : null)
 }
 

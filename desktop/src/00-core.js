@@ -126,9 +126,12 @@ function guard(go, force) {
 
 // History holds places to return to: a task view (a form or an editor, which registers a way out) is never one,
 // since its text is gone once left; each entry remembers its project, so Back never crosses projects.
+// Needs you spans every project, so it stays a place to return to from whichever project it opened.
+const CROSS = new Set(['projects'])
+const ours = e => e._p === CUR_PROJECT || e._p === '*'
 function commit(next, replace) {
   const cur = $nav.get()
-  if (!replace && cur && !EXITS.some(x => x.task)) { HIST.push({ ...cur, _p: CUR_PROJECT }); if (HIST.length > 50) HIST.shift() }
+  if (!replace && cur && !EXITS.some(x => x.task)) { HIST.push({ ...cur, _p: CROSS.has(cur.view) ? '*' : CUR_PROJECT }); if (HIST.length > 50) HIST.shift() }
   for (const f of ON_LEAVE) f()
   $leave.set(null)
   $notice.set(null)
@@ -138,9 +141,15 @@ function commit(next, replace) {
 function popHistory() {
   while (HIST.length) {
     const e = HIST.pop()
-    if (e._p === CUR_PROJECT) { const { _p, ...v } = e; return v }
+    if (ours(e)) { const { _p, ...v } = e; return v }
   }
   return null
+}
+
+// Whether the view the person came from (the entry Back would use) is this one.
+function cameFrom(view) {
+  for (let i = HIST.length - 1; i >= 0; i--) if (ours(HIST[i])) return HIST[i].view === view
+  return false
 }
 
 function sameView(a, view, params) {
@@ -169,7 +178,7 @@ function returnTo(view, params, opts) {
   const o = opts || {}
   return guard(() => {
     const top = HIST[HIST.length - 1]
-    if (top && top._p === CUR_PROJECT && sameView(top, view, params)) HIST.pop()
+    if (top && ours(top) && sameView(top, view, params)) HIST.pop()
     commit({ view, ...(params || {}) }, true)
   }, o.force)
 }
