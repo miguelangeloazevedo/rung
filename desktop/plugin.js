@@ -1393,7 +1393,7 @@ function Settings({ project }) {
   const [draft, setDraft] = useState(null)
   const [touched, setTouched] = useState(false)
   useDirty(touched)
-  useExit(() => goBack('home', null, { force: true }), true)
+  useExit(() => navigate('home', null, { force: true, replace: true }), true)
   const [adding, setAdding] = useState(null)
   const [label, setLabel] = useState('')
   const [err, setErr] = useState('')
@@ -1429,10 +1429,10 @@ function Settings({ project }) {
     setDraft(JSON.parse(JSON.stringify(res.data)))
     setErr('')
     setTouched(false)
-    goBack('home', null, { force: true })
+    navigate('home', null, { force: true, replace: true })
     notify('Settings saved')
   }
-  const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setTouched(false); setErr(''); goBack('home', null, { force: true }) }
+  const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setTouched(false); setErr(''); navigate('home', null, { force: true, replace: true }) }
   const numInp = 'w-16 bg-well border border-line rounded px-2 py-1 text-xs text-fg mono outline-none'
   const main = frag(
     h('div', 'flex items-center gap-2 text-xs',

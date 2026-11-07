@@ -94,6 +94,15 @@ compression:
   enabled: false
 YAML
 
+# 1c. Chats left by earlier runs leave the isolated home: every one is a row in the Desktop sidebar, so they
+# pile up across runs and push keyboard journeys (Tab through the whole window) past their bound.
+for P in "" "-p coder"; do
+  # shellcheck disable=SC2086
+  HERMES_HOME="$HOME_DIR" "$HA/venv/bin/hermes" $P sessions prune --older-than 2h --yes >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  HERMES_HOME="$HOME_DIR" "$HA/venv/bin/hermes" $P sessions archive --older-than 2h --include-open --yes >/dev/null 2>&1 || true
+done
+
 # 2. Stub chat model.
 if ! curl -s -m 2 "http://127.0.0.1:$STUB_PORT/v1/models" >/dev/null; then
   nohup "$R/.venv/bin/python" "$R/tests/e2e/stub_model.py" --port "$STUB_PORT" >"$LOGS/stub-model.log" 2>&1 &

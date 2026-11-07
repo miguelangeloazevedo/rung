@@ -147,6 +147,7 @@ Open: who makes the demo video and how (Tue 10 Nov); narration.
 | Topic | Decision |
 | --- | --- |
 | Where Back goes | Back, Cancel and Escape return to the view the person came from, else the view's parent; leaving adds no history entry. A form or editor is never a place to return to: it is not recorded when left. History entries carry their project, so Back never crosses into another project. |
+| Settings | Settings is reached from the header of any view, so its Cancel, Save and Escape go to Home (frozen UC07), not back through history. |
 | Named Back | `Back to X` always goes to X; when X is where the person came from, that entry is used up. Build steps name their Back: Back to Need, Back to Requirements, Back to Specifications, Back to Tests. After a save or a create the destination replaces the finished form. |
 | Escape everywhere | Every view with a visible Back or Cancel takes the same action on Escape (run, attempt, execution, read-out, retired needs, the manual test form, the inline need edit, the missing page). |
 | Dialogs | Escape, the cross and a click outside ask Discard or Keep editing when the dialog holds typed text (Raise defect title, Retire reason); its own Cancel closes without asking. A click outside counts only when it starts and ends outside. The rest of Rung is inert while a dialog is open. |
