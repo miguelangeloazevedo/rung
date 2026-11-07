@@ -157,3 +157,9 @@ Open: who makes the demo video and how (Tue 10 Nov); narration.
 | First run | Before the first project, the start screen stays reachable: New project always has Back to it, and Escape takes it, after the start screen was dismissed too. |
 | Names and places | The Settings page is titled Settings and its project name is the button to Projects; Retired needs and Project settings carry their name as the header h1. Breadcrumbs are an ordered list of buttons with the current item marked. Every control is at least 24 by 24 pixels. Build step 1 shows the step strip. |
 | Declined | Stop instead of Cancel for a running execution or run: frozen UC28 names it Cancel. Row actions carrying their item in the accessible name: frozen tests find Open, Approve and Accept by exact name, and the row names the item. A view showing both breadcrumbs and Back to X: frozen UC9 and UC10 use Back to test. The strip opens steps already reached: a step past an unapproved gate is locked and the engine refuses the move. The status chip and the dock move the app even when unsaved text holds the change, so the question is seen. Window title and skip link: the host owns them. |
+
+## Round 12: front page (7 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Front page | Direction C of the three mocks: a cross-project Needs you view, items grouped by project, with the project list beside it. Opening a project leads to its Home (ladder) as today. |
