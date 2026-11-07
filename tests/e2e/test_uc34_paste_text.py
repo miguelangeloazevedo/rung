@@ -29,6 +29,9 @@ def paste_and_place(page, text, e=None):
             return True
         raise AssertionError((dialog(page).inner_text() if dialog(page).count() else H.view(page)) + (repr([dict(x) for x in e._q('SELECT pk, status, error, result FROM bot_jobs')]) if e else ''))
     H.wait_until(placed, timeout=20, msg="the placed text")
+    # Place gave way to the result: focus moved with it, never to the page behind the dialog.
+    H.wait_until(lambda: page.evaluate("(() => { const d = document.querySelector('.rung [role=dialog]'); return !!d && d.contains(document.activeElement) })()"),
+                 timeout=5, msg=lambda: f"focus left the dialog: {page.evaluate('document.activeElement.outerHTML.slice(0, 120)')}")
 
 
 def test_bot01_bot02_bot03_paste_text_places_and_opens_a_new_form(rung, csvtidy, page):

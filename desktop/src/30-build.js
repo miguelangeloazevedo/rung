@@ -102,7 +102,7 @@ function NeedNew({ project }) {
     const accepted = sugs.filter(s => marks[s] === 'accepted')
     const res = await post(`${P(project)}/needs`, { text: text.trim(), requirements: accepted })
     if (!res.ok) return setErr(res.error)
-    finish('build', { need: res.data.id, step: 'reqs' })
+    finish('build', { need: res.data.id, step: 'reqs' }, `Created ${res.data.id}`)
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need: null, flow: null, current: 0 }),
@@ -115,7 +115,7 @@ function NeedNew({ project }) {
     sugs.length || busy ? h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'suggested' },
       h('div', 'flex items-center justify-between',
         h('h2', 'text-xs font-semibold uppercase tracking-wider text-fg', 'Suggested requirements'),
-        busy ? h('span', 'text-[11px] text-needs', 'Drafting') : null),
+        busy ? h('span', { className: 'text-[11px] text-needs', role: 'status' }, 'Suggesting') : null),
       h('div', 'flex flex-col gap-2', ...sugs.map(s => h(SuggestRow, {
         key: s, text: s, mark: marks[s],
         onAccept: () => setMarks({ ...marks, [s]: 'accepted' }),
@@ -438,7 +438,7 @@ function StepDevelop({ project, need, flow }) {
       const res = await post(`${P(project)}/specs/${s.id}/send`, {})
       if (!res.ok && !/manual|already running|no accepted command/.test(res.error)) { setErr(res.error); return }
     }
-    navigate('home')
+    finish('home', null, `Sent ${specs.length} ${specs.length === 1 ? 'specification' : 'specifications'}`)
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need, flow, current: 4 }),

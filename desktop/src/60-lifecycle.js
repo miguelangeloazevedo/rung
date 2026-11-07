@@ -6,9 +6,39 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
 
 // A dialog: the rest of Rung is inert while it is open. Escape, the cross and a click outside close it, asking
 // first when it holds unsaved text (`dirty`); its own Cancel closes without asking.
+// When the focused control inside `ref` is replaced or disabled (Place becomes Cancel, a result replaces a
+// button), focus moves to what took its place: a Cancel while work runs, else the result (`data-focus-first`),
+// else the first control. It never drops to the page, and never takes focus the person moved elsewhere.
+function useKeepFocus(ref) {
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    let inside = false
+    const fin = () => { inside = true }
+    const fout = e => {
+      const t = e.target
+      if (e.relatedTarget) { if (!el.contains(e.relatedTarget)) inside = false; return }
+      setTimeout(() => { if (document.contains(t) && !t.disabled && t.getAttribute('aria-disabled') !== 'true') inside = false }, 0)
+    }
+    const vis = x => x.offsetParent !== null
+    const mo = new MutationObserver(() => {
+      if (!inside) return
+      const a = document.activeElement
+      if (a && a !== document.body && document.contains(a) && !a.disabled) return
+      const t = [...el.querySelectorAll('[data-testid=bot-cancel], [data-focus-first]')].find(vis) || [...el.querySelectorAll(FOCUSABLE)].find(vis)
+      if (t) t.focus({ preventScroll: true })
+    })
+    el.addEventListener('focusin', fin)
+    el.addEventListener('focusout', fout)
+    mo.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] })
+    return () => { mo.disconnect(); el.removeEventListener('focusin', fin); el.removeEventListener('focusout', fout) }
+  }, [])
+}
+
 function Dialog({ title, onClose, children, footer, testid, dirty }) {
   const box = useRef(null)
   const down = useRef(false)
+  useKeepFocus(box)
   useEffect(() => {
     const opener = document.activeElement
     const first = box.current && (box.current.querySelector('[data-autofocus]') || box.current.querySelector(FOCUSABLE))
@@ -60,7 +90,7 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
   },
     h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-full max-w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
-        h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
+        h('h2', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
       hasBody(children) ? h('div', 'p-5 flex flex-col gap-4', children) : null,
       footer ? h('div', cx('flex items-center justify-end gap-2 px-5 py-3.5 bg-card', hasBody(children) && 'border-t border-line'), footer) : null))
@@ -89,10 +119,15 @@ function DangerBtn({ onClick, disabled, children, testid }) {
   }, children)
 }
 
+// The visible label is the control's accessible name (never the field's internal name).
+const FORM_TAGS = { input: 1, textarea: 1, select: 1 }
 function Field({ label, error, name, children }) {
+  const named = typeof label === 'string'
+    ? React.Children.map(children, c => (React.isValidElement(c) && FORM_TAGS[c.type] ? React.cloneElement(c, { 'aria-label': label }) : c))
+    : children
   return h('div', 'flex flex-col gap-1.5',
-    h('span', 'text-xs font-medium text-muted', label),
-    children,
+    h('span', { className: 'text-xs font-medium text-muted', 'aria-hidden': 'true' }, label),
+    named,
     error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', role: 'alert', id: name ? 'fe-' + name : undefined }, error) : null)
 }
 
@@ -129,7 +164,14 @@ function StartScreen() {
 // Projects whose checklist was shown incomplete in this window: it stays up, all ticked, once complete.
 const FG_SEEN = new Set()
 
-function FirstGreen({ project }) {
+// Where each First green step is done: a new need first, then that need's build steps.
+const FG_STEP = { approve_requirements: 'reqs', approve_specifications: 'specs', approve_tests: 'tests', first_green: 'develop' }
+function fgGo(key, need) {
+  if (key === 'write_need') return () => navigate('need-new')
+  return need && FG_STEP[key] ? () => navigate('build', { need, step: FG_STEP[key] }) : null
+}
+
+function FirstGreen({ project, need }) {
   const q = useApi(`/projects/${encodeURIComponent(project)}/first-green`, { live: true })
   const fg = q.data
   if (fg && fg.done < fg.total) FG_SEEN.add(project)
@@ -144,7 +186,9 @@ function FirstGreen({ project }) {
     h('ul', 'flex flex-col gap-1.5',
       ...fg.items.map(i => h('li', { key: i.key, className: 'flex items-center gap-2 text-xs', 'data-item': i.key, 'data-done': i.done ? '1' : '0' },
         h('span', { className: cx('w-4 text-center font-bold', i.done ? 'text-pass' : 'text-dim'), 'aria-hidden': 'true' }, i.done ? '✓' : '○'),
-        h('span', { className: i.done ? 'text-fg' : 'text-muted' }, i.label),
+        fgGo(i.key, need)
+          ? h('button', { type: 'button', className: cx('min-h-[24px] text-left hover:underline', i.done ? 'text-fg' : 'text-needs font-medium'), 'data-testid': 'first-green-go', onClick: fgGo(i.key, need) }, i.label)
+          : h('span', { className: 'text-muted' }, i.label),
         h('span', { className: 'sr-only' }, i.done ? 'done' : 'not done')))))
 }
 

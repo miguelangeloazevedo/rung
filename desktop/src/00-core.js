@@ -19,7 +19,7 @@ const FIELD_NAMES = {
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
   cost: 'Cost', max_runs: 'Max runs', test_timeout: 'Default timeout', output_limit: 'Output limit',
-  reason: 'Reason', confirm: 'Project name', search: 'Search projects'
+  reason: 'Reason', confirm: 'Project name', search: 'Search projects', paste: 'Text'
 }
 const NATIVE = { button: 1, a: 1, input: 1, select: 1, textarea: 1, label: 1, option: 1 }
 
@@ -146,6 +146,12 @@ function popHistory() {
     if (ours(e)) { const { _p, ...v } = e; return v }
   }
   return null
+}
+
+// Whether there is a view to go back to (a Back with somewhere to go).
+function canGoBack() {
+  for (let i = HIST.length - 1; i >= 0; i--) if (ours(HIST[i])) return true
+  return false
 }
 
 // Whether the view the person came from (the entry Back would use) is this one.

@@ -4,9 +4,11 @@
 
 // ------------------------------------------------------------------ prefill for a New form
 
-// Fields handed to the next New form (from Paste text). Read when the form mounts, cleared once it has.
+// Fields handed to the next New form (from Paste text). Read when the form mounts, cleared once it has, and
+// dropped by the view change after the one that opened it, so a form that did not open never gets them later.
 let PREFILL = null
-function setPrefill(view, fields) { PREFILL = { view, fields } }
+function setPrefill(view, fields) { PREFILL = { view, fields, armed: false } }
+ON_LEAVE.push(() => { if (PREFILL) { if (PREFILL.armed) PREFILL = null; else PREFILL.armed = true } })
 function usePrefill(view) {
   const got = useRef(PREFILL && PREFILL.view === view ? PREFILL.fields : null)
   useEffect(() => { if (PREFILL && PREFILL.view === view) PREFILL = null }, [])
@@ -15,8 +17,9 @@ function usePrefill(view) {
 
 // ------------------------------------------------------------------ a bot job
 
-// Starts a job, follows it until it ends, and cancels it when the view that started it goes away.
-function useBotJob() {
+// Starts a job, follows it until it ends, and cancels it when the view that started it goes away, saying so
+// on the view the person went to (`verb`: Placing, Drafting, Suggesting).
+function useBotJob(verb) {
   const [job, setJob] = useState(null)
   const [err, setErr] = useState('')
   const live = useRef(true)
@@ -25,7 +28,10 @@ function useBotJob() {
     live.current = true  // a remount (React's strict mode runs effects twice) must follow again
     return () => {
       live.current = false
-      if (cur.current) rest(`/bot/${cur.current}/cancel`, { method: 'POST', body: {} }).catch(() => {})
+      if (cur.current) {
+        rest(`/bot/${cur.current}/cancel`, { method: 'POST', body: {} }).catch(() => {})
+        notify(`${verb || 'Bot help'} cancelled`)
+      }
     }
   }, [])
   const follow = async id => {
@@ -84,7 +90,7 @@ function PasteDialog({ project, projects, onClose }) {
   const [kind, setKind] = useState('')
   const [parent, setParent] = useState('')
   const [check, setCheck] = useState({ valid: false, reason: '' })
-  const bot = useBotJob()
+  const bot = useBotJob('Placing')
   const tq = useApi(proj ? `${P(proj)}/bot/targets` : null, { enabled: !!proj })
   const targets = (tq.data && tq.data.targets) || []
   const res = bot.job && bot.job.status === 'done' ? bot.job.result : null
@@ -117,18 +123,19 @@ function PasteDialog({ project, projects, onClose }) {
   const footer = res
     ? frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'open-as-new', disabled: !check.valid, onClick: open }, `Open as new ${(KIND_WORD[kind] || 'rung').toLowerCase()}`))
     : bot.busy
-      ? frag(h(Btn, { testid: 'bot-cancel', label: 'Cancel placing', onClick: bot.cancel }, 'Cancel'))
+      ? frag(h(Btn, { key: 'bot-cancel', testid: 'bot-cancel', label: 'Cancel placing', onClick: bot.cancel }, 'Cancel'))
       : frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'place', disabled: !text.trim() || !proj, onClick: place }, 'Place'))
   return h(Dialog, { title: 'Paste text', onClose, dirty: !!text.trim(), testid: 'paste-dialog', footer },
     projects && projects.length > 1 && !res ? h(Field, { label: 'Project' }, sel('project', proj, setProj, projects.map(p => [p, p]), 'Project')) : null,
     res
       ? h('div', { className: 'flex flex-col gap-3', 'data-testid': 'placed' },
         h(Well, { className: 'text-xs text-fg', testid: 'placed-text' }, res.text),
-        h('div', { className: 'flex items-center gap-2 text-xs', 'data-testid': 'placed-as' },
+        h('div', { className: 'flex flex-wrap items-center gap-2 text-xs', 'data-testid': 'placed-as', 'data-focus-first': '1', tabIndex: -1 },
           h('span', 'font-semibold text-fg', KIND_WORD[res.kind] || res.kind || 'Unknown'),
           res.parent ? h('span', 'text-muted', 'under') : null,
           res.parent ? h('span', 'mono text-needs font-medium', res.parent) : null,
-          h('span', 'text-muted', `· ${bot.job.profile}`)),
+          h('span', 'text-muted', `· ${bot.job.profile}`),
+          projects && projects.length > 1 ? h('span', 'text-muted', `· ${proj}`) : null),
         res.why ? h('div', { className: 'text-xs text-muted', 'data-testid': 'placed-why' }, res.why) : null,
         res.valid ? null : h('div', { className: 'text-xs text-fail', 'data-testid': 'place-refused' }, `Not offered: ${res.reason}`),
         h('div', 'grid grid-cols-2 gap-3',
@@ -136,7 +143,7 @@ function PasteDialog({ project, projects, onClose }) {
           kind === 'need' ? null : h(Field, { label: 'Parent' }, sel('parent', parent, setParent, [['', 'Choose'], ...parents.map(t => [t.id, `${t.id} ${t.text}`])], 'Parent'))),
         check.reason && (parent || kind === 'need') ? h('div', { className: 'text-[11px] text-fail', 'data-testid': 'place-check' }, check.reason) : null)
       : h(Field, { label: 'Text' }, h('textarea', { className: INPUT, rows: 4, name: 'paste', value: text, 'data-autofocus': '1', readOnly: bot.busy, onChange: e => setText(e.target.value) })),
-    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running' }, `Placing · ${bot.job.profile}`) : null,
+    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Placing · ${bot.job.profile}`) : null,
     bot.job && bot.job.status === 'cancelled' && !res ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null,
     h(BotFailure, { job: bot.job, err: bot.err, onRetry: text.trim() ? place : null }))
 }
@@ -146,12 +153,15 @@ function PasteDialog({ project, projects, onClose }) {
 // `fields` is what the form holds now; `apply(values)` writes drafted values into the form. Fields with text
 // are only replaced after you choose Replace.
 function DraftBar({ project, kind, parent, fields, apply }) {
-  const bot = useBotJob()
+  const bot = useBotJob('Drafting')
   const [asking, setAsking] = useState(false)
-  const [by, setBy] = useState('')
+  const [by, setBy] = useState('')  // who drafted what the form holds; cleared when a new draft starts
+  const box = useRef(null)
+  useKeepFocus(box)
   const typed = Object.values(fields).some(v => String(v || '').trim())
   const run = async replace => {
     setAsking(false)
+    setBy('')
     const keep = replace ? {} : fields
     const j = await bot.start(`${P(project)}/bot/draft`, { kind, parent: parent || null, fields: keep })
     if (j && j.status === 'done') {
@@ -166,19 +176,19 @@ function DraftBar({ project, kind, parent, fields, apply }) {
       setBy(j.profile)
     }
   }
-  return h('div', { className: 'flex flex-col gap-2', 'data-testid': 'draft-bar' },
+  return h('div', { ref: box, className: 'flex flex-col gap-2', 'data-testid': 'draft-bar' },
     h('div', 'flex items-center gap-2',
       bot.busy
-        ? frag(h('span', { className: 'text-xs text-needs', 'data-testid': 'bot-running' }, `Drafting · ${bot.job.profile}`),
-          h(Btn, { kind: 'small', testid: 'bot-cancel', label: 'Cancel draft', onClick: bot.cancel }, 'Cancel'))
+        ? frag(h('span', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Drafting · ${bot.job.profile}`),
+          h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', label: 'Cancel draft', onClick: bot.cancel }, 'Cancel'))
         : h(Btn, { kind: 'small', testid: 'draft', onClick: () => (typed ? setAsking(true) : run(true)) }, 'Draft'),
-      by && !bot.busy ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'drafted-by' }, `Drafted by ${by}`) : null,
+      by && !bot.busy ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'drafted-by', 'data-focus-first': '1', tabIndex: -1 }, `Drafted by ${by}`) : null,
       bot.job && bot.job.status === 'cancelled' ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null),
     h(BotFailure, { job: bot.job, err: bot.err, onRetry: () => run(false) }),
     asking ? h(Dialog, {
-      title: 'Draft', onClose: () => setAsking(false), testid: 'draft-ask',
+      title: 'Replace typed text?', onClose: () => setAsking(false), testid: 'draft-ask',
       footer: frag(h(Btn, { testid: 'draft-keep', onClick: () => run(false) }, 'Keep'), h(Btn, { kind: 'primary', testid: 'draft-replace', onClick: () => run(true) }, 'Replace'))
-    }, h('div', 'text-xs text-fg', 'Replace typed text')) : null)
+    }) : null)
 }
 
 // ------------------------------------------------------------------ Suggest on a need
@@ -188,7 +198,9 @@ function scoreLine(s) {
 }
 
 function SuggestPanel({ project, need, ro }) {
-  const bot = useBotJob()
+  const bot = useBotJob('Suggesting')
+  const box = useRef(null)
+  useKeepFocus(box)
   const [choice, setChoice] = useState(null)
   const [none, setNone] = useState(false)
   const [itemErr, setItemErr] = useState('')
@@ -216,19 +228,19 @@ function SuggestPanel({ project, need, ro }) {
   const items = j && j.status === 'done' ? (j.result.items || []) : []
   const chosen = choice && choice.chosen
   const rank = chosen && choice.ranked ? choice.ranked.findIndex(s => s.profile === chosen.profile) + 1 : 0
-  return h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'bot-suggest' },
+  return h('div', { ref: box, className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'bot-suggest' },
     h('div', 'flex items-center justify-between pb-1',
       h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Suggested requirements'),
       ro ? null : bot.busy
-        ? h(Btn, { kind: 'small', testid: 'bot-cancel', label: 'Cancel suggest', onClick: bot.cancel }, 'Cancel')
+        ? h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', label: 'Cancel suggest', onClick: bot.cancel }, 'Cancel')
         : h(Btn, { kind: 'small', testid: 'suggest', onClick: run }, 'Suggest')),
-    none ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-none' },
-      h('div', 'text-xs text-fg', 'No profile can suggest')) : null,
-    j && chosen ? h('div', { className: 'flex flex-wrap items-center gap-2 text-[11px]', 'data-testid': 'suggest-profile' },
+    none ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-none', role: 'status' },
+      h('div', { className: 'text-xs text-fg', 'data-focus-first': '1', tabIndex: -1 }, 'No profile can suggest')) : null,
+    j && chosen ? h('div', { className: 'flex flex-wrap items-center gap-2 text-[11px]', 'data-testid': 'suggest-profile', 'data-focus-first': '1', tabIndex: -1 },
       h('span', 'font-semibold text-fg text-xs', j.profile),
       h('span', 'mono text-muted', `ranked ${rank} of ${choice.ranked.length} · ${scoreLine(chosen)}`),
       j.changed_since ? h(Badge, { status: 'stale', label: 'Changed since', small: true }) : null) : null,
-    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running' }, `Suggesting · ${j.profile}`) : null,
+    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Suggesting · ${j.profile}`) : null,
     j && j.status === 'cancelled' ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null,
     h(BotFailure, { job: j, err: bot.err, onRetry: ro ? null : run }),
     items.length ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-items' },

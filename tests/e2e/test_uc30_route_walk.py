@@ -185,6 +185,8 @@ def test_nav01_nav02_nav03_nav04_nav07_nav08_nav09_nav13_route_walk(rung, csvtid
             assert st["missing"], f"{origin}: no missing page"
             for b in ("Back", "Home", "Projects"):
                 assert H.button(page, b, page.locator(".rung [data-testid=missing]")).is_visible(), (origin, b)
+            # It stands alone: no tiles, tree or allocation of a page the person did not reach.
+            assert page.locator(".rung .r-tiles, .rung [data-testid=rail]").count() == 0, f"{origin}: missing page shows project content"
             if view == "exec":
                 H.evidence(page, 30)
         # NAV-01: a visible way out.
@@ -348,13 +350,15 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
                 .map(b => { const r = b.getBoundingClientRect(); return { t: (b.innerText || b.getAttribute('aria-label') || '').trim().slice(0, 30), l: r.left - R.left, r: R.right - r.right } })
                 .filter(x => x.l < -0.5 || x.r < -0.5)
               const m = main && main.getBoundingClientRect(), s = rail && rail.getBoundingClientRect()
-              return { width: R.width, railAfter: !rail || (s.top >= m.bottom - 1 && s.left - R.left < 30), out,
+              const hidden = [...root.querySelectorAll('.rs-label')].filter(l => l.offsetParent === null || l.getBoundingClientRect().width < 1).map(l => l.textContent)
+              return { width: R.width, railAfter: !rail || (s.top >= m.bottom - 1 && s.left - R.left < 30), out, hidden,
                        stripFits: !strip || strip.scrollWidth <= strip.clientWidth + 1,
                        hscroll: root.scrollWidth > root.clientWidth + 1 }
             }""")
             assert abs(got["width"] - 320) < 1, got
             assert got["railAfter"], f"{view}: the rail is not under the main column"
             assert got["stripFits"], f"{view}: the step strip does not wrap"
+            assert not got["hidden"], f"{view}: step names hidden {got['hidden']}"
             assert not got["out"], f"{view}: clipped {got['out'][:8]}"
     finally:
         page.evaluate("document.querySelector('.rung').style.width = ''")

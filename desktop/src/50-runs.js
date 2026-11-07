@@ -128,7 +128,7 @@ function RunView({ project, run }) {
             h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, a.status === 'pass' ? 'passed' : a.status === 'fail' ? 'failed' : OUTCOME_WORD[a.status] || a.status))
         }))),
     h('div', 'flex flex-col gap-1.5 pt-2 border-t border-line',
-      h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-xs text-fg flex flex-col gap-1.5', 'data-testid': 'live-output' },
+      h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-xs text-fg flex flex-col gap-1.5', 'data-testid': 'live-output', role: 'log', 'aria-live': 'polite' },
         ...(out.length ? out : ['waiting for the worker']).map((l, i) => h('div', { key: i, className: 'flex items-center gap-2 text-muted' }, h('span', null, '>'), h('span', 'text-fg', l))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
@@ -240,7 +240,7 @@ function ExecView({ project, test, n }) {
         h('div', 'flex items-center justify-between text-[11px] text-muted',
           h('span', 'font-medium uppercase tracking-wider text-[10px]', 'Live Output'),
           h('span', 'mono text-needs', 'streaming')),
-        h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-[11px] text-fg flex flex-col gap-1 min-h-[180px]', 'data-testid': 'output' },
+        h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-[11px] text-fg flex flex-col gap-1 min-h-[180px]', 'data-testid': 'output', role: 'log' },
           ...lines.slice(-30).map((l, i) => h('div', { key: i }, l)),
           h('span', { className: 'inline-block w-1.5 h-3.5 bg-needs ml-0.5', style: { animation: 'rung-pulse 1s steps(2) infinite' } }))),
       h(ErrorLine, { text: err }))
@@ -271,7 +271,7 @@ function ExecView({ project, test, n }) {
       h('div', 'grid grid-cols-3 gap-2.5', ...facts(false).map(f => h(Fact, { ...f.props, key: f.key, tile: true }))),
       h('div', 'flex flex-col gap-1.5',
         h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Output log'),
-        h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 font-mono text-xs flex flex-col gap-1 leading-relaxed text-muted', 'data-testid': 'output' }, ...OutputLines({ text: x.output }))),
+        h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 font-mono text-xs flex flex-col gap-1 leading-relaxed text-muted', 'data-testid': 'output', role: 'log' }, ...OutputLines({ text: x.output }))),
       h(ErrorLine, { text: err }))
     return h(Page, { project, sel: test }, body)
   }
@@ -299,7 +299,7 @@ function ExecView({ project, test, n }) {
           h('div', 'px-4 py-2.5 border-b border-line bg-card flex items-center justify-between',
             h('span', 'text-xs font-mono text-muted', 'OUTPUT LOG'),
             h('span', 'text-[10px] font-mono text-pass', `exit ${x.exit_code}`)),
-          h('div', { className: 'p-4 font-mono text-xs flex flex-col gap-1.5 text-muted', 'data-testid': 'output' }, ...OutputLines({ text: x.output })))),
+          h('div', { className: 'p-4 font-mono text-xs flex flex-col gap-1.5 text-muted', 'data-testid': 'output', role: 'log' }, ...OutputLines({ text: x.output })))),
       h(ErrorLine, { text: err }))
     return h(Page, { project, sel: test }, body)
   }
@@ -316,7 +316,7 @@ function ExecView({ project, test, n }) {
     h('div', 'grid grid-cols-3 gap-2.5', ...facts(true)),
     h('div', 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-2.5',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'OUTPUT LOG'),
-      h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-1 font-mono text-xs leading-relaxed', 'data-testid': 'output' }, ...OutputLines({ text: x.output || x.note || '' }))),
+      h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-1 font-mono text-xs leading-relaxed', 'data-testid': 'output', role: 'log' }, ...OutputLines({ text: x.output || x.note || '' }))),
     h(ErrorLine, { text: err }))
   return h(Page, { project, sel: test }, body)
 }

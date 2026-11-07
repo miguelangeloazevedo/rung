@@ -43,14 +43,14 @@ function StaleCard({ project, item, ro }) {
   const ch = item.change
   const path = (r && r.path) || []
   const [err, setErr] = useState('')
-  return h(Card, { className: 'r-ny p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
+  return h(Card, { nested: true, className: 'r-ny p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
     h('div', 'flex flex-col gap-1.5',
       h('div', 'flex items-center justify-between',
         h('div', 'text-[11px] mono text-muted font-medium flex items-center gap-1.5',
           ...path.flatMap(p => [h('span', { key: p.id }, p.id), h('span', { key: p.id + '>' }, '›')]),
           h('span', 'text-needs', item.id)),
         h(Badge, { status: 'stale' })),
-      h('div', 'text-sm font-semibold text-fg', `${item.id} · ${item.text}`),
+      h('button', { type: 'button', className: 'text-left text-sm font-semibold text-fg hover:underline', onClick: e => { e.stopPropagation(); navigate('rung', { rid: item.id }) } }, `${item.id} · ${item.text}`),
       ch ? h('div', 'text-[12px] text-muted flex items-center gap-1.5',
         h('span', {
           className: 'cursor-pointer hover:text-fg',
@@ -62,7 +62,7 @@ function StaleCard({ project, item, ro }) {
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
     ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
+      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error); if (res.ok) notify(`Approved ${item.id}`) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
@@ -137,7 +137,7 @@ function Home({ project }) {
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
   const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project, kind: 'head' }), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
-    h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project }))
+    h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project, need: ((d.tree || []).find(n => n.status !== 'dismissed') || {}).id }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
     return h(Frame, {
@@ -215,6 +215,7 @@ const needCount = n => `${n} ${n === 1 ? 'needs' : 'need'} you`
 // The front page (Rounds 12 and 16): what needs you across every open project, grouped by project, with the
 // project list beside it. Rung opens here only when no project is current; the project name in a header opens it.
 function Projects({ tab }) {
+  const back = useState(() => canGoBack())[0]  // opened from a view (the project name): Back returns to it
   const stQ = useApi('/state')
   const ovQ = useApi('/overview', { live: true })
   const st = stQ.data
@@ -298,7 +299,8 @@ function Projects({ tab }) {
       h('div', 'flex items-baseline gap-3',
         h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, archived ? 'Archived projects' : 'Needs you'),
         !archived && ov ? h('span', { className: 'text-xl font-bold mono text-needs', 'data-testid': 'ny-total' }, String(ov.total)) : null),
-      h('div', 'flex items-center gap-2',
+      h('div', 'flex flex-wrap items-center gap-2',
+        back ? h(ExitBtn, { kind: 'head', testid: 'page-back', onClick: () => goBack('home') }, 'Back') : null,
         !archived && st && (st.projects || []).length ? h(PasteBtn, { project: st.current, projects: st.projects.map(p => p.name) }) : null,
         h(Btn, { onClick: () => navigate('settings') }, 'Settings'),
         h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project'))),
@@ -467,7 +469,7 @@ function Settings({ project }) {
     h('div', 'flex items-center gap-2 text-xs',
       h('span', 'text-muted uppercase font-semibold tracking-wider text-[11px]', 'Project'),
       h('span', 'text-muted', '/'),
-      project ? h('button', { type: 'button', className: 'text-fg font-medium mono', 'data-testid': 'project-name', 'aria-label': `${project}, projects`, onClick: () => navigate('projects') }, project) : h('span', 'text-muted', 'none')),
+      project ? h('button', { type: 'button', className: 'text-fg font-medium mono', 'data-testid': 'project-name', title: 'Needs you', 'aria-label': `${project}, Needs you`, onClick: () => navigate('projects') }, project) : h('span', 'text-muted', 'none')),
     h('header', 'flex items-center justify-between pb-1', h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Settings')),
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Profiles'),

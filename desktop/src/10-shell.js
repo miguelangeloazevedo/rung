@@ -93,7 +93,10 @@ function SectionTitle({ children, tone: t, right, dot }) {
     right != null ? h('span', 'text-[11px] text-muted', right) : null)
 }
 
-function Card({ children, className, onClick, testid, style }) {
+// A card that opens something. A card holding its own buttons (`nested`) is not itself a button: a mouse click
+// on it still opens, and its title is the keyboard's way in (no button inside a button).
+function Card({ children, className, onClick, testid, style, nested }) {
+  if (nested) return React.createElement('div', { className: cx('bg-card border border-line rounded-[6px]', onClick && 'cursor-pointer', className), onClick, 'data-testid': testid, style }, children)
   return h('div', {
     className: cx('bg-card border border-line rounded-[6px]', onClick && 'cursor-pointer', className),
     onClick, 'data-testid': testid, style
@@ -227,7 +230,7 @@ function Strip({ current, reached, need, done: doneList }) {
         : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
     h('span', { className: cx('text-xs whitespace-nowrap rs-label', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
   })
-  return h('div', { className: 'rs-strip flex flex-wrap items-center justify-between gap-y-2 bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
+  return h('nav', { className: 'rs-strip flex flex-wrap items-center justify-between gap-y-2 bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip', 'aria-label': 'Build steps' }, ...kids)
 }
 
 // ------------------------------------------------------------------ traceability rail
@@ -251,9 +254,10 @@ function TreeSpec({ n, sel, hl }) {
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
     h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
-      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', 'sr-only', rungLabel(n)),
         h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted'), title: typeof sub === 'string' ? sub : undefined }, sub))),
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
 }
@@ -263,9 +267,10 @@ function TreeReq({ n, sel, hl }) {
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
     h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
-      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', 'sr-only', rungLabel(n)),
         h('span', { className: cx('text-[11px]', t === 'dim' ? 'text-dim' : 'text-muted') }, n.text))),
     ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel, hl })))
 }
@@ -275,9 +280,10 @@ function TreeNeed({ n, sel, hl }) {
   const reqs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1.5 text-xs',
     h('div', { className: cx('flex items-start gap-2 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
-      h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
         h('span', 'font-semibold text-fg', n.id),
+        h('span', 'sr-only', rungLabel(n)),
         h('span', 'text-[11px] text-muted leading-tight', n.text))),
     reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)
 }
@@ -288,7 +294,7 @@ function Allocation({ alloc }) {
   const picked = alloc.pick && alloc.pick.profile
   const lead = picked || (rows[0] && rows[0].profile) || ''
   return h('div', 'flex flex-col gap-3 pt-3 border-t border-line',
-    h('div', { className: 'flex items-center justify-between pb-1 cursor-pointer', onClick: () => navigate('settings') },
+    h('div', { className: 'flex items-center justify-between pb-1 cursor-pointer', 'aria-label': `Allocation: ${alloc.spec}, Settings`, onClick: () => navigate('settings') },
       h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', `Allocation: ${alloc.spec}`),
       h('span', 'text-[11px] mono text-needs', lead)),
     alloc.human_only
@@ -321,7 +327,7 @@ function Rail({ tree, alloc, sel, retired }) {
         h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Traceability Tree'),
         head ? h('span', { className: cx('text-[11px]', TONE_TEXT[tone(head)]) }, head.status) : null),
       needs.length
-        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
+        ? h('nav', { className: 'flex flex-col gap-4', 'aria-label': 'Traceability tree' }, ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
         : h('div', 'text-[11px] text-muted', 'No needs yet'),
       retired ? h('button', { type: 'button', className: 'self-start text-[11px] text-muted hover:text-fg', 'data-testid': 'retired-link', onClick: () => navigate('retired') }, `Retired ${retired}`) : null),
     h(Allocation, { alloc }))
@@ -363,7 +369,7 @@ function FolderInput({ value, onChange, onPicked, invalid, className }) {
     h('div', 'flex items-center gap-2',
       h('input', { className: cx(className, 'font-mono flex-1 min-w-0'), type: 'text', name: 'folder', 'aria-invalid': invalid ? 'true' : undefined,
         value, onChange: e => onChange(e.target.value), onBlur: e => onChange(e.target.value, true) }),
-      canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2' }, 'Choose') : null),
+      canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2 whitespace-nowrap' }, 'Choose folder') : null),
     err ? h('span', { className: 'text-[11px] text-fail', role: 'alert', 'data-testid': 'choose-error' }, err) : null)
 }
 
@@ -383,6 +389,8 @@ function missingText(text) {
   if (m) return `${ID_KIND[m[1]]} ${m[1]}-${m[2]} is not in ${m[3]}`
   m = t.match(/^no (\w+) (\S+) in (\w+) (\S+)$/)
   if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} is not in ${m[3]} ${m[4]}`
+  m = t.match(/^no execution #(\d+) of (\S+)$/)
+  if (m) return `Execution ${m[2]} #${m[1]} does not exist`
   m = t.match(/^no (\w+) (\S+)$/)
   if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} does not exist`
   return t ? t[0].toUpperCase() + t.slice(1) : 'Not found'
@@ -404,17 +412,18 @@ function ExitBtn({ onClick, exit, children, ...rest }) {
 function Missing({ project, text }) {
   const back = () => goBack(project ? 'home' : 'projects')
   useExit(back, false, true)
+  // The sentence and the way on, alone: no tiles or rail of a project the person did not ask for.
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
+    h('h1', { className: 'text-xl font-bold tracking-tight text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
       h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
-  return project ? h(Page, { project, title: null, quiet: true }, body) : h(Frame, { main: body, quiet: true })
+  return h(Frame, { main: frag(project ? h('header', null, h(Header, { project, title: null })) : null, body), quiet: true })
 }
 
 function Loading() {
-  return h('div', 'p-8 text-xs text-muted', 'Loading')
+  return h('div', { className: 'p-8 text-xs text-muted', role: 'status' }, 'Loading')
 }
 
 function ErrorLine({ text }) {

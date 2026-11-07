@@ -211,3 +211,22 @@ Three independent reviewers (40 findings) on the scrubbed public code, the galle
 | Opening page | Rung keeps reopening the last opened project (frozen PRJ-04, UC2 step 4). `Needs you` across projects replaces the Projects page: the project name in every header opens it, and Rung opens on it only when no project is current. |
 | Counts | The page's total is the sum of its project groups; each group equals that project's Home tile. The chip and the dock keep counting the current project (frozen Needs you count rule). |
 | Contract | FRT-01, FRT-05 and UC32 step 2 amended with Miguel's approval; acceptance 4 re-frozen. |
+
+## Round 17: final review, corrections and declines (7 Nov 2026)
+
+Three independent reviewers (34 findings, 8 rated major) on the scrubbed public code and a gallery covering Needs you, Paste text, Draft, Suggest, Choose folder, failed loads and a 320 pixel pane. Each correction applies to the pattern, not the example.
+
+| Topic | Decision |
+| --- | --- |
+| Missing page stands alone | A missing id, a failed load and an unknown view show the header, the sentence (an h1 at page size) and the way on; no tiles, tree or allocation of a page the person did not reach. A missing execution names the test and number (`Execution T-1.1a #7 does not exist`). |
+| Back on Needs you | Opened from a view (the project name), the page shows Back to it; Escape takes it. |
+| Status and logs | Loading, every bot progress line and the suggestion line are `role=status`; live run output and execution output are `role=log`. |
+| One word per job | The New need suggestion line reads `Suggesting`; `Drafting` stays for drafts (frozen SPC-01). A new Draft clears the previous `Drafted by`. The Draft question is titled `Replace typed text?` with Keep and Replace. Leaving a view while its bot job runs cancels it and says so (`Drafting cancelled`). |
+| Prefill | Paste text's prefill lasts for the next view only; a form opened later never receives it. The placed line names the project when there are several. |
+| Labels | A field's visible label is its accessible name (shared `Field`); Paste text's field is Text. The picker reads `Choose folder`. Dialog titles are h2 under the page h1. Settings names the project link `<project>, Needs you` like the header. |
+| Landmarks and state words | The traceability tree and the build strip are labelled nav landmarks. Tree dots carry their status word for screen readers and on hover. The Allocation link is named for its destination. |
+| Steps at every width | Build step names stay visible at every width, wrapping instead of hiding. |
+| First green | Each checklist step opens the view where it is done (New need, then the need's build steps). |
+| Result lines | Create need, approve (need, Needs you, specification, stale rung, manual result), accept, regenerate and fresh draft, pick, run, run once, run tests, Develop and Send all end on a line naming what changed. |
+| Cards with buttons | A Needs you card holding Approve and Raise defect is not itself a button: its title is the keyboard's way in, a click on the card still opens it. |
+| Declined | The missing page's `Projects` button (frozen NAV-07 names Back, Home and Projects). The chip counting across projects (Round 16: the chip counts the current project). An `Error:` prefix (Round 14). An action on `Nothing needs you` (nothing is missing; New project is in the list beside it). Suggest's exclusions repeating Allocation's (two decisions with their own rules: Suggest excludes the requirements' authors, Allocation ranks for the specification). A `not saved` marker on drafted fields (the form is unsaved until Save, and leaving asks). The running Draft and Suggest gallery shots showed the finished state because the stub was faster than the capture; the gallery now slows it. |

@@ -265,7 +265,6 @@ const DOCK_CSS = `
 .rung .dk-row:focus-visible,.rung .dk-more:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
 .rung .r-main{container-type:inline-size}
-@container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
 .rung .r-frame{container:rframe / inline-size}
 @container rframe (max-width: 640px){
 .rung .r-frame-in{flex-direction:column;overflow-y:auto}

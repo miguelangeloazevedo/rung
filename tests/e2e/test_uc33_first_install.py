@@ -3,6 +3,7 @@ project's Back returns to it (FST-02, NAV-12), a first green test from visible c
 every empty list names what is missing with one action (FST-04), and each control the walk uses is named
 the same wherever it shows (FST-05)."""
 
+import time
 import os
 import re
 import subprocess
@@ -58,6 +59,19 @@ class Walk:
         self.empties.append((H.view(self.page), label, action))
 
 
+def stable_hash(page, quiet=1.0, cap=8.0):
+    """The Hermes route once it has not changed for `quiet` seconds."""
+    t0 = time.time(); last = page.evaluate("location.hash"); since = time.time()
+    while time.time() - t0 < cap:
+        page.wait_for_timeout(200)
+        now = page.evaluate("location.hash")
+        if now != last:
+            last, since = now, time.time()
+        elif time.time() - since >= quiet:
+            break
+    return last
+
+
 def stored_projects(rung):
     return H.stored(rung.store, "SELECT COUNT(*) AS n FROM projects")[0]["n"]
 
@@ -73,6 +87,9 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     H.reload(page)
     H.default_profile(page)
     page.evaluate("location.hash = '#/'")
+    # The Desktop may restore the profile's last chat after the switch: the chat the test came from is the one
+    # showing once the hash stops moving.
+    came = stable_hash(page)
     H.open_rung(page, fresh=False)
     H.wait_view(page, "start")
     start = page.locator(".rung [data-testid=start]")
@@ -81,14 +98,14 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     cross = page.locator(".rung [data-testid=start-dismiss]")
     assert cross.is_visible()
     cross.click()
-    H.wait_until(lambda: page.evaluate("location.hash") == "#/", msg="back on the chat home")
+    H.wait_until(lambda: page.evaluate("location.hash") == came, msg=lambda: f"back on {came} (now {page.evaluate('location.hash')})")
     assert page.locator(".rung [data-rung-view]").count() == 0
     assert stored_projects(rung) == 0
     H.open_rung(page, fresh=False)
     H.wait_view(page, "start")
     # Escape does the same as the cross.
     page.keyboard.press("Escape")
-    H.wait_until(lambda: page.evaluate("location.hash") == "#/", msg="Escape closes Rung")
+    H.wait_until(lambda: page.evaluate("location.hash") == came, msg=lambda: f"Escape closes Rung (now {page.evaluate('location.hash')})")
     assert stored_projects(rung) == 0
     H.open_rung(page, fresh=False)
     H.wait_view(page, "start")
@@ -116,7 +133,7 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     w.click("New project", page.locator(".rung [data-testid=start]"))
     H.wait_view(page, "project-new")
     form = page.locator(".rung [data-testid=new-project]")
-    w.click("Choose", form)
+    w.click("Choose folder", form)
     H.wait_until(lambda: form.locator("input[name=folder]").input_value() == str(folder), msg="Choose fills the folder")
     picks = page.evaluate("window.__picks")
     assert len(picks) == 1 and picks[0]["directories"] is True, picks
@@ -243,11 +260,11 @@ def test_fst03_choose_folder_on_both_project_forms(rung, page):
         page.evaluate("window.__rungNavigate('project-settings')")
         H.wait_view(page, "project-settings")
         sec = page.locator(".rung [data-testid=project-settings]")
-        H.button(page, "Choose", sec).click()
+        H.button(page, "Choose folder", sec).click()
         H.wait_until(lambda: sec.locator("input[name=folder]").input_value() == str(other), msg="settings folder")
         assert page.evaluate("window.__picks")[0]["directories"] is True
         page.evaluate(STAND_IN, "")
-        H.button(page, "Choose", sec).click()
+        H.button(page, "Choose folder", sec).click()
         page.wait_for_timeout(300)
         assert sec.locator("input[name=folder]").input_value() == str(other)
         H.button(page, "Save", page.locator(".rung [data-rung-view]")).click()
@@ -257,7 +274,7 @@ def test_fst03_choose_folder_on_both_project_forms(rung, page):
         page.evaluate("window.__rungNavigate('project-new')")
         H.wait_view(page, "project-new")
         form = page.locator(".rung [data-testid=new-project]")
-        H.button(page, "Choose", form).click()
+        H.button(page, "Choose folder", form).click()
         H.wait_until(lambda: "picker failed" in form.locator("[data-testid=choose-error]").inner_text(), msg="failure shown")
         # No picker on this host: no Choose button, the typed path still works.
         page.evaluate("window.__rungOs({})")

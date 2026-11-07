@@ -261,7 +261,7 @@ const FIELD_NAMES = {
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
   cost: 'Cost', max_runs: 'Max runs', test_timeout: 'Default timeout', output_limit: 'Output limit',
-  reason: 'Reason', confirm: 'Project name', search: 'Search projects'
+  reason: 'Reason', confirm: 'Project name', search: 'Search projects', paste: 'Text'
 }
 const NATIVE = { button: 1, a: 1, input: 1, select: 1, textarea: 1, label: 1, option: 1 }
 
@@ -388,6 +388,12 @@ function popHistory() {
     if (ours(e)) { const { _p, ...v } = e; return v }
   }
   return null
+}
+
+// Whether there is a view to go back to (a Back with somewhere to go).
+function canGoBack() {
+  for (let i = HIST.length - 1; i >= 0; i--) if (ours(HIST[i])) return true
+  return false
 }
 
 // Whether the view the person came from (the entry Back would use) is this one.
@@ -856,7 +862,10 @@ function SectionTitle({ children, tone: t, right, dot }) {
     right != null ? h('span', 'text-[11px] text-muted', right) : null)
 }
 
-function Card({ children, className, onClick, testid, style }) {
+// A card that opens something. A card holding its own buttons (`nested`) is not itself a button: a mouse click
+// on it still opens, and its title is the keyboard's way in (no button inside a button).
+function Card({ children, className, onClick, testid, style, nested }) {
+  if (nested) return React.createElement('div', { className: cx('bg-card border border-line rounded-[6px]', onClick && 'cursor-pointer', className), onClick, 'data-testid': testid, style }, children)
   return h('div', {
     className: cx('bg-card border border-line rounded-[6px]', onClick && 'cursor-pointer', className),
     onClick, 'data-testid': testid, style
@@ -990,7 +999,7 @@ function Strip({ current, reached, need, done: doneList }) {
         : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
     h('span', { className: cx('text-xs whitespace-nowrap rs-label', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
   })
-  return h('div', { className: 'rs-strip flex flex-wrap items-center justify-between gap-y-2 bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
+  return h('nav', { className: 'rs-strip flex flex-wrap items-center justify-between gap-y-2 bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip', 'aria-label': 'Build steps' }, ...kids)
 }
 
 // ------------------------------------------------------------------ traceability rail
@@ -1014,9 +1023,10 @@ function TreeSpec({ n, sel, hl }) {
   const sub = [n.text, n.carried_by].filter(Boolean).join(' · ') + (tests.length ? '' : n.status === 'draft' ? '' : ' · no tests yet')
   return h('div', { className: cx('pl-3 ml-0.5 border-l border-line flex flex-col gap-1 mt-0.5', on && 'bg-needs/5 p-1 rounded') },
     h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
-      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('text-[11px]', on ? 'font-semibold text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', 'sr-only', rungLabel(n)),
         h('span', { className: cx('text-[10px] truncate', t === 'dim' ? 'text-dim' : 'text-muted'), title: typeof sub === 'string' ? sub : undefined }, sub))),
     ...tests.map(c => h(TreeTest, { key: c.id, n: c, sel })))
 }
@@ -1026,9 +1036,10 @@ function TreeReq({ n, sel, hl }) {
   const specs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1',
     h('div', { className: cx('flex items-start gap-1.5 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, 'data-tone': t, 'data-label': rungLabel(n), onClick: () => navigate('rung', { rid: n.id }) },
-      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('span', { className: cx('w-1.5 h-1.5 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
         h('span', { className: cx('font-medium', t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
+        h('span', 'sr-only', rungLabel(n)),
         h('span', { className: cx('text-[11px]', t === 'dim' ? 'text-dim' : 'text-muted') }, n.text))),
     ...specs.map(c => h(TreeSpec, { key: c.id, n: c, sel, hl })))
 }
@@ -1038,9 +1049,10 @@ function TreeNeed({ n, sel, hl }) {
   const reqs = (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
   return h('div', 'flex flex-col gap-1.5 text-xs',
     h('div', { className: cx('flex items-start gap-2 cursor-pointer', sel === n.id && 'bg-needs/10 rounded'), 'aria-current': sel === n.id ? 'page' : undefined, 'data-rung': n.id, onClick: () => navigate('rung', { rid: n.id }) },
-      h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]) }),
+      h('span', { className: cx('w-2 h-2 mt-1 rounded-full shrink-0', TONE_BG[t]), title: rungLabel(n) }),
       h('div', 'flex flex-col min-w-0',
         h('span', 'font-semibold text-fg', n.id),
+        h('span', 'sr-only', rungLabel(n)),
         h('span', 'text-[11px] text-muted leading-tight', n.text))),
     reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)
 }
@@ -1051,7 +1063,7 @@ function Allocation({ alloc }) {
   const picked = alloc.pick && alloc.pick.profile
   const lead = picked || (rows[0] && rows[0].profile) || ''
   return h('div', 'flex flex-col gap-3 pt-3 border-t border-line',
-    h('div', { className: 'flex items-center justify-between pb-1 cursor-pointer', onClick: () => navigate('settings') },
+    h('div', { className: 'flex items-center justify-between pb-1 cursor-pointer', 'aria-label': `Allocation: ${alloc.spec}, Settings`, onClick: () => navigate('settings') },
       h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', `Allocation: ${alloc.spec}`),
       h('span', 'text-[11px] mono text-needs', lead)),
     alloc.human_only
@@ -1084,7 +1096,7 @@ function Rail({ tree, alloc, sel, retired }) {
         h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', 'Traceability Tree'),
         head ? h('span', { className: cx('text-[11px]', TONE_TEXT[tone(head)]) }, head.status) : null),
       needs.length
-        ? h('div', 'flex flex-col gap-4', ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
+        ? h('nav', { className: 'flex flex-col gap-4', 'aria-label': 'Traceability tree' }, ...needs.map(n => h(TreeNeed, { key: n.id, n, sel, hl: alloc && alloc.spec })))
         : h('div', 'text-[11px] text-muted', 'No needs yet'),
       retired ? h('button', { type: 'button', className: 'self-start text-[11px] text-muted hover:text-fg', 'data-testid': 'retired-link', onClick: () => navigate('retired') }, `Retired ${retired}`) : null),
     h(Allocation, { alloc }))
@@ -1126,7 +1138,7 @@ function FolderInput({ value, onChange, onPicked, invalid, className }) {
     h('div', 'flex items-center gap-2',
       h('input', { className: cx(className, 'font-mono flex-1 min-w-0'), type: 'text', name: 'folder', 'aria-invalid': invalid ? 'true' : undefined,
         value, onChange: e => onChange(e.target.value), onBlur: e => onChange(e.target.value, true) }),
-      canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2' }, 'Choose') : null),
+      canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2 whitespace-nowrap' }, 'Choose folder') : null),
     err ? h('span', { className: 'text-[11px] text-fail', role: 'alert', 'data-testid': 'choose-error' }, err) : null)
 }
 
@@ -1146,6 +1158,8 @@ function missingText(text) {
   if (m) return `${ID_KIND[m[1]]} ${m[1]}-${m[2]} is not in ${m[3]}`
   m = t.match(/^no (\w+) (\S+) in (\w+) (\S+)$/)
   if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} is not in ${m[3]} ${m[4]}`
+  m = t.match(/^no execution #(\d+) of (\S+)$/)
+  if (m) return `Execution ${m[2]} #${m[1]} does not exist`
   m = t.match(/^no (\w+) (\S+)$/)
   if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} does not exist`
   return t ? t[0].toUpperCase() + t.slice(1) : 'Not found'
@@ -1167,17 +1181,18 @@ function ExitBtn({ onClick, exit, children, ...rest }) {
 function Missing({ project, text }) {
   const back = () => goBack(project ? 'home' : 'projects')
   useExit(back, false, true)
+  // The sentence and the way on, alone: no tiles or rail of a project the person did not ask for.
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
+    h('h1', { className: 'text-xl font-bold tracking-tight text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
       h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
-  return project ? h(Page, { project, title: null, quiet: true }, body) : h(Frame, { main: body, quiet: true })
+  return h(Frame, { main: frag(project ? h('header', null, h(Header, { project, title: null })) : null, body), quiet: true })
 }
 
 function Loading() {
-  return h('div', 'p-8 text-xs text-muted', 'Loading')
+  return h('div', { className: 'p-8 text-xs text-muted', role: 'status' }, 'Loading')
 }
 
 function ErrorLine({ text }) {
@@ -1230,14 +1245,14 @@ function StaleCard({ project, item, ro }) {
   const ch = item.change
   const path = (r && r.path) || []
   const [err, setErr] = useState('')
-  return h(Card, { className: 'r-ny p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
+  return h(Card, { nested: true, className: 'r-ny p-4 flex flex-col gap-3.5', testid: 'needs-you-item', onClick: () => navigate('rung', { rid: item.id }) },
     h('div', 'flex flex-col gap-1.5',
       h('div', 'flex items-center justify-between',
         h('div', 'text-[11px] mono text-muted font-medium flex items-center gap-1.5',
           ...path.flatMap(p => [h('span', { key: p.id }, p.id), h('span', { key: p.id + '>' }, '›')]),
           h('span', 'text-needs', item.id)),
         h(Badge, { status: 'stale' })),
-      h('div', 'text-sm font-semibold text-fg', `${item.id} · ${item.text}`),
+      h('button', { type: 'button', className: 'text-left text-sm font-semibold text-fg hover:underline', onClick: e => { e.stopPropagation(); navigate('rung', { rid: item.id }) } }, `${item.id} · ${item.text}`),
       ch ? h('div', 'text-[12px] text-muted flex items-center gap-1.5',
         h('span', {
           className: 'cursor-pointer hover:text-fg',
@@ -1249,7 +1264,7 @@ function StaleCard({ project, item, ro }) {
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
     ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
+      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error); if (res.ok) notify(`Approved ${item.id}`) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
@@ -1324,7 +1339,7 @@ function Home({ project }) {
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
   const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project, kind: 'head' }), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
-    h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project }))
+    h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project, need: ((d.tree || []).find(n => n.status !== 'dismissed') || {}).id }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
     return h(Frame, {
@@ -1402,6 +1417,7 @@ const needCount = n => `${n} ${n === 1 ? 'needs' : 'need'} you`
 // The front page (Rounds 12 and 16): what needs you across every open project, grouped by project, with the
 // project list beside it. Rung opens here only when no project is current; the project name in a header opens it.
 function Projects({ tab }) {
+  const back = useState(() => canGoBack())[0]  // opened from a view (the project name): Back returns to it
   const stQ = useApi('/state')
   const ovQ = useApi('/overview', { live: true })
   const st = stQ.data
@@ -1485,7 +1501,8 @@ function Projects({ tab }) {
       h('div', 'flex items-baseline gap-3',
         h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, archived ? 'Archived projects' : 'Needs you'),
         !archived && ov ? h('span', { className: 'text-xl font-bold mono text-needs', 'data-testid': 'ny-total' }, String(ov.total)) : null),
-      h('div', 'flex items-center gap-2',
+      h('div', 'flex flex-wrap items-center gap-2',
+        back ? h(ExitBtn, { kind: 'head', testid: 'page-back', onClick: () => goBack('home') }, 'Back') : null,
         !archived && st && (st.projects || []).length ? h(PasteBtn, { project: st.current, projects: st.projects.map(p => p.name) }) : null,
         h(Btn, { onClick: () => navigate('settings') }, 'Settings'),
         h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project'))),
@@ -1654,7 +1671,7 @@ function Settings({ project }) {
     h('div', 'flex items-center gap-2 text-xs',
       h('span', 'text-muted uppercase font-semibold tracking-wider text-[11px]', 'Project'),
       h('span', 'text-muted', '/'),
-      project ? h('button', { type: 'button', className: 'text-fg font-medium mono', 'data-testid': 'project-name', 'aria-label': `${project}, projects`, onClick: () => navigate('projects') }, project) : h('span', 'text-muted', 'none')),
+      project ? h('button', { type: 'button', className: 'text-fg font-medium mono', 'data-testid': 'project-name', title: 'Needs you', 'aria-label': `${project}, Needs you`, onClick: () => navigate('projects') }, project) : h('span', 'text-muted', 'none')),
     h('header', 'flex items-center justify-between pb-1', h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Settings')),
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Profiles'),
@@ -1842,7 +1859,7 @@ function NeedNew({ project }) {
     const accepted = sugs.filter(s => marks[s] === 'accepted')
     const res = await post(`${P(project)}/needs`, { text: text.trim(), requirements: accepted })
     if (!res.ok) return setErr(res.error)
-    finish('build', { need: res.data.id, step: 'reqs' })
+    finish('build', { need: res.data.id, step: 'reqs' }, `Created ${res.data.id}`)
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need: null, flow: null, current: 0 }),
@@ -1855,7 +1872,7 @@ function NeedNew({ project }) {
     sugs.length || busy ? h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'suggested' },
       h('div', 'flex items-center justify-between',
         h('h2', 'text-xs font-semibold uppercase tracking-wider text-fg', 'Suggested requirements'),
-        busy ? h('span', 'text-[11px] text-needs', 'Drafting') : null),
+        busy ? h('span', { className: 'text-[11px] text-needs', role: 'status' }, 'Suggesting') : null),
       h('div', 'flex flex-col gap-2', ...sugs.map(s => h(SuggestRow, {
         key: s, text: s, mark: marks[s],
         onAccept: () => setMarks({ ...marks, [s]: 'accepted' }),
@@ -2178,7 +2195,7 @@ function StepDevelop({ project, need, flow }) {
       const res = await post(`${P(project)}/specs/${s.id}/send`, {})
       if (!res.ok && !/manual|already running|no accepted command/.test(res.error)) { setErr(res.error); return }
     }
-    navigate('home')
+    finish('home', null, `Sent ${specs.length} ${specs.length === 1 ? 'specification' : 'specifications'}`)
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need, flow, current: 4 }),
@@ -2272,7 +2289,7 @@ function NeedView({ project, r, flow }) {
         : h('h2', { className: 'text-base font-semibold text-fg cursor-pointer', 'data-testid': 'need-title', title: 'Edit', 'aria-label': `Edit ${r.id}: ${r.text}`, onClick: () => { setBase(r.version); setText(r.text); setEditing(true) } }, r.text),
     h(Conflict, { res: conflict, path: `${P(project)}/rungs/${r.id}` }),
     !editing ? h('div', 'flex items-center gap-2 pt-1',
-      r.status === 'draft' && !ro ? h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/approve`); setErr(x.ok ? '' : x.error) } }, 'Approve') : null,
+      r.status === 'draft' && !ro ? h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/approve`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Approved ${r.id}`) } }, 'Approve') : null,
       h(Btn, { kind: 'small', testid: 'open-readout', onClick: () => navigate('readout', { need: r.id }) }, 'Read-out'),
       ro ? null : h(Btn, { kind: 'quiet', testid: 'retire', onClick: () => setRetiring(true) }, 'Retire')) : null)
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'need' },
@@ -2489,14 +2506,16 @@ function SpecView({ project, r, ret, need }) {
   const a = r.allocation || { suggestions: [] }
   const shown = a.pick ? [a.suggestions.find(x => x.profile === a.pick.profile), ...a.suggestions.filter(x => x.profile !== a.pick.profile)].filter(Boolean) : a.suggestions
   const needId = r.path[0] && r.path[0].id
-  const act = async (path, body, go) => {
+  // Every action here ends on a line naming what it did, on the view it lands on.
+  const act = async (path, body, go, notice) => {
     const x = await post(path, body)
     if (!x.ok) return setErr(x.error)
     setErr('')
+    if (notice) notify(notice)
     if (go) go(x.data)
   }
-  const runTests = () => act(`${P(project)}/specs/${r.id}/run-tests`, {}, d => { const s = d.started && d.started[0]; if (s) navigate('exec', { test: s.test, n: s.n }) })
-  const develop = () => act(`${P(project)}/specs/${r.id}/send`, {}, d => navigate('run', { run: d.id }))
+  const runTests = () => act(`${P(project)}/specs/${r.id}/run-tests`, {}, d => { const s = d.started && d.started[0]; if (s) navigate('exec', { test: s.test, n: s.n }) }, `Started the tests of ${r.id}`)
+  const develop = () => act(`${P(project)}/specs/${r.id}/send`, {}, d => navigate('run', { run: d.id }), `Sent ${r.id}`)
   const headline = h('div', 'flex items-center justify-between',
     pathCrumbs(r, r.status === 'approved' && r.released ? 'text-fg' : 'text-needs'),
     r.draft_state === 'failed' ? h(Badge, { status: 'draft_failed' }) : r.draft_state === 'drafting' ? h(Badge, { status: 'drafting' })
@@ -2519,12 +2538,12 @@ function SpecView({ project, r, ret, need }) {
         ...proposedTests.map(t => h('div', { key: t.id, className: 'bg-well p-2.5 rounded-[6px] border border-line2 flex items-center justify-between', 'data-test': t.id },
           h('div', 'flex items-center gap-2 mono text-xs text-fg', h('span', 'w-1.5 h-1.5 rounded-full bg-dim'), h('span', 'font-medium', t.id), h('span', 'text-muted', t.command || t.text)),
           h('div', 'flex items-center gap-2',
-            h(Btn, { kind: 'small', onClick: () => act(`${P(project)}/rungs/${t.id}/approve`) }, 'Accept'),
+            h(Btn, { kind: 'small', onClick: () => act(`${P(project)}/rungs/${t.id}/approve`, undefined, null, `Accepted ${t.id}`) }, 'Accept'),
             h(Btn, { kind: 'small', onClick: () => navigate('test-edit', { test: t.id }) }, 'Edit'))))) : null,
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
-        h(Btn, { kind: 'primary', testid: 'approve', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/approve`, {}, () => backTo(ret, need, () => navigate('rung', { rid: r.id }))()) }, 'Approve'),
-        r.ai_derived ? h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate') : null))
+        h(Btn, { kind: 'primary', testid: 'approve', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/approve`, {}, () => backTo(ret, need, () => navigate('rung', { rid: r.id }))(), `Approved ${r.id}`) }, 'Approve'),
+        r.ai_derived ? h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`, undefined, null, `Drafting ${r.id}`) }, 'Regenerate') : null))
     return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
   }
   // Released (spec-s11)
@@ -2551,7 +2570,7 @@ function SpecView({ project, r, ret, need }) {
         h('div', 'flex items-center gap-2 pt-3 border-t border-line',
           h(Btn, { kind: 'primary', testid: 'run-tests', onClick: runTests }, 'Run tests'),
           h(Btn, { testid: 'reopen', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Reopen'),
-          r.ai_derived ? h(Btn, { testid: 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
+          r.ai_derived ? h(Btn, { testid: 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`, undefined, null, `Drafting ${r.id}`) }, 'Fresh draft') : null)),
       h(ClaimsSection, { project, r, onErr: setErr }),
       h(CarrierSection, { project, r, onErr: setErr }))
     return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
@@ -2567,11 +2586,11 @@ function SpecView({ project, r, ret, need }) {
           h('button', { type: 'button', className: 'text-[11px] font-medium text-needs inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'view-change', onClick: () => navigate('change', { change: ch.id, rid: ch.rung }) }, 'View change')) : null),
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-1 border-t border-line',
-        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs mt-3', r.status !== 'stale' && 'opacity-40 cursor-not-allowed'), 'data-testid': 'approve', 'data-locked': r.status !== 'stale' ? '1' : undefined, onClick: () => r.status === 'stale' && act(`${P(project)}/rungs/${r.id}/approve`) }, 'Approve'),
+        h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs mt-3', r.status !== 'stale' && 'opacity-40 cursor-not-allowed'), 'data-testid': 'approve', 'data-locked': r.status !== 'stale' ? '1' : undefined, onClick: () => r.status === 'stale' && act(`${P(project)}/rungs/${r.id}/approve`, undefined, null, `Approved ${r.id}`) }, 'Approve'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'run-tests', onClick: runTests }, 'Run tests'),
         a.human_only ? null : h('button', { type: 'button', className: cx('px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', !r.develop.available && 'opacity-40 cursor-not-allowed'), 'data-testid': 'develop', 'data-locked': r.develop.available ? undefined : '1', title: r.develop.blocked_by || '', onClick: () => r.develop.available && develop() }, 'Develop until green'),
         h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'edit-spec', onClick: () => navigate('spec-edit', { spec: r.id }) }, 'Edit specification'),
-        (r.status === 'approved' || r.status === 'stale') && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
+        (r.status === 'approved' || r.status === 'stale') && r.ai_derived ? h('button', { type: 'button', className: 'px-3.5 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium mt-3', 'data-testid': 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`, undefined, null, `Drafting ${r.id}`) }, 'Fresh draft') : null)),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }), ...tests.map(t => h(TestLine, { key: t.id, t })))),
@@ -2586,7 +2605,7 @@ function SpecView({ project, r, ret, need }) {
         h('button', { type: 'button', className: 'text-[11px] text-needs font-medium inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
       h('div', 'flex flex-col gap-3',
         ...(picking
-          ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { agent: s.profile }) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
+          ? a.suggestions.map(s => h('div', { key: s.profile, className: 'cursor-pointer', 'data-pick': s.profile, onClick: async () => { setPicking(false); await act(`${P(project)}/specs/${r.id}/pick`, { agent: s.profile }, null, `Picked ${s.profile} for ${r.id}`) } }, h(ScoreCard, { s, first: a.pick ? a.pick.profile === s.profile : false })))
           : shown.map((s, i) => h(ScoreCard, { key: s.profile, s, first: i === 0 }))),
         a.pick ? h('div', { className: 'text-[11px] text-muted', 'data-testid': 'picked-by' }, `picked by ${a.pick.picked_by === 'you' ? 'you' : a.pick.picked_by}`) : null,
         !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null,
@@ -2691,13 +2710,15 @@ function TestView({ project, r }) {
   const leave = () => goBack('rung', { rid: r.parent }, { force: true })
   // Escape is the header Back (Page back): unforced, so typed evidence asks Discard or Keep editing.
   const execs = r.executions || []
-  const act = async (path, body, go) => {
+  // Every action here ends on a line naming what it did, on the view it lands on.
+  const act = async (path, body, go, notice) => {
     const x = await post(path, body)
     if (!x.ok) return setErr(x.error)
     setErr('')
+    if (notice) notify(notice)
     if (go) go(x.data)
   }
-  const runOne = () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n }))
+  const runOne = () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n }), `Started ${r.id}`)
   const headline = (badge) => h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between', pathCrumbs(r), badge),
     h('div', 'flex items-center gap-2', h('h2', 'text-sm font-semibold text-fg mono', r.type === 'manual' ? r.text : (r.command || r.text))),
@@ -2736,7 +2757,7 @@ function TestView({ project, r }) {
         h('div', 'flex items-center gap-2 pt-3 border-t border-line',
           pending
             ? frag(
-              h(Btn, { kind: 'primary', testid: 'approve-result', onClick: () => act(`${P(project)}/tests/${r.id}/executions/${pending.n}/approve`) }, 'Approve result'),
+              h(Btn, { kind: 'primary', testid: 'approve-result', onClick: () => act(`${P(project)}/tests/${r.id}/executions/${pending.n}/approve`, undefined, null, `Approved ${r.id} #${pending.n}`) }, 'Approve result'),
               h(Btn, { onClick: () => goBack('rung', { rid: r.parent }) }, 'Back'))
             : frag(
               h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote(''); notify(`Recorded a result on ${r.id}`) }) }, 'Record'),
@@ -2850,7 +2871,7 @@ function TestEdit({ project, test, spec, ret, need }) {
     }
     const r = await post(`${P(project)}/tests/${id}/run`, { once: true })
     if (!r.ok) return setErr(r.error)
-    finish('exec', { test: id, n: r.data.n })
+    finish('exec', { test: id, n: r.data.n }, `Started ${id} #${r.data.n}`)
   }
   const input = (k, extra) => h('input', { className: cx('bg-well border border-line rounded-[6px] px-3 py-2 mono text-xs text-fg focus:outline-none focus:border-needs', (extra && extra.w) || 'w-full'), type: 'text', name: k, value: f[k], onChange: set(k), 'aria-label': (extra && extra.label) || undefined })
   const body = h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-5', 'data-testid': 'test-editor' },
@@ -2904,9 +2925,11 @@ function TestEdit({ project, test, spec, ret, need }) {
 
 // ------------------------------------------------------------------ prefill for a New form
 
-// Fields handed to the next New form (from Paste text). Read when the form mounts, cleared once it has.
+// Fields handed to the next New form (from Paste text). Read when the form mounts, cleared once it has, and
+// dropped by the view change after the one that opened it, so a form that did not open never gets them later.
 let PREFILL = null
-function setPrefill(view, fields) { PREFILL = { view, fields } }
+function setPrefill(view, fields) { PREFILL = { view, fields, armed: false } }
+ON_LEAVE.push(() => { if (PREFILL) { if (PREFILL.armed) PREFILL = null; else PREFILL.armed = true } })
 function usePrefill(view) {
   const got = useRef(PREFILL && PREFILL.view === view ? PREFILL.fields : null)
   useEffect(() => { if (PREFILL && PREFILL.view === view) PREFILL = null }, [])
@@ -2915,8 +2938,9 @@ function usePrefill(view) {
 
 // ------------------------------------------------------------------ a bot job
 
-// Starts a job, follows it until it ends, and cancels it when the view that started it goes away.
-function useBotJob() {
+// Starts a job, follows it until it ends, and cancels it when the view that started it goes away, saying so
+// on the view the person went to (`verb`: Placing, Drafting, Suggesting).
+function useBotJob(verb) {
   const [job, setJob] = useState(null)
   const [err, setErr] = useState('')
   const live = useRef(true)
@@ -2925,7 +2949,10 @@ function useBotJob() {
     live.current = true  // a remount (React's strict mode runs effects twice) must follow again
     return () => {
       live.current = false
-      if (cur.current) rest(`/bot/${cur.current}/cancel`, { method: 'POST', body: {} }).catch(() => {})
+      if (cur.current) {
+        rest(`/bot/${cur.current}/cancel`, { method: 'POST', body: {} }).catch(() => {})
+        notify(`${verb || 'Bot help'} cancelled`)
+      }
     }
   }, [])
   const follow = async id => {
@@ -2984,7 +3011,7 @@ function PasteDialog({ project, projects, onClose }) {
   const [kind, setKind] = useState('')
   const [parent, setParent] = useState('')
   const [check, setCheck] = useState({ valid: false, reason: '' })
-  const bot = useBotJob()
+  const bot = useBotJob('Placing')
   const tq = useApi(proj ? `${P(proj)}/bot/targets` : null, { enabled: !!proj })
   const targets = (tq.data && tq.data.targets) || []
   const res = bot.job && bot.job.status === 'done' ? bot.job.result : null
@@ -3017,18 +3044,19 @@ function PasteDialog({ project, projects, onClose }) {
   const footer = res
     ? frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'open-as-new', disabled: !check.valid, onClick: open }, `Open as new ${(KIND_WORD[kind] || 'rung').toLowerCase()}`))
     : bot.busy
-      ? frag(h(Btn, { testid: 'bot-cancel', label: 'Cancel placing', onClick: bot.cancel }, 'Cancel'))
+      ? frag(h(Btn, { key: 'bot-cancel', testid: 'bot-cancel', label: 'Cancel placing', onClick: bot.cancel }, 'Cancel'))
       : frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'place', disabled: !text.trim() || !proj, onClick: place }, 'Place'))
   return h(Dialog, { title: 'Paste text', onClose, dirty: !!text.trim(), testid: 'paste-dialog', footer },
     projects && projects.length > 1 && !res ? h(Field, { label: 'Project' }, sel('project', proj, setProj, projects.map(p => [p, p]), 'Project')) : null,
     res
       ? h('div', { className: 'flex flex-col gap-3', 'data-testid': 'placed' },
         h(Well, { className: 'text-xs text-fg', testid: 'placed-text' }, res.text),
-        h('div', { className: 'flex items-center gap-2 text-xs', 'data-testid': 'placed-as' },
+        h('div', { className: 'flex flex-wrap items-center gap-2 text-xs', 'data-testid': 'placed-as', 'data-focus-first': '1', tabIndex: -1 },
           h('span', 'font-semibold text-fg', KIND_WORD[res.kind] || res.kind || 'Unknown'),
           res.parent ? h('span', 'text-muted', 'under') : null,
           res.parent ? h('span', 'mono text-needs font-medium', res.parent) : null,
-          h('span', 'text-muted', `· ${bot.job.profile}`)),
+          h('span', 'text-muted', `· ${bot.job.profile}`),
+          projects && projects.length > 1 ? h('span', 'text-muted', `· ${proj}`) : null),
         res.why ? h('div', { className: 'text-xs text-muted', 'data-testid': 'placed-why' }, res.why) : null,
         res.valid ? null : h('div', { className: 'text-xs text-fail', 'data-testid': 'place-refused' }, `Not offered: ${res.reason}`),
         h('div', 'grid grid-cols-2 gap-3',
@@ -3036,7 +3064,7 @@ function PasteDialog({ project, projects, onClose }) {
           kind === 'need' ? null : h(Field, { label: 'Parent' }, sel('parent', parent, setParent, [['', 'Choose'], ...parents.map(t => [t.id, `${t.id} ${t.text}`])], 'Parent'))),
         check.reason && (parent || kind === 'need') ? h('div', { className: 'text-[11px] text-fail', 'data-testid': 'place-check' }, check.reason) : null)
       : h(Field, { label: 'Text' }, h('textarea', { className: INPUT, rows: 4, name: 'paste', value: text, 'data-autofocus': '1', readOnly: bot.busy, onChange: e => setText(e.target.value) })),
-    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running' }, `Placing · ${bot.job.profile}`) : null,
+    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Placing · ${bot.job.profile}`) : null,
     bot.job && bot.job.status === 'cancelled' && !res ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null,
     h(BotFailure, { job: bot.job, err: bot.err, onRetry: text.trim() ? place : null }))
 }
@@ -3046,12 +3074,15 @@ function PasteDialog({ project, projects, onClose }) {
 // `fields` is what the form holds now; `apply(values)` writes drafted values into the form. Fields with text
 // are only replaced after you choose Replace.
 function DraftBar({ project, kind, parent, fields, apply }) {
-  const bot = useBotJob()
+  const bot = useBotJob('Drafting')
   const [asking, setAsking] = useState(false)
-  const [by, setBy] = useState('')
+  const [by, setBy] = useState('')  // who drafted what the form holds; cleared when a new draft starts
+  const box = useRef(null)
+  useKeepFocus(box)
   const typed = Object.values(fields).some(v => String(v || '').trim())
   const run = async replace => {
     setAsking(false)
+    setBy('')
     const keep = replace ? {} : fields
     const j = await bot.start(`${P(project)}/bot/draft`, { kind, parent: parent || null, fields: keep })
     if (j && j.status === 'done') {
@@ -3066,19 +3097,19 @@ function DraftBar({ project, kind, parent, fields, apply }) {
       setBy(j.profile)
     }
   }
-  return h('div', { className: 'flex flex-col gap-2', 'data-testid': 'draft-bar' },
+  return h('div', { ref: box, className: 'flex flex-col gap-2', 'data-testid': 'draft-bar' },
     h('div', 'flex items-center gap-2',
       bot.busy
-        ? frag(h('span', { className: 'text-xs text-needs', 'data-testid': 'bot-running' }, `Drafting · ${bot.job.profile}`),
-          h(Btn, { kind: 'small', testid: 'bot-cancel', label: 'Cancel draft', onClick: bot.cancel }, 'Cancel'))
+        ? frag(h('span', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Drafting · ${bot.job.profile}`),
+          h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', label: 'Cancel draft', onClick: bot.cancel }, 'Cancel'))
         : h(Btn, { kind: 'small', testid: 'draft', onClick: () => (typed ? setAsking(true) : run(true)) }, 'Draft'),
-      by && !bot.busy ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'drafted-by' }, `Drafted by ${by}`) : null,
+      by && !bot.busy ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'drafted-by', 'data-focus-first': '1', tabIndex: -1 }, `Drafted by ${by}`) : null,
       bot.job && bot.job.status === 'cancelled' ? h('span', { className: 'text-[11px] text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null),
     h(BotFailure, { job: bot.job, err: bot.err, onRetry: () => run(false) }),
     asking ? h(Dialog, {
-      title: 'Draft', onClose: () => setAsking(false), testid: 'draft-ask',
+      title: 'Replace typed text?', onClose: () => setAsking(false), testid: 'draft-ask',
       footer: frag(h(Btn, { testid: 'draft-keep', onClick: () => run(false) }, 'Keep'), h(Btn, { kind: 'primary', testid: 'draft-replace', onClick: () => run(true) }, 'Replace'))
-    }, h('div', 'text-xs text-fg', 'Replace typed text')) : null)
+    }) : null)
 }
 
 // ------------------------------------------------------------------ Suggest on a need
@@ -3088,7 +3119,9 @@ function scoreLine(s) {
 }
 
 function SuggestPanel({ project, need, ro }) {
-  const bot = useBotJob()
+  const bot = useBotJob('Suggesting')
+  const box = useRef(null)
+  useKeepFocus(box)
   const [choice, setChoice] = useState(null)
   const [none, setNone] = useState(false)
   const [itemErr, setItemErr] = useState('')
@@ -3116,19 +3149,19 @@ function SuggestPanel({ project, need, ro }) {
   const items = j && j.status === 'done' ? (j.result.items || []) : []
   const chosen = choice && choice.chosen
   const rank = chosen && choice.ranked ? choice.ranked.findIndex(s => s.profile === chosen.profile) + 1 : 0
-  return h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'bot-suggest' },
+  return h('div', { ref: box, className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'bot-suggest' },
     h('div', 'flex items-center justify-between pb-1',
       h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Suggested requirements'),
       ro ? null : bot.busy
-        ? h(Btn, { kind: 'small', testid: 'bot-cancel', label: 'Cancel suggest', onClick: bot.cancel }, 'Cancel')
+        ? h(Btn, { key: 'bot-cancel', kind: 'small', testid: 'bot-cancel', label: 'Cancel suggest', onClick: bot.cancel }, 'Cancel')
         : h(Btn, { kind: 'small', testid: 'suggest', onClick: run }, 'Suggest')),
-    none ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-none' },
-      h('div', 'text-xs text-fg', 'No profile can suggest')) : null,
-    j && chosen ? h('div', { className: 'flex flex-wrap items-center gap-2 text-[11px]', 'data-testid': 'suggest-profile' },
+    none ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-none', role: 'status' },
+      h('div', { className: 'text-xs text-fg', 'data-focus-first': '1', tabIndex: -1 }, 'No profile can suggest')) : null,
+    j && chosen ? h('div', { className: 'flex flex-wrap items-center gap-2 text-[11px]', 'data-testid': 'suggest-profile', 'data-focus-first': '1', tabIndex: -1 },
       h('span', 'font-semibold text-fg text-xs', j.profile),
       h('span', 'mono text-muted', `ranked ${rank} of ${choice.ranked.length} · ${scoreLine(chosen)}`),
       j.changed_since ? h(Badge, { status: 'stale', label: 'Changed since', small: true }) : null) : null,
-    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running' }, `Suggesting · ${j.profile}`) : null,
+    bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Suggesting · ${j.profile}`) : null,
     j && j.status === 'cancelled' ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled' }, 'Cancelled') : null,
     h(BotFailure, { job: j, err: bot.err, onRetry: ro ? null : run }),
     items.length ? h('div', { className: 'flex flex-col gap-2', 'data-testid': 'suggest-items' },
@@ -3386,7 +3419,7 @@ function RunView({ project, run }) {
             h('span', { className: cx('text-[10px]', TONE_TEXT[t]) }, a.status === 'pass' ? 'passed' : a.status === 'fail' ? 'failed' : OUTCOME_WORD[a.status] || a.status))
         }))),
     h('div', 'flex flex-col gap-1.5 pt-2 border-t border-line',
-      h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-xs text-fg flex flex-col gap-1.5', 'data-testid': 'live-output' },
+      h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-xs text-fg flex flex-col gap-1.5', 'data-testid': 'live-output', role: 'log', 'aria-live': 'polite' },
         ...(out.length ? out : ['waiting for the worker']).map((l, i) => h('div', { key: i, className: 'flex items-center gap-2 text-muted' }, h('span', null, '>'), h('span', 'text-fg', l))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
@@ -3498,7 +3531,7 @@ function ExecView({ project, test, n }) {
         h('div', 'flex items-center justify-between text-[11px] text-muted',
           h('span', 'font-medium uppercase tracking-wider text-[10px]', 'Live Output'),
           h('span', 'mono text-needs', 'streaming')),
-        h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-[11px] text-fg flex flex-col gap-1 min-h-[180px]', 'data-testid': 'output' },
+        h('div', { className: 'bg-well p-3 rounded-[6px] border border-line2 font-mono text-[11px] text-fg flex flex-col gap-1 min-h-[180px]', 'data-testid': 'output', role: 'log' },
           ...lines.slice(-30).map((l, i) => h('div', { key: i }, l)),
           h('span', { className: 'inline-block w-1.5 h-3.5 bg-needs ml-0.5', style: { animation: 'rung-pulse 1s steps(2) infinite' } }))),
       h(ErrorLine, { text: err }))
@@ -3529,7 +3562,7 @@ function ExecView({ project, test, n }) {
       h('div', 'grid grid-cols-3 gap-2.5', ...facts(false).map(f => h(Fact, { ...f.props, key: f.key, tile: true }))),
       h('div', 'flex flex-col gap-1.5',
         h('span', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Output log'),
-        h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 font-mono text-xs flex flex-col gap-1 leading-relaxed text-muted', 'data-testid': 'output' }, ...OutputLines({ text: x.output }))),
+        h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 font-mono text-xs flex flex-col gap-1 leading-relaxed text-muted', 'data-testid': 'output', role: 'log' }, ...OutputLines({ text: x.output }))),
       h(ErrorLine, { text: err }))
     return h(Page, { project, sel: test }, body)
   }
@@ -3557,7 +3590,7 @@ function ExecView({ project, test, n }) {
           h('div', 'px-4 py-2.5 border-b border-line bg-card flex items-center justify-between',
             h('span', 'text-xs font-mono text-muted', 'OUTPUT LOG'),
             h('span', 'text-[10px] font-mono text-pass', `exit ${x.exit_code}`)),
-          h('div', { className: 'p-4 font-mono text-xs flex flex-col gap-1.5 text-muted', 'data-testid': 'output' }, ...OutputLines({ text: x.output })))),
+          h('div', { className: 'p-4 font-mono text-xs flex flex-col gap-1.5 text-muted', 'data-testid': 'output', role: 'log' }, ...OutputLines({ text: x.output })))),
       h(ErrorLine, { text: err }))
     return h(Page, { project, sel: test }, body)
   }
@@ -3574,7 +3607,7 @@ function ExecView({ project, test, n }) {
     h('div', 'grid grid-cols-3 gap-2.5', ...facts(true)),
     h('div', 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-2.5',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'OUTPUT LOG'),
-      h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-1 font-mono text-xs leading-relaxed', 'data-testid': 'output' }, ...OutputLines({ text: x.output || x.note || '' }))),
+      h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-1 font-mono text-xs leading-relaxed', 'data-testid': 'output', role: 'log' }, ...OutputLines({ text: x.output || x.note || '' }))),
     h(ErrorLine, { text: err }))
   return h(Page, { project, sel: test }, body)
 }
@@ -3669,9 +3702,39 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
 
 // A dialog: the rest of Rung is inert while it is open. Escape, the cross and a click outside close it, asking
 // first when it holds unsaved text (`dirty`); its own Cancel closes without asking.
+// When the focused control inside `ref` is replaced or disabled (Place becomes Cancel, a result replaces a
+// button), focus moves to what took its place: a Cancel while work runs, else the result (`data-focus-first`),
+// else the first control. It never drops to the page, and never takes focus the person moved elsewhere.
+function useKeepFocus(ref) {
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    let inside = false
+    const fin = () => { inside = true }
+    const fout = e => {
+      const t = e.target
+      if (e.relatedTarget) { if (!el.contains(e.relatedTarget)) inside = false; return }
+      setTimeout(() => { if (document.contains(t) && !t.disabled && t.getAttribute('aria-disabled') !== 'true') inside = false }, 0)
+    }
+    const vis = x => x.offsetParent !== null
+    const mo = new MutationObserver(() => {
+      if (!inside) return
+      const a = document.activeElement
+      if (a && a !== document.body && document.contains(a) && !a.disabled) return
+      const t = [...el.querySelectorAll('[data-testid=bot-cancel], [data-focus-first]')].find(vis) || [...el.querySelectorAll(FOCUSABLE)].find(vis)
+      if (t) t.focus({ preventScroll: true })
+    })
+    el.addEventListener('focusin', fin)
+    el.addEventListener('focusout', fout)
+    mo.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] })
+    return () => { mo.disconnect(); el.removeEventListener('focusin', fin); el.removeEventListener('focusout', fout) }
+  }, [])
+}
+
 function Dialog({ title, onClose, children, footer, testid, dirty }) {
   const box = useRef(null)
   const down = useRef(false)
+  useKeepFocus(box)
   useEffect(() => {
     const opener = document.activeElement
     const first = box.current && (box.current.querySelector('[data-autofocus]') || box.current.querySelector(FOCUSABLE))
@@ -3723,7 +3786,7 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
   },
     h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-full max-w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
-        h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
+        h('h2', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
       hasBody(children) ? h('div', 'p-5 flex flex-col gap-4', children) : null,
       footer ? h('div', cx('flex items-center justify-end gap-2 px-5 py-3.5 bg-card', hasBody(children) && 'border-t border-line'), footer) : null))
@@ -3752,10 +3815,15 @@ function DangerBtn({ onClick, disabled, children, testid }) {
   }, children)
 }
 
+// The visible label is the control's accessible name (never the field's internal name).
+const FORM_TAGS = { input: 1, textarea: 1, select: 1 }
 function Field({ label, error, name, children }) {
+  const named = typeof label === 'string'
+    ? React.Children.map(children, c => (React.isValidElement(c) && FORM_TAGS[c.type] ? React.cloneElement(c, { 'aria-label': label }) : c))
+    : children
   return h('div', 'flex flex-col gap-1.5',
-    h('span', 'text-xs font-medium text-muted', label),
-    children,
+    h('span', { className: 'text-xs font-medium text-muted', 'aria-hidden': 'true' }, label),
+    named,
     error ? h('span', { className: 'text-[11px] text-fail', 'data-testid': 'field-error', role: 'alert', id: name ? 'fe-' + name : undefined }, error) : null)
 }
 
@@ -3792,7 +3860,14 @@ function StartScreen() {
 // Projects whose checklist was shown incomplete in this window: it stays up, all ticked, once complete.
 const FG_SEEN = new Set()
 
-function FirstGreen({ project }) {
+// Where each First green step is done: a new need first, then that need's build steps.
+const FG_STEP = { approve_requirements: 'reqs', approve_specifications: 'specs', approve_tests: 'tests', first_green: 'develop' }
+function fgGo(key, need) {
+  if (key === 'write_need') return () => navigate('need-new')
+  return need && FG_STEP[key] ? () => navigate('build', { need, step: FG_STEP[key] }) : null
+}
+
+function FirstGreen({ project, need }) {
   const q = useApi(`/projects/${encodeURIComponent(project)}/first-green`, { live: true })
   const fg = q.data
   if (fg && fg.done < fg.total) FG_SEEN.add(project)
@@ -3807,7 +3882,9 @@ function FirstGreen({ project }) {
     h('ul', 'flex flex-col gap-1.5',
       ...fg.items.map(i => h('li', { key: i.key, className: 'flex items-center gap-2 text-xs', 'data-item': i.key, 'data-done': i.done ? '1' : '0' },
         h('span', { className: cx('w-4 text-center font-bold', i.done ? 'text-pass' : 'text-dim'), 'aria-hidden': 'true' }, i.done ? '✓' : '○'),
-        h('span', { className: i.done ? 'text-fg' : 'text-muted' }, i.label),
+        fgGo(i.key, need)
+          ? h('button', { type: 'button', className: cx('min-h-[24px] text-left hover:underline', i.done ? 'text-fg' : 'text-needs font-medium'), 'data-testid': 'first-green-go', onClick: fgGo(i.key, need) }, i.label)
+          : h('span', { className: 'text-muted' }, i.label),
         h('span', { className: 'sr-only' }, i.done ? 'done' : 'not done')))))
 }
 
@@ -4377,7 +4454,6 @@ const DOCK_CSS = `
 .rung .dk-row:focus-visible,.rung .dk-more:focus-visible,.rung .dk-btn:focus-visible,.rung .dk-select:focus-visible{outline-offset:1px!important}
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
 .rung .r-main{container-type:inline-size}
-@container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
 .rung .r-frame{container:rframe / inline-size}
 @container rframe (max-width: 640px){
 .rung .r-frame-in{flex-direction:column;overflow-y:auto}
