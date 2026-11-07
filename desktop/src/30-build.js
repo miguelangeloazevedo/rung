@@ -71,7 +71,8 @@ function Seg({ options, value, onChange, testid, big }) {
 // ------------------------------------------------------------------ step 1: Need
 
 function NeedNew({ project }) {
-  const [text, setText] = useState('')
+  const pre = usePrefill('need-new')
+  const [text, setText] = useState(pre.text || '')
   const [sugs, setSugs] = useState([])
   const [marks, setMarks] = useState({})
   const [busy, setBusy] = useState(false)
@@ -120,6 +121,7 @@ function NeedNew({ project }) {
         onAccept: () => setMarks({ ...marks, [s]: 'accepted' }),
         onDismiss: () => setMarks({ ...marks, [s]: 'dismissed' })
       })))) : null,
+    h(DraftBar, { project, kind: 'need', parent: null, fields: { text }, apply: v => { if (v.text != null) setText(v.text) } }),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center justify-between pt-2 border-t border-line',
       h('div', 'flex items-center gap-2',

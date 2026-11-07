@@ -136,7 +136,7 @@ function Home({ project }) {
   const errors = items.filter(i => i.type === 'error')
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
-  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro }), ro ? h(ArchivedBar, { project }) : null,
+  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project }) }), ro ? h(ArchivedBar, { project }) : null,
     h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
@@ -299,6 +299,7 @@ function Projects({ tab }) {
         h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, archived ? 'Archived projects' : 'Needs you'),
         !archived && ov ? h('span', { className: 'text-xl font-bold mono text-needs', 'data-testid': 'ny-total' }, String(ov.total)) : null),
       h('div', 'flex items-center gap-2',
+        !archived && st && (st.projects || []).length ? h(PasteBtn, { project: st.current, projects: st.projects.map(p => p.name) }) : null,
         h(Btn, { onClick: () => navigate('settings') }, 'Settings'),
         h(Btn, { kind: 'primary', onClick: () => navigate('project-new') }, 'New project'))),
     h('div', 'r-cols flex flex-wrap items-start gap-6',

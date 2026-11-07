@@ -370,7 +370,14 @@ def _suggest_reqs(svc, human, body, project):
 
 @route("POST", "/projects/{project}/needs")
 def _create_need(svc, human, body, project):
-    need = svc.engine.create_need(project, _need(body, "text"), human, list(body.get("requirements", [])))
+    reqs = list(body.get("requirements", []))
+    drafter = "drafting"
+    if reqs:
+        try:
+            drafter = getattr(svc.drafter(project), "profile", "") or "drafting"
+        except Exception:
+            drafter = "drafting"
+    need = svc.engine.create_need(project, _need(body, "text"), human, reqs, drafter)
     more = body.get("more_suggestions")
     if more is None:
         try:

@@ -96,6 +96,7 @@ function NeedView({ project, r, flow }) {
           h('span', { className: cx('text-xs font-medium mono', reqTone(x)) }, x.id),
           h('span', { className: cx('text-xs', x.status === 'draft' ? 'text-muted' : 'text-fg') }, x.text)),
         h(Badge, { status: reqBadge(x), small: true })))),
+    h(SuggestPanel, { project, need: r.id, ro: ro || !!r.retired }),
     (r.suggestions || []).length ? h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'suggested' },
       h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Suggested'),
       ...r.suggestions.map(s => h('div', { key: s.id, className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2', 'data-suggestion': s.text },
@@ -111,8 +112,9 @@ function NeedView({ project, r, flow }) {
 
 function ReqEditor({ project, r, need, ret }) {
   const isNew = !r
-  const [text, setText] = useState(r ? r.text : '')
-  const [detail, setDetail] = useState(r ? r.detail : '')
+  const pre = usePrefill(isNew ? 'req-new' : '')
+  const [text, setText] = useState(r ? r.text : (pre.text || ''))
+  const [detail, setDetail] = useState(r ? r.detail : (pre.detail || ''))
   const [err, setErr] = useState('')
   const [sugs, setSugs] = useState(null)
   const [marks, setMarks] = useState({})
@@ -172,6 +174,7 @@ function ReqEditor({ project, r, need, ret }) {
         h('div', 'flex items-center gap-2',
           h('button', { type: 'button', className: 'px-2.5 py-1 rounded bg-btn border border-line text-fg text-[11px] font-medium', disabled: !!marks[s.id], onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: true }); if (!x.ok) return setErr(x.error); setMarks({ ...marks, [s.id]: 'accepted' }); setDetail(d => (d ? d + '\n' : '') + s.text) } }, marks[s.id] === 'accepted' ? 'Accepted' : 'Accept'),
           h('button', { type: 'button', className: 'px-2.5 py-1 rounded bg-btn border border-line text-muted text-[11px] font-medium', disabled: !!marks[s.id], onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: false }); if (!x.ok) return setErr(x.error); setMarks({ ...marks, [s.id]: 'dismissed' }) } }, 'Dismiss')))))) : null,
+    isNew ? h(DraftBar, { project, kind: 'requirement', parent: needId, fields: { text, detail }, apply: v => { if (v.text != null) setText(v.text); if (v.detail != null) setDetail(v.detail) } }) : null,
     specs.length ? h('div', 'flex flex-col gap-2 pt-2 border-t border-line',
       h('div', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Specifications'),
       ...specs.map(s => h('div', { key: s.id, className: 'flex items-center justify-between bg-well p-2.5 rounded-[6px] border border-line2 cursor-pointer', onClick: () => navigate('rung', { rid: s.id }) },
@@ -421,8 +424,9 @@ function SpecEdit({ project, req, spec, ret, need }) {
   const rq = useRung(project, req || (sq.data && sq.data.parent))
   const s = sq.data
   const r = rq.data
-  const [text, setText] = useState(null)
-  const [detail, setDetail] = useState(null)
+  const pre = usePrefill(spec ? '' : 'spec-edit')
+  const [text, setText] = useState(pre.text != null ? pre.text : null)
+  const [detail, setDetail] = useState(pre.detail != null ? pre.detail : null)
   const base = useBase(s && s.version, text == null && detail == null)
   const [sug, setSug] = useState(null)
   const [mark, setMark] = useState('')
@@ -472,6 +476,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       h('div', 'flex items-center gap-2',
         h('button', { type: 'button', className: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'accept-support', disabled: !!mark, onClick: () => { setMark('accepted'); setDetail((d ? d + '\n' : '') + sug) } }, mark === 'accepted' ? 'Accepted' : 'Accept'),
         h('button', { type: 'button', className: 'px-2.5 py-1 rounded-[6px] bg-btn border border-line text-muted text-xs font-medium', disabled: !!mark, onClick: () => setMark('dismissed') }, 'Dismiss'))) : null,
+    s ? null : h(DraftBar, { project, kind: 'specification', parent: reqId, fields: { text: t, detail: d }, apply: v => { if (v.text != null) setText(v.text); if (v.detail != null) setDetail(v.detail) } }),
     h(ErrorLine, { text: err }),
     h(Conflict, { res: conflict, path: s ? `/projects/${encodeURIComponent(project)}/rungs/${encodeURIComponent(s.id)}` : null }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
@@ -592,6 +597,7 @@ function TestEdit({ project, test, spec, ret, need }) {
   const sq = useRung(project, specId)
   const stQ = useApi('/settings')
   const st = stQ.data
+  const pre = usePrefill(test ? '' : 'test-edit')
   const [f, setF] = useState(null)
   const [err, setErr] = useState('')
   const [ran, setRan] = useState(null)
@@ -611,9 +617,12 @@ function TestEdit({ project, test, spec, ret, need }) {
     if (test && !t) return
     if (!st) return
     const proj = (st.projects || []).find(p => p.name === project) || {}
-    setF(t
+    const blank = t
       ? { type: t.type, command: t.command || '', folder: t.folder || '.', rule: (t.pass_rule || {}).kind || 'exit_code', value: String((t.pass_rule || {}).value ?? 0), timeout: `${t.timeout || 120}s`, limit: `${Math.round((t.output_limit || 64000) / 1000)} KB`, steps: (t.steps || []).join('\n'), text: t.type === 'ai_judged' ? t.text : '' }
-      : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder })
+      : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder }
+    // A pasted text is typed text: the blank form is what counts as unchanged.
+    init.current = JSON.stringify(blank)
+    setF(t ? blank : { ...blank, ...pre })
   }, [t, st])
   useEffect(() => { if (f && !init.current) init.current = JSON.stringify(f) }, [f])
   if (tq.error || sq.error || stQ.error) return h(Missing, { project, text: errText(tq.error || sq.error || stQ.error) })
@@ -682,6 +691,7 @@ function TestEdit({ project, test, spec, ret, need }) {
         h('div', 'grid grid-cols-2 gap-4',
           h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Timeout'), input('timeout')),
           h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Output limit'), input('limit')))),
+    t ? null : h(DraftBar, { project, kind: 'test', parent: s.id, fields: { command: f.command, steps: f.steps }, apply: v => setF(cur => ({ ...cur, ...v, type: v.steps && !v.command ? 'manual' : cur.type })) }),
     h(ErrorLine, { text: err }),
     h(Conflict, { res: conflict, path: t ? `/projects/${encodeURIComponent(project)}/rungs/${encodeURIComponent(t.id)}` : null }),
     h('div', 'flex items-center gap-2.5 pt-4 border-t border-line',

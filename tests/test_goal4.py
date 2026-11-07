@@ -238,3 +238,12 @@ def test_bot06_profile_drafter_reads_three_requirements(tmp_path):
     fake.write_text("#!/bin/sh\necho 'Here: [\"One\", \"Two\", \"Three\"]'\n")
     fake.chmod(0o755)
     assert ProfileDrafter("writer", hermes_bin=str(fake)).suggest_missing("Need", [], {"folder": str(tmp_path)}) == ["One", "Two", "Three"]
+
+
+def test_bot07_accepted_suggestions_are_written_by_the_drafting_profile(bot):
+    e = bot.engine
+    e.set_setting("drafting", {"kind": "stub", "delay": 0.0, "profile": "researcher"})
+    status, need = api.handle(bot, "POST", "/projects/csvtidy/needs", {"text": "Merge two exports", "requirements": ["Keep both headers"]})
+    assert status == 200
+    req = e.rung("csvtidy", need["children"][0]["id"]) if need.get("children") else e.tree("csvtidy")[-1]["children"][0]
+    assert any(x["profile"] == "researcher" and x["reason"].startswith("author of") for x in e.suggest_choice("csvtidy", need["id"])["excluded"]), req

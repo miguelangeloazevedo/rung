@@ -135,6 +135,8 @@ class StubDrafter(Drafter):
             return self.derive_spec(need, parent, project)
         if kind == "test":
             t = (self.propose_tests(parent, chain[-2]["text"] if len(chain) > 1 else "", project) or [{}])[0]
+            if not t.get("command") and not t.get("steps"):
+                t = {"type": "command", "command": "python3 -m pytest -q"}
             return {"type": t.get("type", "command"), "command": t.get("command", ""), "steps": t.get("steps", "")}
         return {}
 

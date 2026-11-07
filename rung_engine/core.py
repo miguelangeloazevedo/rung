@@ -643,7 +643,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
 
     @writes(rid=False)
     def create_need(self, project: str, text: str, actor: Actor = HUMAN,
-                    requirements: list[str] | None = None) -> dict:
+                    requirements: list[str] | None = None, drafter: str = "drafting") -> dict:
         """A need written by a human is approved on creation (the Create need press)."""
         if not actor.is_human:
             raise RungError("agents propose needs, they cannot create them", code="forbidden", status=403)
@@ -652,8 +652,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             pk = self._insert_rung(c, p["pk"], "need", None, text, "", "approved", actor)
             need = c.execute("SELECT * FROM rungs WHERE pk = ?", (pk,)).fetchone()
             for t in requirements or []:
-                self._insert_rung(c, p["pk"], "requirement", need, t, "", "draft", Actor("agent", "drafting"),
-                                  data={"origin": "suggested"})
+                # Accepted suggestions are written by the profile that drafted them (an author, Round 7).
+                self._insert_rung(c, p["pk"], "requirement", need, t, "", "draft", Actor("agent", drafter or "drafting"),
+                                  data={"origin": "suggested", **({"drafted_by": drafter} if drafter and drafter != "drafting" else {})})
         return self._rung_dict(self._rung_by_pk(pk))
 
     @writes()

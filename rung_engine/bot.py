@@ -179,6 +179,8 @@ class BotMixin:
         for d in [json.loads(r["data"] or "{}")] + [json.loads(v["data"] or "{}") for v in
                                                     self._q("SELECT data FROM rung_versions WHERE rung_pk=?", (r["pk"],))]:
             add(d.get("drafted_by"))
+            for name in d.get("drafters") or []:
+                add(name)
         for v in self._q("SELECT by_name, by_kind FROM rung_versions WHERE rung_pk=?", (r["pk"],)):
             if v["by_kind"] == "agent":
                 add(v["by_name"])

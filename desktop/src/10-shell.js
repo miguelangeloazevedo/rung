@@ -122,7 +122,7 @@ function usePageTitle(project) {
 
 // The page name is the h1 and the largest text; the project name before it is the way to the project list.
 // `back` is the view's way out: a Back button that Escape also takes.
-function Header({ project, right, ro, title, back, backExit }) {
+function Header({ project, right, ro, title, back, backExit, extra }) {
   const auto = usePageTitle(project)
   const name = title === undefined ? auto : title
   return h('div', 'flex items-center justify-between',
@@ -145,6 +145,7 @@ function Header({ project, right, ro, title, back, backExit }) {
         onClick: () => navigate('settings')
       }, 'Settings'),
       ro ? h(Badge, { status: 'read_only', testid: 'read-only' }) : null,
+      ro ? null : extra,
       right === undefined && !ro
         ? h('button', {
           type: 'button',
