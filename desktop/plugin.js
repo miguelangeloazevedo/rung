@@ -471,6 +471,19 @@ function onEscape(e) {
   guard((owns.length ? owns[owns.length - 1] : EXITS[EXITS.length - 1]).go)
 }
 
+// The folder picker: the host's native open dialog (public `ctx.os.pickOpenPath`, Hermes v0.22.5 and later),
+// asked for a directory. Resolves the chosen path, or '' on cancel. Tests stand in for the host through
+// window.__rungOs: the host's bridge is frozen, and a native dialog cannot be driven over CDP.
+let TEST_OS = null
+const hostOs = () => TEST_OS || (CTX && CTX.os) || null
+const canPickFolder = () => { const os = hostOs(); return !!(os && typeof os.pickOpenPath === 'function') }
+async function pickFolder(defaultPath) {
+  const os = hostOs()
+  if (!os || typeof os.pickOpenPath !== 'function') throw new Error('this Hermes has no folder picker; type the path')
+  const p = await os.pickOpenPath({ title: 'Choose folder', directories: true, defaultPath: defaultPath || undefined })
+  return typeof p === 'string' ? p : ''
+}
+
 // Tests only (window.__rungRefuse): paths the engine is made to refuse, to show how views meet a failed load.
 let REFUSE = new Set()
 async function rest(path, opts) {
@@ -1098,6 +1111,25 @@ function LoadErrors() {
   return h(ErrorLine, { text: `${CUR_PROJECT ? CUR_PROJECT + ': ' : ''}${errText(e)}` })
 }
 
+// A folder: the typed path, and Choose for the host's folder picker when this Hermes has one (never a button
+// that does nothing). A failed pick says so under the field; cancel changes nothing.
+function FolderInput({ value, onChange, onPicked, invalid, className }) {
+  const [err, setErr] = useState('')
+  const choose = async () => {
+    setErr('')
+    try {
+      const p = await pickFolder(value)
+      if (p) onPicked(p)
+    } catch (x) { setErr(errText(x)) }
+  }
+  return h('div', 'flex flex-col gap-1',
+    h('div', 'flex items-center gap-2',
+      h('input', { className: cx(className, 'font-mono flex-1 min-w-0'), type: 'text', name: 'folder', 'aria-invalid': invalid ? 'true' : undefined,
+        value, onChange: e => onChange(e.target.value), onBlur: e => onChange(e.target.value, true) }),
+      canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2' }, 'Choose') : null),
+    err ? h('span', { className: 'text-[11px] text-fail', role: 'alert', 'data-testid': 'choose-error' }, err) : null)
+}
+
 // What the last action did (created, saved, raised), on the view it landed on.
 function Notice() {
   const n = useValue($notice)
@@ -1494,13 +1526,6 @@ function NewProject() {
       if (!touched.current.profiles) setPicked(d.profiles || [])
     } catch (_) { /* the field error shows on create */ }
   }
-  const choose = async () => {
-    try {
-      const os = CTX && CTX.os
-      const r = os && os.pickFolder ? await os.pickFolder() : null
-      if (r) { const p = typeof r === 'string' ? r : r.path || ''; setFolder(p); fill(p) }
-    } catch (_) { /* typed path still works */ }
-  }
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
     if (res.ok) { finish('home'); return notify(`Created ${res.data && res.data.name ? res.data.name : name.trim()}`) }
@@ -1521,9 +1546,8 @@ function NewProject() {
           h('input', { className: inp, type: 'text', name: 'name', 'aria-invalid': bad('name'), value: name, onChange: e => { touched.current.name = true; setName(e.target.value) } }), fe('name')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Folder'),
-          h('div', 'flex items-center gap-2',
-            h('input', { className: cx(inp, 'font-mono flex-1'), type: 'text', name: 'folder', 'aria-invalid': bad('folder'), value: folder, onChange: e => setFolder(e.target.value), onBlur: e => fill(e.target.value) }),
-            h('button', { type: 'button', className: 'px-3 py-2 bg-btn border border-line rounded-[6px] text-xs font-medium text-fg', onClick: choose }, 'Choose')), fe('folder')),
+          h(FolderInput, { className: inp, value: folder, invalid: !!errs.folder,
+            onChange: (v, done) => { setFolder(v); if (done) fill(v) }, onPicked: p => { setFolder(p); fill(p) } }), fe('folder')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Test command'),
           h('input', { className: cx(inp, 'font-mono'), type: 'text', name: 'test_command', 'aria-invalid': bad('test_command'), value: cmd, onChange: e => { touched.current.cmd = true; setCmd(e.target.value) } }), fe('test_command')),
@@ -4007,7 +4031,8 @@ function ProjectSettings({ project }) {
       h(Header, { project, title: 'Project settings', right: h(Btn, { onClick: () => goBack('home') }, 'Back') })),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name, name: 'name' }, h('input', { 'aria-invalid': errs.name ? 'true' : undefined, className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
-      h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h('input', { 'aria-invalid': errs.folder ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
+      h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h(FolderInput, { className: INPUT, value: f.folder, invalid: !!errs.folder,
+        onChange: v => setF(x => ({ ...x, folder: v })), onPicked: p => setF(x => ({ ...x, folder: p })) })),
       h(Field, { label: 'Test command', error: errs.test_command, name: 'test_command' }, h('input', { 'aria-invalid': errs.test_command ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'test_command', value: f.test_command, onChange: set('test_command') })),
       h(Field, { label: 'Profiles', error: errs.profiles },
         h('div', 'flex flex-col gap-2 pt-1',
@@ -4507,7 +4532,8 @@ export default {
     window.__rungRest = rest
     window.__rungNav = () => ({ ...$nav.get(), project: CUR_PROJECT })  // tests: the view and params shown
     window.__rungRefuse = paths => { REFUSE = new Set(paths || []) }  // tests: make the engine refuse these paths
-    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock; delete window.__rungNav; delete window.__rungRefuse })
+    window.__rungOs = os => { TEST_OS = os || null }  // tests: stand in for the host's native dialogs
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock; delete window.__rungNav; delete window.__rungRefuse; delete window.__rungOs })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },

@@ -339,13 +339,6 @@ function NewProject() {
       if (!touched.current.profiles) setPicked(d.profiles || [])
     } catch (_) { /* the field error shows on create */ }
   }
-  const choose = async () => {
-    try {
-      const os = CTX && CTX.os
-      const r = os && os.pickFolder ? await os.pickFolder() : null
-      if (r) { const p = typeof r === 'string' ? r : r.path || ''; setFolder(p); fill(p) }
-    } catch (_) { /* typed path still works */ }
-  }
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
     if (res.ok) { finish('home'); return notify(`Created ${res.data && res.data.name ? res.data.name : name.trim()}`) }
@@ -366,9 +359,8 @@ function NewProject() {
           h('input', { className: inp, type: 'text', name: 'name', 'aria-invalid': bad('name'), value: name, onChange: e => { touched.current.name = true; setName(e.target.value) } }), fe('name')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Folder'),
-          h('div', 'flex items-center gap-2',
-            h('input', { className: cx(inp, 'font-mono flex-1'), type: 'text', name: 'folder', 'aria-invalid': bad('folder'), value: folder, onChange: e => setFolder(e.target.value), onBlur: e => fill(e.target.value) }),
-            h('button', { type: 'button', className: 'px-3 py-2 bg-btn border border-line rounded-[6px] text-xs font-medium text-fg', onClick: choose }, 'Choose')), fe('folder')),
+          h(FolderInput, { className: inp, value: folder, invalid: !!errs.folder,
+            onChange: (v, done) => { setFolder(v); if (done) fill(v) }, onPicked: p => { setFolder(p); fill(p) } }), fe('folder')),
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Test command'),
           h('input', { className: cx(inp, 'font-mono'), type: 'text', name: 'test_command', 'aria-invalid': bad('test_command'), value: cmd, onChange: e => { touched.current.cmd = true; setCmd(e.target.value) } }), fe('test_command')),

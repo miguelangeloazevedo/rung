@@ -348,6 +348,25 @@ function LoadErrors() {
   return h(ErrorLine, { text: `${CUR_PROJECT ? CUR_PROJECT + ': ' : ''}${errText(e)}` })
 }
 
+// A folder: the typed path, and Choose for the host's folder picker when this Hermes has one (never a button
+// that does nothing). A failed pick says so under the field; cancel changes nothing.
+function FolderInput({ value, onChange, onPicked, invalid, className }) {
+  const [err, setErr] = useState('')
+  const choose = async () => {
+    setErr('')
+    try {
+      const p = await pickFolder(value)
+      if (p) onPicked(p)
+    } catch (x) { setErr(errText(x)) }
+  }
+  return h('div', 'flex flex-col gap-1',
+    h('div', 'flex items-center gap-2',
+      h('input', { className: cx(className, 'font-mono flex-1 min-w-0'), type: 'text', name: 'folder', 'aria-invalid': invalid ? 'true' : undefined,
+        value, onChange: e => onChange(e.target.value), onBlur: e => onChange(e.target.value, true) }),
+      canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2' }, 'Choose') : null),
+    err ? h('span', { className: 'text-[11px] text-fail', role: 'alert', 'data-testid': 'choose-error' }, err) : null)
+}
+
 // What the last action did (created, saved, raised), on the view it landed on.
 function Notice() {
   const n = useValue($notice)

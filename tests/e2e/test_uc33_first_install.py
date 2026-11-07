@@ -3,12 +3,22 @@ project's Back returns to it (FST-02, NAV-12), a first green test from visible c
 every empty list names what is missing with one action (FST-04), and each control the walk uses is named
 the same wherever it shows (FST-05)."""
 
+import os
+import re
+import subprocess
+from pathlib import Path
+
 import harness as H
 
 NEED = "Tidy a CSV export so it imports cleanly"
 REQ = "Import the csvtidy package without errors"
 SPEC = "Expose csvtidy as an importable package"
 CMD = "python3 -c 'import csvtidy'"
+
+# The host's native folder dialog cannot be driven over CDP and its bridge is frozen, so the walk stands in for
+# ctx.os.pickOpenPath (the public picker Rung calls) and checks what Rung asked of it.
+STAND_IN = """path => { window.__picks = []
+  window.__rungOs({ pickOpenPath: async o => { window.__picks.push(o); return path } }) }"""
 
 BUTTONS_JS = """() => [...document.querySelectorAll('.rung button')]
   .filter(b => b.offsetParent !== null)
@@ -102,11 +112,15 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     assert stored_projects(rung) == 0
 
     # 2. Visible controls only: New project, a need, one requirement, its specification, a command test, run.
+    page.evaluate(STAND_IN, str(folder))
     w.click("New project", page.locator(".rung [data-testid=start]"))
     H.wait_view(page, "project-new")
     form = page.locator(".rung [data-testid=new-project]")
-    form.locator("input[name=folder]").fill(str(folder))
-    form.locator("input[name=folder]").blur()
+    w.click("Choose", form)
+    H.wait_until(lambda: form.locator("input[name=folder]").input_value() == str(folder), msg="Choose fills the folder")
+    picks = page.evaluate("window.__picks")
+    assert len(picks) == 1 and picks[0]["directories"] is True, picks
+    page.evaluate("window.__rungOs(null)")
     H.wait_until(lambda: form.locator("input[name=name]").input_value() == "csvtidy", msg="name filled in")
     form.locator("input[name=test_command]").fill("python3 -m unittest -q")
     w.click("Create project", form)
@@ -212,3 +226,90 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     for view, label, testid in w.used:
         if testid and testid in labels:
             assert labels[testid] == {label}, (testid, labels[testid])
+
+
+def test_fst03_choose_folder_on_both_project_forms(rung, page):
+    """Choose asks the host for a folder on New project and Project settings; cancel changes nothing, a failed
+    pick says so, and without a host picker there is no Choose button (never a control that does nothing)."""
+    e = rung.engine
+    folder = H.copy_fixture("csvtidy", rung.work)
+    other = H.copy_fixture("csvtidy", rung.work / "moved")
+    e.create_project("csvtidy", str(folder), "python3 -m unittest -q", ["coder"])
+    e.open_project("csvtidy")
+    H.open_rung(page)
+    try:
+        # Project settings: Choose fills the folder; cancel ('' from the host) leaves it.
+        page.evaluate(STAND_IN, str(other))
+        page.evaluate("window.__rungNavigate('project-settings')")
+        H.wait_view(page, "project-settings")
+        sec = page.locator(".rung [data-testid=project-settings]")
+        H.button(page, "Choose", sec).click()
+        H.wait_until(lambda: sec.locator("input[name=folder]").input_value() == str(other), msg="settings folder")
+        assert page.evaluate("window.__picks")[0]["directories"] is True
+        page.evaluate(STAND_IN, "")
+        H.button(page, "Choose", sec).click()
+        page.wait_for_timeout(300)
+        assert sec.locator("input[name=folder]").input_value() == str(other)
+        H.button(page, "Save", page.locator(".rung [data-rung-view]")).click()
+        H.wait_until(lambda: e.project("csvtidy")["folder"] == str(other), msg="saved")
+        # New project: a picker that fails names the failure under the field.
+        page.evaluate("window.__rungOs({ pickOpenPath: async () => { throw new Error('picker failed') } })")
+        page.evaluate("window.__rungNavigate('project-new')")
+        H.wait_view(page, "project-new")
+        form = page.locator(".rung [data-testid=new-project]")
+        H.button(page, "Choose", form).click()
+        H.wait_until(lambda: "picker failed" in form.locator("[data-testid=choose-error]").inner_text(), msg="failure shown")
+        # No picker on this host: no Choose button, the typed path still works.
+        page.evaluate("window.__rungOs({})")
+        page.evaluate("window.__rungNavigate('home')")
+        page.evaluate("window.__rungNavigate('project-new')")
+        H.wait_view(page, "project-new")
+        form = page.locator(".rung [data-testid=new-project]")
+        form.locator("input[name=folder]").wait_for()
+        assert form.locator("[data-testid=choose-folder]").count() == 0
+    finally:
+        page.evaluate("window.__rungOs(null)")
+    # The real host: Choose shows because this Hermes has ctx.os.pickOpenPath.
+    page.evaluate("window.__rungNavigate('home')")
+    page.evaluate("window.__rungNavigate('project-new')")
+    H.wait_view(page, "project-new")
+    assert page.locator(".rung [data-testid=new-project] [data-testid=choose-folder]").count() == 1
+
+
+def _hermes_src() -> Path:
+    return Path(os.environ.get("HERMES_AGENT_SRC", str(Path.home() / ".hermes/hermes-agent")))
+
+
+def test_every_host_call_exists_in_the_plugin_sdk():
+    """Every ctx, ctx.os and host member the pane calls is declared by the Desktop plugin SDK, at the oldest
+    supported release (requires_hermes) and at the source the e2e Desktop runs. A call the SDK lacks would
+    fail silently in a real Hermes while a test that types around it passes."""
+    root = Path(__file__).resolve().parents[2]
+    src = "\n".join(p.read_text() for p in sorted((root / "desktop/src").glob("*.js")))
+    used = {
+        "ctx": set(re.findall(r"\b(?:ctx|CTX)\.(\w+)", src)) - {"os"},
+        "os": set(re.findall(r"\bos\.(\w+)", src)),
+        "host": set(re.findall(r"\bhost\.(\w+)", src)),
+    }
+    assert used["host"] and used["ctx"], used
+    floor = re.search(r'requires_hermes:\s*"?>=\s*([0-9.]+)', (root / "plugin.yaml").read_text()).group(1)
+    ha = _hermes_src()
+    for ref in (f"v{floor}", None):
+        def show(path):
+            if ref is None:
+                return (ha / path).read_text()
+            return subprocess.run(["git", "-C", str(ha), "show", f"{ref}:{path}"], capture_output=True, text=True,
+                                  check=True).stdout
+        plugin = show("apps/desktop/src/contrib/plugin.ts")
+        sdk = show("apps/desktop/src/sdk/index.ts")
+
+        def members(text, start):
+            body = text[text.index(start):]
+            body = body[:body.index("\n}\n")]
+            return set(re.findall(r"^\s{2}(?:readonly\s+)?(\w+)\??\s*[:(]", body, re.M))
+        have = {"ctx": members(plugin, "export interface PluginContext"),
+                "os": members(plugin, "export interface PluginOs"),
+                "host": members(sdk, "export const host = {")}
+        for kind, names in used.items():
+            missing = names - have[kind]
+            assert not missing, f"{ref or 'working tree'}: {kind} lacks {sorted(missing)}"

@@ -113,7 +113,8 @@ export default {
     window.__rungRest = rest
     window.__rungNav = () => ({ ...$nav.get(), project: CUR_PROJECT })  // tests: the view and params shown
     window.__rungRefuse = paths => { REFUSE = new Set(paths || []) }  // tests: make the engine refuse these paths
-    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock; delete window.__rungNav; delete window.__rungRefuse })
+    window.__rungOs = os => { TEST_OS = os || null }  // tests: stand in for the host's native dialogs
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock; delete window.__rungNav; delete window.__rungRefuse; delete window.__rungOs })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },

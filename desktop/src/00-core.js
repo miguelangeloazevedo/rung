@@ -229,6 +229,19 @@ function onEscape(e) {
   guard((owns.length ? owns[owns.length - 1] : EXITS[EXITS.length - 1]).go)
 }
 
+// The folder picker: the host's native open dialog (public `ctx.os.pickOpenPath`, Hermes v0.22.5 and later),
+// asked for a directory. Resolves the chosen path, or '' on cancel. Tests stand in for the host through
+// window.__rungOs: the host's bridge is frozen, and a native dialog cannot be driven over CDP.
+let TEST_OS = null
+const hostOs = () => TEST_OS || (CTX && CTX.os) || null
+const canPickFolder = () => { const os = hostOs(); return !!(os && typeof os.pickOpenPath === 'function') }
+async function pickFolder(defaultPath) {
+  const os = hostOs()
+  if (!os || typeof os.pickOpenPath !== 'function') throw new Error('this Hermes has no folder picker; type the path')
+  const p = await os.pickOpenPath({ title: 'Choose folder', directories: true, defaultPath: defaultPath || undefined })
+  return typeof p === 'string' ? p : ''
+}
+
 // Tests only (window.__rungRefuse): paths the engine is made to refuse, to show how views meet a failed load.
 let REFUSE = new Set()
 async function rest(path, opts) {
