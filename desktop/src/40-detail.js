@@ -137,19 +137,19 @@ function ReqEditor({ project, r, need, ret }) {
   }, [r && r.id])
   const dest = ret ? ['build', { need: needId, step: ret }] : ['rung', { rid: needId }]
   const done = () => goBack(dest[0], dest[1], { force: true })
-  const saved = (id, approved) => finish(dest[0], dest[1], `${isNew ? 'Added' : approved ? 'Approved' : 'Saved'} ${id}`)
+  const saved = () => finish(dest[0], dest[1])
   useDirty(isNew ? (text.trim() || detail.trim()) : !clean)
   useExit(done, true)
   const save = async approve => {
     let res
     if (isNew) {
-      res = await post(`${P(project)}/needs/${needId}/requirements`, { text, detail })
+      res = await post(`${P(project)}/needs/${needId}/requirements`, { text, detail }, approve ? { quiet: true } : null)
       if (res.ok && approve) res = await post(`${P(project)}/rungs/${res.data.id}/approve`)
     } else {
       res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: base })
     }
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
-    saved((res.data && res.data.id) || (r && r.id) || 'requirement', approve)
+    saved()
   }
   const specs = r ? (r.children || []).filter(s => s.status !== 'dismissed' && s.status !== 'proposed') : []
   const crumbPath = r ? r.path : [{ id: needId }]
@@ -224,7 +224,7 @@ function ChangeView({ project, change, rid }) {
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-btn text-muted border border-line2', editedAgo(ch)))),
         h('div', 'flex items-center gap-2',
           firstStale ? h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'review-first', onClick: () => navigate('rung', { rid: firstStale }) }, `Review ${firstStale}`) : null,
-          h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'revert', onClick: async () => { const x = await post(`${P(project)}/changes/${ch.id}/revert`); if (!x.ok) return setErr(x.error); finish('rung', { rid: ch.rung }, `Reverted ${ch.rung}`) } }, 'Revert change'))),
+          h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'revert', onClick: async () => { const x = await post(`${P(project)}/changes/${ch.id}/revert`); if (!x.ok) return setErr(x.error); finish('rung', { rid: ch.rung }) } }, 'Revert change'))),
       h('div', 'grid grid-cols-2 gap-3 pt-3 border-t border-line',
         h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-3', 'data-testid': 'before' },
           h('div', 'flex items-center justify-between pb-1.5 border-b border-line2', h('span', 'text-xs font-semibold text-fail uppercase tracking-wider', 'Before')),
@@ -295,11 +295,10 @@ function SpecView({ project, r, ret, need }) {
   const shown = a.pick ? [a.suggestions.find(x => x.profile === a.pick.profile), ...a.suggestions.filter(x => x.profile !== a.pick.profile)].filter(Boolean) : a.suggestions
   const needId = r.path[0] && r.path[0].id
   // Every action here ends on a line naming what it did, on the view it lands on.
-  const act = async (path, body, go, notice) => {
+  const act = async (path, body, go) => {
     const x = await post(path, body)
     if (!x.ok) return setErr(x.error)
     setErr('')
-    if (notice) notify(notice)
     if (go) go(x.data)
   }
   const runTests = () => act(`${P(project)}/specs/${r.id}/run-tests`, {}, d => { const s = d.started && d.started[0]; if (s) navigate('exec', { test: s.test, n: s.n }) })
@@ -447,7 +446,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
   useDirty((text != null && text !== (s ? s.text : '')) || (detail != null && detail !== (s ? s.detail : '')))
   const dest = () => (ret ? ['build', { need: need || (r && r.parent), step: ret }] : ['rung', { rid: s ? s.id : reqId }])
   const done = () => goBack(...dest(), { force: true })
-  const saved = id => finish(...dest(), `Approved ${id}`)
+  const saved = () => finish(...dest())
   useExit(done, true)
   if (sq.error || rq.error) return h(Missing, { project, text: errText(sq.error || rq.error) })
   if ((spec && !s) || !r) return h(Page, { project }, h(Loading))
@@ -455,11 +454,11 @@ function SpecEdit({ project, req, spec, ret, need }) {
     let x
     if (s) x = await post(`${P(project)}/rungs/${s.id}/edit`, { text: t, detail: d, approve: true, version: base })
     else {
-      x = await post(`${P(project)}/rungs/${reqId}/spec`, { text: t, detail: d, suggestion: mark === 'accepted' ? sug : null })
+      x = await post(`${P(project)}/rungs/${reqId}/spec`, { text: t, detail: d, suggestion: mark === 'accepted' ? sug : null }, { quiet: true })
       if (x.ok) x = await post(`${P(project)}/rungs/${x.data.id}/approve`)
     }
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
-    saved((x.data && x.data.id) || (s && s.id) || 'specification')
+    saved()
   }
   const path = s ? s.path : [...r.path, { id: r.id }]
   const body = h('div', { className: 'flex flex-col gap-4 bg-card border border-line rounded-[6px] p-5', 'data-testid': 'spec-editor' },
@@ -499,11 +498,10 @@ function TestView({ project, r }) {
   // Escape is the header Back (Page back): unforced, so typed evidence asks Discard or Keep editing.
   const execs = r.executions || []
   // Every action here ends on a line naming what it did, on the view it lands on.
-  const act = async (path, body, go, notice) => {
+  const act = async (path, body, go) => {
     const x = await post(path, body)
     if (!x.ok) return setErr(x.error)
     setErr('')
-    if (notice) notify(notice)
     if (go) go(x.data)
   }
   const runOne = () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n }))
@@ -548,7 +546,7 @@ function TestView({ project, r }) {
               h(Btn, { kind: 'primary', testid: 'approve-result', onClick: () => act(`${P(project)}/tests/${r.id}/executions/${pending.n}/approve`) }, 'Approve result'),
               h(Btn, { onClick: () => goBack('rung', { rid: r.parent }) }, 'Back'))
             : frag(
-              h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote(''); notify(`Recorded a result on ${r.id}`) }) }, 'Record'),
+              h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote('') }) }, 'Record'),
               h(Btn, { onClick: leave }, 'Cancel')))))
     return h(Page, { project, sel: r.id }, body)
   }
@@ -645,7 +643,6 @@ function TestEdit({ project, test, spec, ret, need }) {
     const x = t ? await post(`${P(project)}/tests/${t.id}`, { fields: { ...fields(), version: base } }) : await post(`${P(project)}/specs/${s.id}/tests`, { fields: fields() })
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
     saved()
-    notify(t ? `Saved ${t.id}` : `Added ${x.data && x.data.id ? x.data.id : 'test'}`)
   }
   const runOnce = async () => {
     let id = t && t.id
@@ -689,11 +686,11 @@ function TestEdit({ project, test, spec, ret, need }) {
           h('span', 'text-xs font-medium text-muted', 'Pass rule'),
           h('div', 'flex items-center gap-3',
             h('div', 'relative w-44',
-              h('select', { className: 'w-full appearance-none bg-well border border-line rounded-[6px] px-3 py-2 text-xs text-fg focus:outline-none focus:border-needs cursor-pointer', name: 'rule', value: f.rule, onChange: set('rule') },
+              h('select', { className: 'w-full appearance-none bg-well border border-line rounded-[6px] px-3 py-2 text-xs text-fg focus:outline-none focus:border-needs cursor-pointer', 'aria-label': 'Pass rule', name: 'rule', value: f.rule, onChange: set('rule') },
                 h('option', { value: 'exit_code' }, 'Exit code'),
                 h('option', { value: 'output_contains' }, 'Output contains')),
               h('div', 'pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-muted', '▾')),
-            input('value', { w: 'w-24' }))),
+            input('value', { w: 'w-24', label: 'Pass rule value' }))),
         h('div', 'grid grid-cols-2 gap-4',
           h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Timeout'), input('timeout')),
           h('div', 'flex flex-col gap-1.5', h('span', 'text-xs font-medium text-muted', 'Output limit'), input('limit')))),

@@ -192,7 +192,6 @@ function StepReqs({ project, need, flow }) {
   const approveAll = async () => {
     const r = await post(`${P(project)}/needs/${need}/approve-requirements`)
     if (!r.ok) return setErr(r.error)
-    notify(`Approved the requirements of ${need}`)
     navigate('build', { need, step: 'specs' }, { force: true })
   }
   const body = h('div', 'flex flex-col gap-6',
@@ -435,17 +434,18 @@ function StepDevelop({ project, need, flow }) {
   for (const r of n.children || []) for (const s of r.children || []) if (s.status === 'approved' || s.status === 'stale') specs.push(s)
   const sendAll = async () => {
     for (const s of specs) {
-      const res = await post(`${P(project)}/specs/${s.id}/send`, {})
+      const res = await post(`${P(project)}/specs/${s.id}/send`, {}, { quiet: true })
       if (!res.ok && !/manual|already running|no accepted command/.test(res.error)) { setErr(res.error); return }
     }
     finish('home', null, `Sent ${specs.length} ${specs.length === 1 ? 'specification' : 'specifications'}`)
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need, flow, current: 4 }),
-    h('div', { className: 'bg-card border border-line rounded-[6px] flex flex-col', 'data-testid': 'develop-table' },
+    h('div', { className: 'bg-card border border-line rounded-[6px] overflow-x-auto', role: 'region', 'aria-label': 'Specifications to develop', tabIndex: 0 },
+    h('div', { className: 'flex flex-col min-w-[560px]', 'data-testid': 'develop-table' },
       h('div', 'grid grid-cols-[2.2fr_1fr_1.8fr_1.4fr_1fr] items-center px-4 py-2.5 bg-well border-b border-line2 text-[11px] font-semibold tracking-wider text-muted uppercase',
         h('div', null, 'Specification'), h('div', null, 'Tests'), h('div', null, 'Carried by'), h('div', null, 'Budget'), h('div', 'text-right', 'Action')),
-      h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr })))),
+      h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',
       h(ExitBtn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),

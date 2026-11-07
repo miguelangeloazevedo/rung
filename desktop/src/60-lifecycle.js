@@ -228,7 +228,7 @@ function ArchivedBar({ project }) {
     h('div', 'flex items-center gap-2 text-muted', h(Badge, { status: 'archived' }), h('span', null, project)),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
-      h(Btn, { kind: 'small', testid: 'restore-project', onClick: async () => { const x = await post(`/projects/${encodeURIComponent(project)}/restore`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Restored ${project}`) } }, 'Restore')))
+      h(Btn, { kind: 'small', testid: 'restore-project', onClick: async () => { const x = await post(`/projects/${encodeURIComponent(project)}/restore`); setErr(x.ok ? '' : x.error) } }, 'Restore')))
 }
 
 // ------------------------------------------------------------------ read-out
@@ -302,7 +302,7 @@ function RetireDialog({ project, need, onClose }) {
     const x = await post(`${P(project)}/needs/${need}/retire`, { reason })
     if (!x.ok) return setErr(x.error)
     onClose()
-    finish('home', null, `Retired ${need}`)
+    finish('home')
   }
   return h(Dialog, {
     title: `Retire ${need}`, onClose, dirty: !!reason.trim(), testid: 'retire-dialog',
@@ -321,7 +321,7 @@ function RetiredBar({ project, r }) {
       r.retired_at ? h('span', 'mono text-[11px] text-muted', dayClock(r.retired_at)) : null),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
-      h(Btn, { kind: 'small', testid: 'restore-need', onClick: async () => { const x = await post(`${P(project)}/needs/${r.id}/restore`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Restored ${r.id}`) } }, 'Restore')))
+      h(Btn, { kind: 'small', testid: 'restore-need', onClick: async () => { const x = await post(`${P(project)}/needs/${r.id}/restore`); setErr(x.ok ? '' : x.error) } }, 'Restore')))
 }
 
 function Retired({ project }) {
@@ -355,7 +355,6 @@ function DeleteDialog({ name, onClose, after }) {
     // The deleted project leaves the cached list at once, so the picker never shows it while /state refetches.
     queryClient.setQueryData(['rung', '/state'], d => d && { ...d, projects: (d.projects || []).filter(p => p.name !== name) })
     onClose()
-    notify(`Deleted ${name}`)
     if (after) after(x.data)
   }
   return h(Dialog, {
@@ -397,13 +396,11 @@ function ProjectSettings({ project }) {
     const x = await post(`/projects/${encodeURIComponent(project)}/update`, f)
     if (!x.ok) { setErrs(x.fields || (x.field ? { [x.field]: x.error } : {})); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
     setErrs({}); setErr('')
-    notify('Saved')
     if (x.data.name !== project) navigate('project-settings', { k: Date.now() }, { force: true, replace: true })
   }
   const archive = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/archive`)
     if (!x.ok) return setErr(x.error)
-    notify(`Archived ${project}`)
     navigate('projects', { tab: 'archived' }, { force: true })
   }
   const events = (pq.data || []).filter(e => e.kind === 'project_changed').slice().reverse()
@@ -450,7 +447,6 @@ function ArchivedList({ qtext, onClear }) {
     const x = await post(`/projects/${encodeURIComponent(name)}/${what}`)
     if (!x.ok) return setErr(x.error)
     setErr('')
-    if (what === 'restore') notify(`Restored ${name}`)
     if (what === 'open') navigate('home')
   }
   return h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'archived-list' },

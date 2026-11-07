@@ -30,8 +30,40 @@ function activate(fn) {
   }
 }
 
+// A caption (a label, or a medium-weight span holding only words) directly before a field names that field:
+// the field, a radio group, a group of checkboxes, a field wrapper (FolderInput) or a select in its wrapper.
+const FIELD = { input: 1, textarea: 1, select: 1 }
+function caption(k) {
+  if (!React.isValidElement(k) || typeof k.props.children !== 'string' || k.props.htmlFor) return null
+  if (k.type === 'label') return k.props.children
+  return k.type === 'span' && /font-(medium|semibold)/.test(k.props.className || '') && !k.props['data-testid'] ? k.props.children : null
+}
+function nameField(k, label) {
+  if (!React.isValidElement(k) || k.props['aria-label'] || k.props['aria-labelledby']) return k
+  if (FIELD[k.type]) return k.props.type === 'checkbox' || k.props.type === 'radio' ? k : React.cloneElement(k, { 'aria-label': label })
+  if (typeof k.type === 'function' && k.type.labelled) return React.cloneElement(k, { 'aria-label': label })
+  if (k.props.role === 'radiogroup' || k.props.role === 'group') return React.cloneElement(k, { 'aria-label': label })
+  const inner = React.Children.toArray(k.props.children)
+  if (inner.length && inner.every(c => React.isValidElement(c) && c.type === 'label')) return React.cloneElement(k, { role: 'group', 'aria-label': label })
+  const first = inner[0]
+  if (React.isValidElement(first) && FIELD[first.type] && !first.props['aria-label']) return React.cloneElement(k, null, React.cloneElement(first, { 'aria-label': label }), ...inner.slice(1))
+  return k
+}
+function nameFields(kids) {
+  const flat = kids.length === 1 && Array.isArray(kids[0]) ? kids[0] : kids
+  let out = null
+  for (let i = 0; i + 1 < flat.length; i++) {
+    const label = caption(flat[i])
+    if (!label) continue
+    const named = nameField(flat[i + 1], label)
+    if (named !== flat[i + 1]) { out = out || flat.slice(); out[i + 1] = named }
+  }
+  return out ? (flat === kids ? out : [out]) : kids
+}
+
 function h(tag, props, ...kids) {
   let p = props == null ? {} : typeof props === 'string' ? { className: props } : props
+  kids = nameFields(kids)
   if (typeof tag === 'string' && /^h[1-6]$/.test(tag) && p.onClick) {
     // A heading that opens something stays a heading; a button inside it carries the action and its name.
     const { onClick, title, 'aria-label': named, ...rest } = p
@@ -199,7 +231,7 @@ function returnTo(view, params, opts) {
 // After a save or a create: the destination, with no entry for the finished form.
 // The move after a successful action, with the line that names what it did on the view it lands on.
 function finish(view, params, notice) {
-  if (notice) notify(notice)
+  if (notice) notify(notice)  // only a batch names itself here; a single post was named by post()
   return navigate(view, params, { force: true, replace: true })
 }
 
@@ -278,24 +310,33 @@ function errInfo(e) {
   return { field: (j && j.field) || null, fields: (j && j.fields) || null, code: (j && j.code) || null }
 }
 
-// The result line of each create, save, approve and record (NAV-11), named once here so no door forgets it.
-// Views that know a better name (Retired, Archived, Raised...) call notify() after, which replaces this one.
+// The result line of every action (NAV-11), named once here: a view never adds its own line after post().
+// An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/^\/projects$/, (m, b, d) => `Created ${(d && d.name) || (b && b.name) || 'the project'}`],
+  [/^\/projects\/([^/]+)\/update$/, (m, b, d) => `Saved the settings of ${(d && d.name) || m[1]}`],
+  [/^\/projects\/([^/]+)\/archive$/, m => `Archived ${m[1]}`],
+  [/^\/projects\/([^/]+)\/restore$/, m => `Restored ${m[1]}`],
+  [/^\/projects\/([^/]+)\/delete$/, m => `Deleted ${m[1]}`],
+  [/^\/settings$/, () => 'Saved Settings'],
+  [/\/needs\/([^/]+)\/retire$/, m => `Retired ${m[1]}`],
+  [/\/needs\/([^/]+)\/restore$/, m => `Restored ${m[1]}`],
+  [/\/tests\/[^/]+\/defects$/, (m, b, d) => `Raised ${(d && d.id) || 'the defect'}`],
+  [/\/changes\/\d+\/revert$/, (m, b, d) => `Reverted ${(d && d.id) || 'the change'}`],
   [/\/rungs\/([^/]+)\/approve$/, m => `Approved ${m[1]}`],
   [/\/needs\/([^/]+)\/approve-requirements$/, m => `Approved the requirements of ${m[1]}`],
   [/\/needs\/([^/]+)\/approve-drafted$/, m => `Approved the specifications of ${m[1]}`],
   [/\/needs\/([^/]+)\/approve-tests$/, m => `Approved the tests of ${m[1]}`],
   [/\/tests\/([^/]+)\/executions\/(\d+)\/approve$/, m => `Approved execution ${m[2]} of ${m[1]}`],
-  [/\/rungs\/([^/]+)\/edit$/, m => `Saved ${m[1]}`],
+  [/\/rungs\/([^/]+)\/edit$/, (m, b) => `${b && b.approve ? 'Approved' : 'Saved'} ${m[1]}`],
   [/\/projects\/[^/]+\/needs$/, (m, b, d) => `Created ${(d && d.id) || 'the need'}`],
   [/\/needs\/[^/]+\/requirements$/, (m, b, d) => `Added ${(d && d.id) || 'the requirement'}`],
   [/\/rungs\/[^/]+\/spec$/, (m, b, d) => `Added ${(d && d.id) || 'the specification'}`],
   [/\/specs\/[^/]+\/tests$/, (m, b, d) => `Added ${(d && d.id) || 'the test'}`],
   [/\/projects\/[^/]+\/tests\/([^/]+)$/, m => `Saved ${m[1]}`],
   [/\/tests\/([^/]+)\/record$/, (m, b) => `Recorded ${b && b.result === 'fail' ? 'Fail' : 'Pass'} for ${m[1]}`],
-  [/\/suggestions\/[^/]+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : null],
-  [/\/bot\/[^/]+\/items\/\d+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : 'Dismissed'],
-  [/\/suggestions\/[^/]+$/, (m, b) => (b && !b.accept ? 'Dismissed' : null)],
+  [/\/suggestions\/[^/]+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : 'Dismissed the suggestion'],
+  [/\/bot\/[^/]+\/items\/\d+$/, (m, b, d) => b && b.accept ? `Added ${(d && d.id) || 'the suggestion'}` : 'Dismissed the suggestion'],
   [/\/rungs\/([^/]+)\/dismiss$/, m => `Dismissed ${m[1]}`],
   [/\/rungs\/([^/]+)\/regenerate$/, m => `Drafting ${m[1]}`],
   [/\/rungs\/([^/]+)\/authoring$/, (m, b) => (b && b.mode === 'human' ? `${m[1]}: I write, AI supports` : `${m[1]}: AI derives`)],
@@ -310,15 +351,16 @@ const RESULTS = [
 ]
 function resultLine(path, body, data) {
   const p = decodeURIComponent(String(path).split('?')[0])
-  for (const [re, f] of RESULTS) { const m = p.match(re); if (m) return f(m, body, data) }
+  // a row that does not apply (null) lets the search go on
+  for (const [re, f] of RESULTS) { const m = p.match(re); const line = m && f(m, body, data); if (line) return line }
   return null
 }
 
-async function post(path, body) {
+async function post(path, body, opts) {
   try {
     const data = await rest(path, { method: 'POST', body: body || {} })
     refresh()
-    const line = resultLine(path, body, data)
+    const line = opts && opts.quiet ? null : resultLine(path, body, data)
     if (line) notify(line)
     return { ok: true, data }
   } catch (e) {

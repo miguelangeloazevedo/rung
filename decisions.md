@@ -247,3 +247,19 @@ Three independent reviewers (21 findings, 3 rated major) on the Round 17 code an
 | Missing page Back | Back never falls back to the page that failed: a failed Home goes on to Needs you. |
 | Declined | Replacing a view by the missing page when only `/state` or `/settings` failed (NAV-17; the view's own data loaded). Why the profile was chosen for Place and Draft (BOT-06 asks it of Suggest; BOT-01 and BOT-04 name the profile). The stub's fixed reason sentence (synthetic stub; a profile writes its own). Renaming `Draft` and `Keep` (frozen BOT-04, BOT-05). `Open <id>` names on existing rows and cards (Round 14). The project link's name (Round 16). A header without Dock, Settings and New need on the missing page (the project exists; one header on every project view). Already fixed in Round 17: the Needs you card holding buttons; focus inside Paste text (its dialog keeps focus). |
 
+## Round 19: second confirmation review, corrections and declines (7 Nov 2026)
+
+Three independent reviewers (22 findings, 2 rated major) on the Round 18 code and a fresh gallery.
+
+| Topic | Decision |
+| --- | --- |
+| Result lines, one source | Every single action is named by the table in `post()`; no view writes its own line after it (Record added `Recorded a result on`, which replaced `Recorded Pass for`). Create project, project settings, archive, restore, delete, Settings, retire, raise defect and revert joined the table; a row that does not apply lets the search go on (Dismiss on a suggestion was dead). An action made of several posts posts quietly and names itself once (Send all; a new rung saved and approved says `Approved`). A unit test holds the rule. |
+| Saved names its object | `Saved Settings`, `Saved the settings of <project>`; no bare `Saved`. |
+| Fields are named | A caption directly before a field names it, in the one constructor `h()`: input, textarea, select in its wrapper, radio group, group of checkboxes and the folder field. The route walk fails on any field without a name in any view. |
+| Missing and failed pages | Home and Projects on the missing page replace it, so Back never returns to it. A missing execution names test and number. A page that failed to load (not a missing id) also offers Retry. The backend-unavailable screen has `Close Rung` beside Retry. |
+| Bot help | Leaving a running job says `Drafting cancelled` only after the cancel returns, else `Could not cancel drafting: <reason>`. No Retry while the job still runs; Cancel is the only control then. |
+| Wide tables | Settings' profile table and the Develop table scroll inside their own labelled region; the 320 pixel route walk now covers Settings and Develop. |
+| Allocation | The Allocation heading holds the button to Settings (no clickable block around a heading). |
+| One name | Needs you's empty state no longer adds `Priority queue`. |
+| Declined | `Write the first need` beside `New need` (frozen acceptance.md UC01 step 3). The chip's count is the current project's (frozen FRT-05; the harness reads `Rung: N`). `Suggesting` on New need (it comes from the drafting profile, not a keyword match). `Accept R-4` style names on row actions (frozen UC03 finds `Accept` and `Dismiss` by name within the row; Round 14). Settings' Back lands on Home (frozen UC07). `Keep my text` (frozen BOT-05 names `Keep`). Clearing `Drafted by` on every keystroke (it names the last draft until the next one). The proposal card's click (it already follows the Round 17 rule: not a button, its title is). Count differences between gallery shots (different seeded states). `refused: /state` (the test hook's refusal text, not a product message). |
+

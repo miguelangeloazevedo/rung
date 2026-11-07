@@ -4,7 +4,7 @@ function App() {
   const nav = useValue($nav)
   const { state, project, loading, error } = useCurrent()
   if (loading && !state) return h(Root, { className: 'h-full' }, h(Loading))
-  if (error && !state) return h(Root, { className: 'h-full' }, h('div', 'p-8 flex flex-col gap-3', h(ErrorLine, { text: 'Rung backend unavailable: ' + errText(error) }), h('div', null, h(Btn, { testid: 'retry', onClick: () => refresh() }, 'Retry'))))
+  if (error && !state) return h(Root, { className: 'h-full' }, h('div', 'p-8 flex flex-col gap-3', h(ErrorLine, { text: 'Rung backend unavailable: ' + errText(error) }), h('div', 'flex items-center gap-2', h(Btn, { testid: 'retry', onClick: () => refresh() }, 'Retry'), h(Btn, { testid: 'close-rung', onClick: closeRung }, 'Close Rung'))))
   if (state && state.settings && $colours.get() == null) $colours.set(state.settings.colours || {})
   let view = nav.view
   const noProjects = state && !(state.projects || []).length && !state.current

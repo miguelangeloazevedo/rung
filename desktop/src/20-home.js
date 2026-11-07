@@ -158,7 +158,7 @@ function Home({ project }) {
   const main = frag(
     head,
     h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'needs-you' },
-      h(SectionTitle, { tone: items.length ? 'needs' : null, dot: items.length ? 'needs' : 'dim', right: items.length ? '' : 'Priority queue' }, 'Needs you'),
+      h(SectionTitle, { tone: items.length ? 'needs' : null, dot: items.length ? 'needs' : 'dim', right: '' }, 'Needs you'),
       items.length
         ? frag(...stale.map(i => h(StaleCard, { key: 's' + i.id, project, item: i, ro })),
           ...errors.map(i => h(ErrorCard, { key: 'e' + i.id + i.n, project, item: i, ro })),
@@ -349,7 +349,7 @@ function NewProject() {
   }
   const create = async () => {
     const res = await post('/projects', { name: name.trim(), folder: folder.trim(), test_command: cmd.trim(), profiles: picked })
-    if (res.ok) { finish('home'); return notify(`Created ${res.data && res.data.name ? res.data.name : name.trim()}`) }
+    if (res.ok) return finish('home')
     setErrs(res.fields || (res.field ? { [res.field]: res.error } : {}))
     setErr(res.field ? '' : res.error)
     if (res.field) focusInvalid()
@@ -467,7 +467,6 @@ function Settings({ project }) {
     setErr('')
     setTouched(false)
     navigate('home', null, { force: true, replace: true })
-    notify('Settings saved')
   }
   const cancel = () => { setDraft(JSON.parse(JSON.stringify(q.data))); setTouched(false); setErr(''); navigate('home', null, { force: true, replace: true }) }
   const numInp = 'w-16 bg-well border border-line rounded px-2 py-1 text-xs text-fg mono outline-none'
@@ -479,7 +478,8 @@ function Settings({ project }) {
     h('header', 'flex items-center justify-between pb-1', h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'Settings')),
     h('section', 'flex flex-col gap-3',
       h('div', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Profiles'),
-      h('div', 'bg-card border border-line rounded-[6px] overflow-hidden',
+      // a wide table scrolls inside its own labelled region; nothing is clipped in a narrow pane
+      h('div', { className: 'bg-card border border-line rounded-[6px] overflow-x-auto', role: 'region', 'aria-label': 'Profiles', tabIndex: 0 },
         h('table', 'w-full text-left border-collapse',
           h('thead', 'border-b border-line text-[11px] uppercase tracking-wider text-muted font-semibold bg-well/50',
             h('tr', null,

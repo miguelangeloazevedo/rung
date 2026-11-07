@@ -294,8 +294,8 @@ function Allocation({ alloc }) {
   const picked = alloc.pick && alloc.pick.profile
   const lead = picked || (rows[0] && rows[0].profile) || ''
   return h('div', 'flex flex-col gap-3 pt-3 border-t border-line',
-    h('div', { className: 'flex items-center justify-between pb-1 cursor-pointer', 'aria-label': `Allocation: ${alloc.spec}, Settings`, onClick: () => navigate('settings') },
-      h('h3', 'text-xs font-semibold tracking-wider uppercase text-muted', `Allocation: ${alloc.spec}`),
+    h('div', 'flex items-center justify-between pb-1',
+      h('h3', { className: 'text-xs font-semibold tracking-wider uppercase text-muted', title: 'Settings', 'aria-label': `Allocation: ${alloc.spec}, Settings`, onClick: () => navigate('settings') }, `Allocation: ${alloc.spec}`),
       h('span', 'text-[11px] mono text-needs', lead)),
     alloc.human_only
       ? h('div', 'flex flex-col gap-2', h('div', 'text-[11px] text-muted', alloc.human_only_reason === 'marked' ? 'Human only' : 'Manual tests only: a person carries this'))
@@ -358,7 +358,7 @@ function LoadErrors() {
 
 // A folder: the typed path, and Choose for the host's folder picker when this Hermes has one (never a button
 // that does nothing). A failed pick says so under the field; cancel changes nothing.
-function FolderInput({ value, onChange, onPicked, invalid, className }) {
+function FolderInput({ value, onChange, onPicked, invalid, className, 'aria-label': named }) {
   const [err, setErr] = useState('')
   const choose = async () => {
     setErr('')
@@ -369,11 +369,12 @@ function FolderInput({ value, onChange, onPicked, invalid, className }) {
   }
   return h('div', 'flex flex-col gap-1',
     h('div', 'flex items-center gap-2',
-      h('input', { className: cx(className, 'font-mono flex-1 min-w-0'), type: 'text', name: 'folder', 'aria-invalid': invalid ? 'true' : undefined,
+      h('input', { className: cx(className, 'font-mono flex-1 min-w-0'), type: 'text', name: 'folder', 'aria-label': named || 'Folder', 'aria-invalid': invalid ? 'true' : undefined,
         value, onChange: e => onChange(e.target.value), onBlur: e => onChange(e.target.value, true) }),
       canPickFolder() ? h(Btn, { kind: 'secondary', testid: 'choose-folder', onClick: choose, className: 'py-2 whitespace-nowrap' }, 'Choose folder') : null),
     err ? h('span', { className: 'text-[11px] text-fail', role: 'alert', 'data-testid': 'choose-error' }, err) : null)
 }
+FolderInput.labelled = true
 
 // What the last action did (created, saved, raised), on the view it landed on.
 function Notice() {
@@ -411,18 +412,22 @@ function ExitBtn({ onClick, exit, children, ...rest }) {
   return h(Btn, { ...rest, onClick }, children)
 }
 
-function Missing({ project, text }) {
+// A missing id says so; anything else is a load that failed, and Retry may cure it.
+function isNotFound(text) { return /^(no |not found|unknown |page not found)| is archived$/i.test(String(text || '')) }
+
+function Missing({ project, text, name }) {
   // Back never falls back to the page that failed: a failed Home goes on to Needs you.
   const cur = ($nav.get() || {}).view
   const back = () => goBack(project && cur !== 'home' ? 'home' : 'projects')
   useExit(back, false, true)
   // The sentence and the way on, alone: no tiles or rail of a project the person did not ask for.
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('div', { role: 'alert' }, h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, missingText(text))),
+    h('div', { role: 'alert' }, h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, (isNotFound(text) && name) || missingText(text))),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
-      project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
-      h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
+      isNotFound(text) ? null : h(Btn, { testid: 'missing-retry', onClick: () => refresh() }, 'Retry'),
+      project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home', null, { replace: true }) }, 'Home') : null,
+      h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects', null, { replace: true }) }, 'Projects')))
   return h(Frame, { main: frag(project ? h('header', null, h(Header, { project, title: null })) : null, body), quiet: true })
 }
 

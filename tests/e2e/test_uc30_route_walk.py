@@ -173,6 +173,12 @@ def test_nav01_nav02_nav03_nav04_nav07_nav08_nav09_nav13_route_walk(rung, csvtid
         # NAV-08: one h1, the largest heading.
         assert len(st["h1"]) == 1, f"{origin}: h1s {st['h1']}"
         assert not st["bigger"], f"{origin}: headings larger than the h1: {st['bigger']}"
+        # Every field has a name a screen reader reads before typing (its label, aria-label or labelledby).
+        unnamed = page.evaluate("""() => [...document.querySelectorAll('.rung [data-rung-view] :is(input, textarea, select)')]
+            .filter(el => el.type !== 'hidden' && el.getClientRects().length
+                    && !(el.labels && el.labels.length) && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby'))
+            .map(el => el.name || el.type)""")
+        assert not unnamed, f"{origin}: fields without a name {unnamed}"
         # A heading stays a heading: an action on it is a button inside it, never a role on the heading.
         assert page.locator(".rung :is(h1, h2, h3, h4, h5, h6)[role]").count() == 0, f"{origin}: a heading with a role"
         # NAV-09: the current item marked on breadcrumbs, the step strip and the rail.
@@ -340,7 +346,7 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
     page.evaluate("document.querySelector('.rung').style.width = '320px'")
     try:
         for view, params in (("projects", {}), ("home", {}), ("build", {"need": "N-2", "step": "specs"}),
-                             ("rung", {"rid": "S-1.1"})):
+                             ("build", {"need": "N-2", "step": "develop"}), ("settings", {}), ("rung", {"rid": "S-1.1"})):
             page.evaluate("([v, p]) => window.__rungNavigate(v, p)", [view, params])
             H.wait_until(lambda: nav(page)["view"] == view, msg=view)
             settle(page, f"{view} at 320", budget=15)  # layout is under test here, not load time
@@ -350,7 +356,7 @@ def test_nav14_a_320_pixel_pane(rung, csvtidy, page):
               const rail = root.querySelector('[data-testid=rail], .r-side')
               const strip = root.querySelector('[data-testid=build-strip]')
               const out = [...root.querySelectorAll('[data-rung-view] button, [data-rung-view] [role=button]')]
-                .filter(b => b.offsetParent !== null)
+                .filter(b => b.offsetParent !== null && !b.closest('[role=region][tabindex]'))
                 .map(b => { const r = b.getBoundingClientRect(); return { t: (b.innerText || b.getAttribute('aria-label') || '').trim().slice(0, 30), l: r.left - R.left, r: R.right - r.right } })
                 .filter(x => x.l < -0.5 || x.r < -0.5)
               const m = main && main.getBoundingClientRect(), s = rail && rail.getBoundingClientRect()

@@ -209,7 +209,8 @@ function ExecView({ project, test, n }) {
   useExit(() => returnTo('rung', { rid: test }))
   const x = q.data
   const t = tq.data
-  if (q.error || tq.error) return h(Missing, { project, text: errText(q.error || tq.error) })
+  // the route names an execution: the sentence names it with its number, whichever of the two was missing
+  if (q.error || tq.error) return h(Missing, { project, text: errText(q.error || tq.error), name: `Execution ${test} #${n} does not exist` })
   if (!x || !t) return h(Page, { project, sel: test }, h(Loading))
   const voided = x.invalidated && x.status === 'pass'  // an upstream edit voids passes; fails stay failed
   const crumbs = h(Crumbs, { path: [...t.path, { id: t.id }], last: `#${x.n}`, lastTone: x.status === 'fail' ? 'text-fail' : 'text-needs' })
@@ -357,7 +358,6 @@ function DefectModal({ project }) {
     if (!x.ok) return setErr(x.error)
     setDone(x.data)
     close()
-    notify(`Raised ${x.data && x.data.id ? x.data.id : 'defect'}`)
   }
   const ready = title.trim() && sel.size
   return h(Dialog, {
