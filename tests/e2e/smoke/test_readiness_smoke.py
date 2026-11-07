@@ -141,7 +141,7 @@ def test_res07_sec03_worst_case_data_breaks_no_view(rung, page):
     page.evaluate("window.__rungNavigate('rung', {rid: 'N-1'})")
     H.wait_view(page, "rung")
     title = page.locator(".rung [data-testid=need-title]")
-    H.wait_until(lambda: MARKUP in title.inner_text(), msg=f"markup as text in {page.locator('.rung').first.inner_text()[:300]!r}")
+    H.wait_until(lambda: MARKUP in title.inner_text(), msg=lambda: f"markup as text in {page.locator('.rung').first.inner_text()[:300]!r}")
 
 
 def test_tst07_run_once_from_the_test_view_and_return(rung, csvtidy, page):

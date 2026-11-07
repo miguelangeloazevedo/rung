@@ -21,7 +21,7 @@ def draft(page):
 def drafted(page, profile="writer"):
     H.wait_until(lambda: bar(page).locator("[data-testid=drafted-by]").count()
                  and bar(page).locator("[data-testid=drafted-by]").first.inner_text() == f"Drafted by {profile}",
-                 msg=f"drafted by {profile}: {bar(page).inner_text()}")
+                 msg=lambda: f"drafted by {profile}: {bar(page).inner_text()}")
 
 
 def stub(e, **kw):

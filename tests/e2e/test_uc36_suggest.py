@@ -37,7 +37,7 @@ def items(page):
 
 
 def wait_done(page, timeout=20):
-    H.wait_until(lambda: items(page).count() == 3, timeout=timeout, msg=f"three suggestions: {panel(page).inner_text()}")
+    H.wait_until(lambda: items(page).count() == 3, timeout=timeout, msg=lambda: f"three suggestions: {panel(page).inner_text()}")
 
 
 def test_bot06_bot07_bot08_bot09_bot10_bot11_bot12_suggest(rung, csvtidy, page):
@@ -95,7 +95,7 @@ def test_bot06_bot07_bot08_bot09_bot10_bot11_bot12_suggest(rung, csvtidy, page):
     e.add_requirement("csvtidy", "N-1", "Keep the header row")
     H.wait_until(lambda: panel(page).locator("[data-testid=bot-running]").count() == 0, timeout=20, msg="the slow Suggest ends")
     wait_done(page)
-    H.wait_until(lambda: "Changed since" in panel(page).inner_text(), msg=f"Changed since: {panel(page).inner_text()}")
+    H.wait_until(lambda: "Changed since" in panel(page).inner_text(), msg=lambda: f"Changed since: {panel(page).inner_text()}")
     third = items(page).nth(2).get_attribute("data-suggestion")
     H.button(page, f"Accept {third}", scope=panel(page)).click()
     H.wait_until(lambda: items(page).nth(2).get_attribute("data-mark") == "accepted", msg="accepted after the change")
@@ -127,7 +127,7 @@ def test_bot06_bot07_bot08_bot09_bot10_bot11_bot12_suggest(rung, csvtidy, page):
     none.wait_for(timeout=10000)
     assert "No profile can suggest" in none.inner_text()
     listed = panel(page).locator("[data-testid=suggest-excluded] [data-profile]")
-    H.wait_until(lambda: listed.count() == 4, msg=f"each profile listed: {panel(page).inner_text()}")
+    H.wait_until(lambda: listed.count() == 4, msg=lambda: f"each profile listed: {panel(page).inner_text()}")
     reasons = {listed.nth(i).get_attribute("data-profile"): listed.nth(i).inner_text() for i in range(4)}
     assert "author of R-1" in reasons["writer"] and "disabled" in reasons["researcher"]
     assert all("author of" in reasons[p] for p in ("coder", "reviewer")), reasons

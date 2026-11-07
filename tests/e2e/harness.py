@@ -220,7 +220,10 @@ def agreed_needs_you(page, timeout: float = 5) -> tuple[int, int, int]:
     return needs_you_counts(page)
 
 
-def wait_until(fn, timeout: float = 20, every: float = 0.25, msg: str = "condition"):
+def wait_until(fn, timeout: float = 20, every: float = 0.25, msg="condition"):
+    """Poll fn until truthy. msg may be a callable, called only on timeout: a message that reads the page
+    (an f-string with inner_text) must be lazy, or it runs before the wait and blocks on, or races, the very
+    element the condition is waiting for."""
     end = time.time() + timeout
     last = None
     while time.time() < end:
@@ -231,6 +234,11 @@ def wait_until(fn, timeout: float = 20, every: float = 0.25, msg: str = "conditi
         except Exception as exc:  # retry through transient DOM states
             last = exc
         time.sleep(every)
+    if callable(msg):
+        try:
+            msg = msg()
+        except Exception as exc:
+            msg = f"(message failed: {exc})"
     raise AssertionError(f"timed out waiting for {msg} (last: {last!r})")
 
 

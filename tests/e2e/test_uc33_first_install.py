@@ -193,7 +193,7 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     H.wait_view(page, "exec")
     ex = page.locator(".rung [data-testid=execution]")
     H.wait_until(lambda: ex.get_attribute("data-exec-status") == "pass", timeout=60,
-                 msg=f"the test passes: {H.main_area(page).inner_text()[:300]}")
+                 msg=lambda: f"the test passes: {H.main_area(page).inner_text()[:300]}")
     page.locator(".rung [data-testid=project-name]").first.click()
     H.wait_view(page, "projects")
     w.look()

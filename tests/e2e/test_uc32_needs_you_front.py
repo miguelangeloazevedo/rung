@@ -155,7 +155,7 @@ def _walk(e, page, run):
     H.wait_until(lambda: e.tiles("beta")["needs_you"] == 0, msg="beta approved")
     back(page)
     front(page)
-    H.wait_until(lambda: total(page) == 2, msg=f"total 2 (now {page.locator('.rung [data-testid=ny-total]').first.inner_text()})")
+    H.wait_until(lambda: total(page) == 2, msg=lambda: f"total 2 (now {page.locator('.rung [data-testid=ny-total]').first.inner_text()})")
     H.wait_until(lambda: group(page, "beta").count() == 0, msg="beta leaves the groups")
     H.wait_until(lambda: page.locator(".rung [data-testid=ny-idle][data-project='beta']").count() == 1,
                  msg="beta under Nothing waiting")
@@ -241,7 +241,7 @@ def test_frt08_a_failed_load_shows_its_error_and_retry(rung, page):
         H.wait_view(page, "projects")
         main = page.locator(".rung [data-rung-view]").first
         H.wait_until(lambda: page.locator(".rung [data-rung-view] [role=alert]").count() >= 1
-                     and "refused" in main.inner_text().lower(), timeout=10, msg=f"the error: {main.inner_text()[:300]}")
+                     and "refused" in main.inner_text().lower(), timeout=10, msg=lambda: f"the error: {main.inner_text()[:300]}")
         text = main.inner_text()
         assert "Nothing waiting" not in text and "Nothing needs you" not in text, text[:400]
         assert page.locator(".rung [data-testid=ny-total]").count() == 0

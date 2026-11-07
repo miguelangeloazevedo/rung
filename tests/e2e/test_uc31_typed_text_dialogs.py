@@ -130,7 +130,7 @@ def test_nav05_nav06_nav10_nav11_typed_text_dialogs_results(rung, csvtidy, page)
     # Retire confirmed from the need page: focus on the h1 of the view it lands on; the result line shows.
     page.locator(".rung [data-testid=retire-confirm]").click()
     H.wait_until(lambda: H.stored(rung.store, "SELECT retired_at FROM rungs WHERE rid='N-1'")[0]["retired_at"],
-                 msg=f"N-1 retired: {dlg.inner_text() if dlg.count() else H.view(page)}")
+                 msg=lambda: f"N-1 retired: {dlg.inner_text() if dlg.count() else H.view(page)}")
     notice(page, "Retired N-1")
     H.wait_until(lambda: page.evaluate("document.activeElement && document.activeElement.hasAttribute('data-page-title')"),
                  msg="focus on the h1")

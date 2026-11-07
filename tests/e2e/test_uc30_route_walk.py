@@ -320,7 +320,7 @@ def test_nav17_failed_loads_show_the_error_with_the_project(rung, csvtidy, page)
                 alerts = page.locator(".rung [data-rung-view] [role=alert]")
                 texts = [alerts.nth(i).inner_text() for i in range(alerts.count())]
                 return not st["loading"] and sum("refused" in t.lower() for t in texts) == 1 and P in main.inner_text()
-            H.wait_until(shown, timeout=10, msg=f"{view}: the error with the project: {main.inner_text()[:300]}")
+            H.wait_until(shown, timeout=10, msg=lambda: f"{view}: the error with the project: {main.inner_text()[:300]}")
     finally:
         page.evaluate("window.__rungRefuse([])")
 

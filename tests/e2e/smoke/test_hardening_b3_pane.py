@@ -31,7 +31,7 @@ def test_r3_pane_settings_field_dock_running_tests_latest_run(rung, csvtidy, pag
         D.palette_dock(page, True)
         d = D.dock(page)
         test_row = d.locator(f"[data-testid=dock-test][data-exec='T-2.1a#{n}']")
-        H.wait_until(lambda: test_row.count() == 1, msg=f"dock Running: {d.inner_text()[:300]}")
+        H.wait_until(lambda: test_row.count() == 1, msg=lambda: f"dock Running: {d.inner_text()[:300]}")
         assert "in progress" in test_row.inner_text()
         assert d.locator("[data-testid=dock-running] [data-testid=dock-count]").inner_text() == "1"
         D.palette_dock(page, False)

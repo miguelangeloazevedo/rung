@@ -52,7 +52,7 @@ def test_bot01_bot02_bot03_paste_text_places_and_opens_a_new_form(rung, csvtidy,
     H.wait_view(page, "home")
     paste_and_place(page, TEXT_A, e)
     placed = dialog(page).locator("[data-testid=placed-as]").first
-    H.wait_until(lambda: "Requirement" in placed.inner_text() and "N-1" in placed.inner_text(), msg=f"placed: {placed.inner_text()}")
+    H.wait_until(lambda: "Requirement" in placed.inner_text() and "N-1" in placed.inner_text(), msg=lambda: f"placed: {placed.inner_text()}")
     assert "writer" in placed.inner_text()
     assert dialog(page).locator("[data-testid=placed-why]").first.inner_text().strip()
     assert TEXT_A in dialog(page).locator("[data-testid=placed-text]").first.inner_text()
@@ -88,7 +88,7 @@ def test_bot01_bot02_bot03_paste_text_places_and_opens_a_new_form(rung, csvtidy,
     dialog(page).locator("select[name=kind]").select_option("specification")
     dialog(page).locator("select[name=parent]").select_option("R-1")
     H.wait_until(lambda: open_btn.inner_text() == "Open as new specification" and open_btn.get_attribute("aria-disabled") is None,
-                 msg=f"specification under R-1: {open_btn.inner_text()}")
+                 msg=lambda: f"specification under R-1: {open_btn.inner_text()}")
     open_btn.click()
     H.wait_view(page, "spec-edit")
     spec = page.locator(".rung input[name=spec-text]").first
