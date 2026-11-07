@@ -99,7 +99,9 @@ function Card({ children, className, onClick, testid, style }) {
 // The page's own name: the h1 of every in-project view, after the project it belongs to.
 function usePageTitle(project) {
   const nav = useValue($nav)
-  const rq = useRung(project, nav.view === 'rung' ? nav.rid : null)
+  // Reads the rung the view already loads, without fetching it: a second fetching observer mounted by the error
+  // page would reset a failed load to pending and the view would loop between Loading and the error.
+  const rq = useApi(nav.view === 'rung' && nav.rid ? `/projects/${encodeURIComponent(project)}/rungs/${encodeURIComponent(nav.rid)}` : null, { enabled: false })
   const v = nav.view
   if (v === 'home' || v === 'defect-new') return 'Home'
   if (v === 'rung') return rq.data ? `${KIND_WORD[rq.data.kind] || 'Rung'} ${nav.rid}` : nav.rid || ''
