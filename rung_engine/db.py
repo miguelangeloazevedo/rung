@@ -223,6 +223,24 @@ CREATE TABLE IF NOT EXISTS claims (
     proof       TEXT NOT NULL DEFAULT '[]'
 );
 
+-- Bot help (Round 13): Place, Draft and Suggest jobs. Proposals only: nothing here is read by the
+-- check, the done hook or a test result; a running Suggest counts toward its profile's At once.
+CREATE TABLE IF NOT EXISTS bot_jobs (
+    pk          INTEGER PRIMARY KEY,
+    project_pk  INTEGER NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    rung_pk     INTEGER REFERENCES rungs(pk) ON DELETE CASCADE,
+    profile     TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'running',
+    input       TEXT NOT NULL DEFAULT '{}',
+    result      TEXT,
+    error       TEXT NOT NULL DEFAULT '',
+    basis       TEXT NOT NULL DEFAULT '[]',
+    created_at  REAL NOT NULL,
+    finished_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS bot_jobs_profile ON bot_jobs(profile, kind, status);
 CREATE INDEX IF NOT EXISTS claims_session ON claims(session_id, status);
 CREATE INDEX IF NOT EXISTS claims_spec ON claims(spec_pk, status);
 CREATE INDEX IF NOT EXISTS rungs_parent ON rungs(parent_pk);

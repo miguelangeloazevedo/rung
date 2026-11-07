@@ -24,6 +24,7 @@ from . import allocation, db
 from .execute import context_line, git_commit, run_command
 from .claims import ClaimsMixin, _canon
 from .lifecycle import LifecycleMixin
+from .bot import BotMixin
 
 KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
@@ -206,7 +207,7 @@ def _letter(k: int) -> str:
     return letters[k - 1] if 1 <= k <= 26 else f"z{k}"
 
 
-class Engine(LifecycleMixin, ClaimsMixin):
+class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
     # A callable profile name -> list of Hermes toolset names, or None. Set by the host so a profile's
     # tools are pre-filled from its Hermes configuration the first time Rung lists it.
     tool_source: "Callable[[str], list[str] | None] | None" = None
@@ -1774,6 +1775,7 @@ class Engine(LifecycleMixin, ClaimsMixin):
     def _profile_facts(self, name: str, ignore_claim: int | None = None) -> allocation.ProfileFacts:
         prof = self.profile(name)
         running = self._q1("SELECT COUNT(*) FROM runs WHERE profile=? AND status IN ('queued','running')", (name,))[0]
+        running += self.bot_running(name)  # a running Suggest counts toward At once (Round 13)
         total = self._q1("SELECT COUNT(*) FROM executions WHERE carried_by=? AND kind='command' AND status IN "
                          "('pass','fail','error')", (name,))[0]
         completed = self._q1("SELECT COUNT(*) FROM executions WHERE carried_by=? AND kind='command' AND status IN "

@@ -14,7 +14,8 @@ import threading
 from pathlib import Path
 
 from .core import HUMAN, Actor, Engine, RungError
-from .drafting import make_drafter, pause
+from .drafting import DraftFailed, make_drafter, pause
+from .bot import KINDS, SUGGEST_COUNT
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 
@@ -50,8 +51,103 @@ class Service:
         for t in list(self._threads):
             t.join(timeout)
 
-    def drafter(self, project: str):
-        return make_drafter(self.engine.settings(), self.engine.project(project), self.hermes_bin)
+    def drafter(self, project: str, profile: str | None = None):
+        return make_drafter(self.engine.settings(), self.engine.project(project), self.hermes_bin, profile)
+
+    # ------------------------------------------------------------ bot help (Round 13): proposals only
+
+    def _bot(self, job_id: int, d, work, wait: bool):
+        """Run one bot job in the background: the drafter stops when the person cancels, and a result
+        that arrives after a cancel is dropped by the engine's conditional write."""
+        cancelled = lambda: self.engine.bot_cancelled(job_id)  # noqa: E731
+        d.should_cancel = cancelled
+
+        def go():
+            try:
+                pause(d, cancelled)
+                self.engine.finish_bot(job_id, work(d))
+            except Exception as exc:
+                if not cancelled():
+                    self.engine.fail_bot(job_id, str(exc) or exc.__class__.__name__)
+        t = self._bg(go)
+        if wait:
+            t.join()
+        return self.engine.bot_job(job_id)
+
+    def _drafter_name(self, d) -> str:
+        return getattr(d, "profile", "") or "drafting"
+
+    def place(self, project: str, text: str, wait: bool = False) -> dict:
+        """Which rung a pasted text is and where it goes. The engine checks the answer; an invalid one is
+        returned with its reason and offered to no one."""
+        text = (text or "").strip()
+        if not text:
+            raise RungError("paste the text to place", code="bad_request", status=400, field="text")
+        d = self.drafter(project)
+        targets = self.engine.place_targets(project)
+        job = self.engine.begin_bot(project, "place", None, self._drafter_name(d), {"text": text})
+
+        def work(d):
+            got = d.place(text, targets, self.engine.project(project))
+            kind = str(got.get("kind") or "").strip().lower()
+            parent = got.get("parent") or None
+            if parent:
+                try:
+                    parent = self.engine.rung(project, str(parent))["id"]
+                except RungError:
+                    pass
+            why_not = self.engine.check_place(project, kind, parent)
+            return {"kind": kind, "parent": parent, "why": str(got.get("why") or "").strip(),
+                    "valid": not why_not, "reason": why_not, "text": text}
+        return self._bot(job, d, work, wait)
+
+    def draft(self, project: str, kind: str, parent: str | None = None, fields: dict | None = None,
+              wait: bool = False) -> dict:
+        """Fields for a new rung from its parent chain. The form fills only empty fields; nothing is saved."""
+        if kind not in KINDS:
+            raise RungError(f"{kind} is not a rung kind", code="bad_request", status=400)
+        why_not = self.engine.check_place(project, kind, parent) if (kind != "need" or parent) else ""
+        if why_not:
+            raise RungError(why_not, code="bad_request", status=400)
+        d = self.drafter(project)
+        chain = self.engine.chain(project, parent) if parent else []
+        typed = {k: v for k, v in (fields or {}).items() if isinstance(v, str)}
+        job = self.engine.begin_bot(project, "draft", parent, self._drafter_name(d), {"kind": kind, "fields": typed})
+
+        def work(d):
+            got = d.draft(kind, chain, typed, self.engine.project(project))
+            return {"kind": kind, "parent": parent,
+                    "fields": {k: (v if isinstance(v, str) else list(v)) for k, v in dict(got).items()}}
+        return self._bot(job, d, work, wait)
+
+    def suggest(self, project: str, need_rid: str, wait: bool = False) -> dict:
+        """Three requirements the need may be missing, from the best placed profile. With no eligible
+        profile nothing runs and each profile is listed with its reason."""
+        choice = self.engine.suggest_choice(project, need_rid)
+        if choice["chosen"] is None:
+            return {"job": None, "choice": choice}
+        need = self.engine.rung(project, need_rid)
+        if need["status"] != "approved":
+            raise RungError(f"{need['id']} must be approved first", code="locked")
+        profile = choice["chosen"]["profile"]
+        reqs = [r for r in self.engine.chain_children(project, need["id"])]
+        d = self.drafter(project, profile)
+        need_pk = self.engine._rung_row(project, need["id"])["pk"]
+        job = self.engine.begin_bot(project, "suggest", need["id"], profile, {"choice": choice},
+                                    self.engine._req_basis(need_pk))
+
+        def work(d):
+            got = [t.strip() for t in d.suggest_missing(need["text"], [r["text"] for r in reqs],
+                                                        self.engine.project(project)) if str(t).strip()]
+            have = {r["text"].strip().lower() for r in reqs}
+            got = [t for t in dict.fromkeys(got) if t.lower() not in have]
+            if len(got) < SUGGEST_COUNT:
+                raise DraftFailed(f"{profile} returned {len(got)} new requirements, not {SUGGEST_COUNT}")
+            return {"items": [{"text": t, "status": "open"} for t in got[:SUGGEST_COUNT]], "choice": choice}
+        return {"job": self._bot(job, d, work, wait), "choice": choice}
+
+    def cancel_bot(self, job_id: int) -> dict:
+        return self.engine.cancel_bot(job_id)
 
     # ------------------------------------------------------------ needs and requirements
 

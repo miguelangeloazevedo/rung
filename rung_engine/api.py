@@ -633,6 +633,64 @@ def _check_all(svc, human, body, project):
     return svc.engine.check_all(project)
 
 
+# ------------------------------------------------------------------ bot help (Round 13): proposals only
+
+
+@route("POST", "/projects/{project}/bot/place")
+def _bot_place(svc, human, body, project):
+    return svc.place(project, str(body.get("text") or ""))
+
+
+@route("GET", "/projects/{project}/bot/targets")
+def _bot_targets(svc, human, body, project):
+    return {"targets": svc.engine.place_targets(project)}
+
+
+@route("POST", "/projects/{project}/bot/check-place")
+def _bot_check_place(svc, human, body, project):
+    reason = svc.engine.check_place(project, str(body.get("kind") or ""), body.get("parent") or None)
+    return {"valid": not reason, "reason": reason}
+
+
+@route("POST", "/projects/{project}/bot/draft")
+def _bot_draft(svc, human, body, project):
+    fields = body.get("fields") if isinstance(body.get("fields"), dict) else {}
+    return svc.draft(project, str(body.get("kind") or ""), body.get("parent") or None, fields)
+
+
+@route("GET", "/projects/{project}/needs/{rid}/suggest-choice")
+def _bot_suggest_choice(svc, human, body, project, rid):
+    return svc.engine.suggest_choice(project, rid)
+
+
+@route("POST", "/projects/{project}/needs/{rid}/suggest-missing")
+def _bot_suggest(svc, human, body, project, rid):
+    return svc.suggest(project, rid)
+
+
+@route("GET", "/projects/{project}/needs/{rid}/suggest-latest")
+def _bot_suggest_latest(svc, human, body, project, rid):
+    e = svc.engine
+    need = e._rung_row(project, rid)
+    j = e._q1("SELECT pk FROM bot_jobs WHERE rung_pk=? AND kind='suggest' ORDER BY pk DESC LIMIT 1", (need["pk"],))
+    return {"job": e.bot_job(j["pk"]) if j else None}
+
+
+@route("GET", "/bot/{jid}")
+def _bot_job(svc, human, body, jid):
+    return svc.engine.bot_job(jid)
+
+
+@route("POST", "/bot/{jid}/cancel")
+def _bot_cancel(svc, human, body, jid):
+    return svc.cancel_bot(jid)
+
+
+@route("POST", "/projects/{project}/bot/{jid}/items/{index}")
+def _bot_item(svc, human, body, project, jid, index):
+    return svc.engine.resolve_suggest(project, jid, int(index), _flag(body, "accept", required=True), human)
+
+
 # ------------------------------------------------------------------ settings
 
 

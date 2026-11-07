@@ -33,6 +33,21 @@ class Drafter:
     def suggest_edits(self, req_text: str, project: dict) -> list[str]:
         raise NotImplementedError
 
+    # Bot help (Round 13): each only proposes; the engine checks and a person saves.
+
+    def place(self, text: str, ladder: list[dict], project: dict) -> dict:
+        """Which rung a pasted text is and where it goes: {kind, parent, why}. `ladder` lists the rungs
+        it may go under ({id, kind, text})."""
+        raise NotImplementedError
+
+    def draft(self, kind: str, chain: list[dict], fields: dict, project: dict) -> dict:
+        """Fields for a new rung of `kind` under the parent chain (need first)."""
+        raise NotImplementedError
+
+    def suggest_missing(self, need_text: str, req_texts: list[str], project: dict) -> list[str]:
+        """Requirements the need may still be missing (three are kept)."""
+        raise NotImplementedError
+
 
 class DraftFailed(RuntimeError):
     pass
@@ -84,6 +99,53 @@ class StubDrafter(Drafter):
     def suggest_edits(self, req_text, project):
         return list(self._get("edits", req_text.strip(), []))
 
+    def _bot_fail(self):
+        if self.fail:
+            raise DraftFailed(self.fail)
+
+    def place(self, text, ladder, project):
+        self._bot_fail()
+        got = self._get("place", text.strip(), None)
+        if got:
+            return {"kind": got.get("kind", ""), "parent": got.get("parent"), "why": got.get("why", "")}
+        low = text.strip().lower()
+        first = lambda kind: next((r["id"] for r in ladder if r["kind"] == kind), None)  # noqa: E731
+        if low.startswith(("run ", "check ", "test ")) or "exit code" in low or "exits 0" in low:
+            return {"kind": "test", "parent": first("specification"), "why": "It says how to check a result."}
+        if low.startswith(("implement", "add a ", "use ", "write a ")):
+            return {"kind": "specification", "parent": first("requirement"), "why": "It says how to build something."}
+        if " must " in f" {low} " or " should " in f" {low} " or low.startswith(("accept", "reject", "report", "keep")):
+            return {"kind": "requirement", "parent": first("need"), "why": "It states one thing the result must do."}
+        return {"kind": "need", "parent": None, "why": "It states a problem a person has."}
+
+    def draft(self, kind, chain, fields, project):
+        self._bot_fail()
+        parent = chain[-1]["text"] if chain else ""
+        got = self._get("draft", kind, None)
+        if isinstance(got, dict):
+            got = got.get(parent.strip(), got.get("*"))
+        if got:
+            return dict(got)
+        if kind == "need":
+            return {"text": f"Work with {project.get('name', 'this project')} without manual steps"}
+        if kind == "requirement":
+            return {"text": f"Do this reliably: {parent}", "detail": "One observable result per requirement."}
+        if kind == "specification":
+            need = chain[0]["text"] if chain else ""
+            return self.derive_spec(need, parent, project)
+        if kind == "test":
+            t = (self.propose_tests(parent, chain[-2]["text"] if len(chain) > 1 else "", project) or [{}])[0]
+            return {"type": t.get("type", "command"), "command": t.get("command", ""), "steps": t.get("steps", "")}
+        return {}
+
+    def suggest_missing(self, need_text, req_texts, project):
+        self._bot_fail()
+        got = self._get("suggest", need_text.strip(), None)
+        if got is not None:
+            return [str(x) for x in got]
+        return [f"Handle empty input: {need_text.strip()}", f"Report each error with the line it came from",
+                f"Leave the input file unchanged"]
+
 
 class ProfileDrafter(Drafter):
     """Asks a Hermes profile for JSON. One short non-interactive chat per request."""
@@ -93,14 +155,32 @@ class ProfileDrafter(Drafter):
         self.hermes_bin = hermes_bin
         self.timeout = timeout
 
+    should_cancel = None  # set by a cancellable bot job: a callable that turns true when the person cancels
+
     def _ask(self, instruction: str, project: dict):
         prompt = (instruction + "\nReply with JSON only, no prose, no code fence.")
-        out = subprocess.run(
+        proc = subprocess.Popen(
             [self.hermes_bin, "-p", self.profile, "chat", "-Q", "-q", prompt, "--max-turns", "3"],
-            cwd=str(Path(project["folder"]).expanduser()), capture_output=True, text=True, timeout=self.timeout,
-            env=scrubbed_env(),
+            cwd=str(Path(project["folder"]).expanduser()), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL, text=True, env=scrubbed_env(), start_new_session=True,
         )
-        text = out.stdout.strip()
+        end = time.monotonic() + self.timeout
+        while True:
+            try:
+                stdout, _ = proc.communicate(timeout=0.25)
+                break
+            except subprocess.TimeoutExpired:
+                if (self.should_cancel and self.should_cancel()) or time.monotonic() > end:
+                    # The whole process group: Hermes's own children hold the output pipe open otherwise.
+                    try:
+                        os.killpg(proc.pid, 9)
+                    except OSError:
+                        proc.kill()
+                    proc.communicate()
+                    if time.monotonic() > end:
+                        raise DraftFailed(f"{self.profile} did not answer within {self.timeout} s")
+                    raise DraftFailed("cancelled")
+        text = (stdout or "").strip()
         m = re.search(r"(\{.*\}|\[.*\])", text, re.S)
         if not m:
             raise ValueError("drafting profile returned no JSON")
@@ -132,6 +212,30 @@ class ProfileDrafter(Drafter):
         got = self._ask(f"Suggest up to two sharper acceptance criteria for: {req_text!r}. JSON array of strings.", project)
         return [str(x) for x in got][:3]
 
+    def place(self, text, ladder, project):
+        rows = "\n".join(f"{r['id']} ({r['kind']}): {r['text']}" for r in ladder[:200])
+        got = self._ask("A design ladder goes Need, Requirement, Specification, Test. Its rungs:\n" + rows +
+                        f"\nWhich kind of rung is this text, and under which rung id does it go? Text: {text!r}. "
+                        'JSON object {"kind": "need"|"requirement"|"specification"|"test", '
+                        '"parent": rung id or null for a need, "why": one short line}.', project)
+        return {"kind": str(got.get("kind", "")).lower(), "parent": got.get("parent"), "why": str(got.get("why", ""))}
+
+    def draft(self, kind, chain, fields, project):
+        above = "; ".join(f"{c['kind']} {c['id']}: {c['text']!r}" for c in chain) or "none"
+        shape = {"need": '{"text": one sentence}',
+                 "requirement": '{"text": one sentence, "detail": acceptance in one line}',
+                 "specification": '{"text": one line, "detail": approach, "tags": capability tags}',
+                 "test": '{"type": "command"|"manual", "command": shell command, "steps": manual steps}'}[kind]
+        got = self._ask(f"Draft a new {kind}. Above it: {above}. Already typed: {json.dumps(fields)}. "
+                        f"JSON object {shape}.", project)
+        return {k: v for k, v in dict(got).items() if isinstance(v, (str, list))}
+
+    def suggest_missing(self, need_text, req_texts, project):
+        got = self._ask(f"Need: {need_text!r}. Its requirements: {json.dumps(req_texts)}. List exactly three "
+                        "requirements this need may still be missing, one sentence each, none repeating the "
+                        "existing ones. JSON array of three strings.", project)
+        return [str(x.get("text", "")) if isinstance(x, dict) else str(x) for x in got]
+
 
 def scrubbed_env() -> dict:
     """Environment for child Hermes processes: no Rung or calling-session variables leak in, and no
@@ -145,8 +249,12 @@ def scrubbed_env() -> dict:
     return env
 
 
-def make_drafter(settings: dict, project: dict, hermes_bin: str = "hermes") -> Drafter:
-    d = settings.get("drafting") or {}
+def make_drafter(settings: dict, project: dict, hermes_bin: str = "hermes", profile: str | None = None) -> Drafter:
+    """The drafting provider. `profile` asks a named profile instead of the drafting profile (Suggest
+    asks the profile allocation chose); the stub then stands in for that profile."""
+    d = dict(settings.get("drafting") or {})
+    if profile:
+        d["profile"] = profile
     if d.get("kind") == "profile" and d.get("profile"):
         return ProfileDrafter(d["profile"], hermes_bin=hermes_bin)
     stub = StubDrafter.for_project(project, d.get("stub_file", ""), d.get("delay", 0), d.get("fail", ""))
@@ -155,6 +263,12 @@ def make_drafter(settings: dict, project: dict, hermes_bin: str = "hermes") -> D
     return stub
 
 
-def pause(drafter: Drafter):
-    if drafter.delay:
-        time.sleep(drafter.delay)
+def pause(drafter: Drafter, should_cancel=None):
+    """The stub's simulated drafting time; it stops early when the job is cancelled."""
+    if not drafter.delay:
+        return
+    end = time.monotonic() + drafter.delay
+    while time.monotonic() < end:
+        if should_cancel and should_cancel():
+            raise DraftFailed("cancelled")
+        time.sleep(0.05)
