@@ -69,6 +69,7 @@ def test_run04_runner_process_and_cancel(seeded, tmp_path):
             x["status"] == "running" for x in e.executions("csvtidy", "T-1.1b")):
         time.sleep(0.2)
     svc.cancel(run["id"])
+    deadline = time.time() + 20  # its own wait, as in res02
     while time.time() < deadline and e.run(run["id"])["status"] == "running":
         time.sleep(0.2)
     assert e.run(run["id"])["status"] == "cancelled"
@@ -95,6 +96,7 @@ def test_res02_runner_stopped_from_outside_is_unknown_not_cancelled(seeded, tmp_
             x["status"] == "running" for x in e.executions("csvtidy", "T-1.1b")):
         time.sleep(0.2)
     os.kill(run["pid"], signal.SIGTERM)  # the backend stopping, nobody pressed Stop
+    deadline = time.time() + 20  # its own wait: a slow start under load must not use up the time to settle
     while time.time() < deadline and e.run(run["id"])["status"] == "running":
         time.sleep(0.2)
     r = e.run(run["id"])
