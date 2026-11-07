@@ -163,3 +163,5 @@ Open: who makes the demo video and how (Tue 10 Nov); narration.
 | Topic | Decision |
 | --- | --- |
 | Front page | Direction C of the three mocks: a cross-project Needs you view, items grouped by project, with the project list beside it. Opening a project leads to its Home (ladder) as today. |
+| No projects | With no project yet, the front page is the start screen as it is now (Try the sample project, New project); direction C appears once a project exists. |
+| Start screen cross | Supersedes UC13.5 (in acceptance-4): the cross only closes. It leaves Rung for the Hermes view the person came from (the chat home when there is none) and creates nothing; opening Rung again shows the start screen until a project exists. |
