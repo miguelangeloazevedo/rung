@@ -128,7 +128,7 @@ function Home({ project }) {
   // different Needs you count, so the two never show different numbers.
   const ny = d && d.tiles ? d.tiles.needs_you : null
   useEffect(() => { if (ny != null) queryClient.invalidateQueries({ queryKey: ['rung', '/state'] }) }, [ny])
-  if (!d) return q.error ? h(Missing, { text: errText(q.error) }) : h(Frame, { main: h(Loading) })
+  if (!d) return q.error ? h(Missing, { project, text: errText(q.error) }) : h(Frame, { main: h(Loading) })
   const items = d.needs_you || []
   const stale = items.filter(i => i.type === 'stale')
   const approvals = items.filter(i => i.type === 'approval')
@@ -203,7 +203,8 @@ function StatChip({ label, n, t, of }) {
 }
 
 function Projects({ tab }) {
-  const st = useApi('/state').data
+  const stQ = useApi('/state')
+  const st = stQ.data
   const [qtext, setQ] = useState('')
   const [err, setErr] = useState('')
   const archived = tab === 'archived'
@@ -218,10 +219,12 @@ function Projects({ tab }) {
       h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
         h('span', 'text-muted text-xs', '⌕'),
         h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
-    h(ErrorLine, { text: err }),
-    archived ? h(ArchivedList, { qtext }) : null,
+    h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
+    archived ? h(ArchivedList, { qtext, onClear: () => setQ('') }) : null,
     archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
-      st && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects') : null,
+      st && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim flex items-center justify-between',
+        h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects'),
+        qtext ? h(Btn, { kind: 'small', testid: 'clear-search', onClick: () => setQ('') }, 'Clear search') : h(Btn, { kind: 'small', onClick: () => navigate('project-new') }, 'New project')) : null,
       ...rows.map(p => h(Card, {
         key: p.name, className: 'p-4 flex items-center justify-between', testid: 'project-row',
         onClick: async () => { const x = await post(`/projects/${encodeURIComponent(p.name)}/open`); if (!x.ok) return setErr(x.error); navigate('home') }
@@ -242,7 +245,8 @@ function Projects({ tab }) {
 // ------------------------------------------------------------------ new project
 
 function NewProject() {
-  const st = useApi('/state').data
+  const stQ = useApi('/state')
+  const st = stQ.data
   const profiles = ((st && st.profiles) || []).map(p => p.name)
   const [name, setName] = useState('')
   const [folder, setFolder] = useState('')
@@ -254,9 +258,10 @@ function NewProject() {
   const hasProjects = st && st.projects && st.projects.length
   // With no project yet, the way out is the start screen (its choices stay reachable after it was dismissed).
   const backToStart = !!st && !hasProjects
-  const exit = hasProjects ? () => goBack('projects', null, { force: true }) : () => navigate('start', null, { force: true, replace: true })
+  // Cancel is the explicit discard; Back (the way back to the start screen) asks first when text is typed.
+  const exit = hasProjects ? () => goBack('projects', null, { force: true }) : () => navigate('start', null, { replace: true })
   useDirty(name.trim() || folder.trim() || cmd.trim())
-  useExit(exit, true)
+  useExit(hasProjects ? () => goBack('projects') : exit, true)
   const fill = async path => {
     // Name, test command and profiles follow the folder until the person edits them.
     if (!path.trim()) return
@@ -308,7 +313,7 @@ function NewProject() {
                 onChange: e => { touched.current.profiles = true; setPicked(e.target.checked ? [...picked, p] : picked.filter(x => x !== p)) }
               }),
               h('span', null, p)))), fe('profiles'))),
-      h(ErrorLine, { text: err }),
+      h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
       h('div', 'flex items-center justify-end gap-2 pt-4 border-t border-line',
         hasProjects ? h(Btn, { onClick: exit }, 'Cancel')
           : backToStart ? h(Btn, { testid: 'back-to-start', onClick: exit }, 'Back') : null,

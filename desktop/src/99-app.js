@@ -23,7 +23,7 @@ function App() {
   else if (view === 'project-new') body = h(NewProject)
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
-  else body = h(Missing, { project, text: `Page not found: ${view}` })
+  else body = h(Missing, { project, text: 'Page not found' })
   return h(Root, { className: 'relative h-full w-full' },
     h(ViewFocus, { nav }),
     h('div', { className: 'h-full w-full', 'data-rung-view': view }, body),

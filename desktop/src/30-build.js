@@ -12,11 +12,11 @@ function useHome(project, focus) {
   return useApi(`/projects/${encodeURIComponent(project)}/home${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`)
 }
 
-function Page({ project, focus, sel, children, noTiles, title }) {
+function Page({ project, focus, sel, children, noTiles, title, back, backExit }) {
   const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
-    h('header', 'flex flex-col gap-4', h(Header, { project, title, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
+    h('header', 'flex flex-col gap-4', h(Header, { project, title, back, backExit, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
     q.error && !d ? h(ErrorLine, { text: errText(q.error) }) : null,
     children)
   return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
@@ -158,7 +158,7 @@ function Build({ project, need, step }) {
     return h(Page, { project, sel: need }, h('div', 'flex flex-col gap-6',
       h(BuildStrip, { need, flow, current: idx }),
       h(Card, { className: 'p-4 text-xs text-muted', testid: 'locked-step' }, `The ${STEPS[idx]} step is locked`),
-      h('div', null, h(Btn, { onClick: () => returnTo('build', { need, step: STEP_VIEWS[['need', 'requirements', 'specifications', 'tests', 'develop'].indexOf(open)] }) }, 'Back'))))
+      h('div', null, h(ExitBtn, { onClick: () => returnTo('build', { need, step: STEP_VIEWS[['need', 'requirements', 'specifications', 'tests', 'develop'].indexOf(open)] }) }, 'Back'))))
   }
   const props = { project, need, flow }
   if (idx === 1) return h(StepReqs, props)
@@ -190,7 +190,8 @@ function StepReqs({ project, need, flow }) {
   const approveAll = async () => {
     const r = await post(`${P(project)}/needs/${need}/approve-requirements`)
     if (!r.ok) return setErr(r.error)
-    navigate('build', { need, step: 'specs' })
+    notify(`Approved the requirements of ${need}`)
+    navigate('build', { need, step: 'specs' }, { force: true })
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need, flow, current: 1 }),
@@ -217,7 +218,7 @@ function StepReqs({ project, need, flow }) {
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center justify-between pt-2 border-t border-line',
       h('div', 'flex items-center gap-2',
-        h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'need' }) }, 'Back to Need'),
+        h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('rung', { rid: need }) }, 'Back to Need'),
         h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement')),
       h('div', 'flex items-center gap-2',
         h(Btn, { kind: 'primaryLg', testid: 'approve-all', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approveAll }, 'Approve all'),
@@ -286,7 +287,7 @@ function StepSpecs({ project, need, flow }) {
       })),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2.5 pt-1',
-      h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'reqs' }) }, 'Back to Requirements'),
+      h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'reqs' }) }, 'Back to Requirements'),
       h(Btn, { kind: 'primaryLg', testid: 'approve-drafted', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approve }, 'Approve drafted'),
       h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'tests' }) }, 'Next')))
   return h(Page, { project, sel: need }, body)
@@ -346,7 +347,7 @@ function StepTests({ project, need, flow }) {
         ...(s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed').map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3 pt-2',
-      h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),
+      h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),
       h(Btn, { kind: 'primaryLg', testid: 'approve-tests', className: 'px-4 py-2', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approve }, 'Approve tests'),
       h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'develop' }) }, 'Next')))
   return h(Page, { project, sel: need }, body)
@@ -402,7 +403,7 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
                 navigate('run', { run: res.data.id })
               }
             }, 'Send')),
-    open ? h('div', { className: 'absolute z-10 bg-card border border-line rounded-[6px] p-2 flex flex-col gap-1 shadow-2xl', style: { top: '100%', left: '38%', width: '300px' }, 'data-testid': 'pick-menu' },
+    open ? h('div', { className: 'absolute z-10 bg-card border border-line rounded-[6px] p-2 flex flex-col gap-1 shadow-2xl', style: { top: '100%', left: '38%', width: '300px' }, 'data-testid': 'pick-menu', 'data-layer': '1' },
       ...a.suggestions.map(sg => h('div', {
         key: sg.profile, className: 'flex items-center justify-between px-2 py-1.5 rounded hover:bg-btnh cursor-pointer text-xs', 'data-pick': sg.profile,
         onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
@@ -416,10 +417,11 @@ let CTX_PROFILES = {}
 
 function StepDevelop({ project, need, flow }) {
   const q = useRung(project, need)
-  const st = useApi('/settings').data
+  const stQ = useApi('/settings')
+  const st = stQ.data
   const n = q.data
   const [err, setErr] = useState('')
-  if (q.error) return h(Missing, { project, text: errText(q.error) })
+  if (q.error || stQ.error) return h(Missing, { project, text: errText(q.error || stQ.error) })
   if (!n || !st) return h(Page, { project, sel: need }, h(Loading))
   CTX_PROFILES = Object.fromEntries(st.profiles.map(p => [p.name, p]))
   const specs = []
@@ -439,7 +441,7 @@ function StepDevelop({ project, need, flow }) {
       h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr })))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',
-      h(Btn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),
+      h(ExitBtn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),
       h(Btn, { kind: 'primaryLg', className: 'px-4 py-2', testid: 'send-all', onClick: sendAll }, 'Send all')))
   return h(Page, { project, sel: need }, body)
 }

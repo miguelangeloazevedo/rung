@@ -14,7 +14,7 @@ const VIEWS = {}
 
 // Accessible names for form fields, by their name attribute (fields carry no visible <label for>).
 const FIELD_NAMES = {
-  name: 'Name', folder: 'Folder', test_command: 'Test command', profile: 'Profile', 'need-text': 'Need',
+  name: 'Name', folder: 'Folder', test_command: 'Test command', profile: 'Profile', 'need-text': 'Need', need: 'Need',
   'req-text': 'Requirement', 'req-detail': 'Acceptance', 'spec-text': 'Specification', 'spec-detail': 'Approach',
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
@@ -34,7 +34,7 @@ function h(tag, props, ...kids) {
   let p = props == null ? {} : typeof props === 'string' ? { className: props } : props
   if (typeof tag === 'string') {
     // Anything clickable is reachable and operable from the keyboard, with the same handler.
-    if (p.onClick && !NATIVE[tag]) {
+    if (p.onClick && (!NATIVE[tag] || (tag === 'a' && !p.href))) {
       p = { ...p, role: p.role || 'button', tabIndex: p.tabIndex != null ? p.tabIndex : 0, onKeyDown: p.onKeyDown || activate(p.onClick) }
     }
     // a field points at its error line (fe-<name>), which exists only while there is an error
@@ -96,6 +96,7 @@ function useExit(fn, task) {
   const ref = useRef(fn)
   ref.current = fn
   useEffect(() => {
+    if (!ref.current) return undefined  // no way out to register (a button that is not the view's exit)
     const x = { go: () => ref.current(), task: !!task }
     EXITS.push(x)
     return () => { const i = EXITS.indexOf(x); if (i >= 0) EXITS.splice(i, 1) }
@@ -108,7 +109,9 @@ function focusInvalid() {
 }
 
 // A line naming what an action did, shown on the view the action lands on until the next view change.
-function notify(text) { $notice.set(text) }
+// Set after the current handler finishes, so it lands on the view the action moves to, whichever order the
+// handler calls notify and navigate in.
+function notify(text) { setTimeout(() => $notice.set(text), 0) }
 
 function unsaved() {
   for (const f of DIRTY) if (f()) return true
@@ -172,7 +175,9 @@ function returnTo(view, params, opts) {
 }
 
 // After a save or a create: the destination, with no entry for the finished form.
-function finish(view, params) {
+// The move after a successful action, with the line that names what it did on the view it lands on.
+function finish(view, params, notice) {
+  if (notice) notify(notice)
   return navigate(view, params, { force: true, replace: true })
 }
 
@@ -187,7 +192,7 @@ function openRung(view, params, opts) {
 function onEscape(e) {
   if (e.key !== 'Escape' || e.defaultPrevented || !EXITS.length) return
   if (!String(location.hash || '').includes(ROUTE)) return
-  if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox]')) return
+  if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox], .rung [data-layer]')) return
   guard(EXITS[EXITS.length - 1].go)
 }
 

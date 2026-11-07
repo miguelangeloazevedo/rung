@@ -23,9 +23,23 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
     return () => {
       for (const sib of made) sib.removeAttribute('inert')
       if (opener && opener.focus && document.contains(opener)) opener.focus()
+      else setTimeout(() => { const t = document.querySelector('.rung [data-page-title]'); if (t) t.focus() }, 0)
     }
   }, [])
   const ask = () => { if (dirty) $leave.set({ go: onClose }); else onClose() }
+  const askRef = useRef(ask)
+  askRef.current = ask
+  // Escape closes the topmost dialog wherever focus is, not only from inside it.
+  useEffect(() => {
+    const key = e => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !box.current || box.current.contains(e.target)) return
+      const all = document.querySelectorAll('.rung [role=dialog]')
+      if (all[all.length - 1] !== box.current) return
+      e.preventDefault(); askRef.current()
+    }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [])
   const onKeyDown = e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ask(); return }
     if (e.key !== 'Tab' || !box.current) return
@@ -167,7 +181,7 @@ function ArchivedBar({ project }) {
     h('div', 'flex items-center gap-2 text-muted', h(Badge, { status: 'archived' }), h('span', null, project)),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
-      h(Btn, { kind: 'small', testid: 'restore-project', onClick: async () => { const x = await post(`/projects/${encodeURIComponent(project)}/restore`); setErr(x.ok ? '' : x.error) } }, 'Restore')))
+      h(Btn, { kind: 'small', testid: 'restore-project', onClick: async () => { const x = await post(`/projects/${encodeURIComponent(project)}/restore`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Restored ${project}`) } }, 'Restore')))
 }
 
 // ------------------------------------------------------------------ read-out
@@ -241,7 +255,7 @@ function RetireDialog({ project, need, onClose }) {
     const x = await post(`${P(project)}/needs/${need}/retire`, { reason })
     if (!x.ok) return setErr(x.error)
     onClose()
-    navigate('home')
+    finish('home', null, `Retired ${need}`)
   }
   return h(Dialog, {
     title: `Retire ${need}`, onClose, dirty: !!reason.trim(), testid: 'retire-dialog',
@@ -260,7 +274,7 @@ function RetiredBar({ project, r }) {
       r.retired_at ? h('span', 'mono text-[11px] text-muted', dayClock(r.retired_at)) : null),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
-      h(Btn, { kind: 'small', testid: 'restore-need', onClick: async () => { const x = await post(`${P(project)}/needs/${r.id}/restore`); setErr(x.ok ? '' : x.error) } }, 'Restore')))
+      h(Btn, { kind: 'small', testid: 'restore-need', onClick: async () => { const x = await post(`${P(project)}/needs/${r.id}/restore`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Restored ${r.id}`) } }, 'Restore')))
 }
 
 function Retired({ project }) {
@@ -294,10 +308,11 @@ function DeleteDialog({ name, onClose, after }) {
     // The deleted project leaves the cached list at once, so the picker never shows it while /state refetches.
     queryClient.setQueryData(['rung', '/state'], d => d && { ...d, projects: (d.projects || []).filter(p => p.name !== name) })
     onClose()
+    notify(`Deleted ${name}`)
     if (after) after(x.data)
   }
   return h(Dialog, {
-    title: `Delete ${name}`, onClose, testid: 'delete-dialog',
+    title: `Delete ${name}`, onClose, testid: 'delete-dialog', dirty: !!typed,
     footer: frag(h(Btn, { onClick: onClose }, 'Cancel'), h(DangerBtn, { testid: 'delete-confirm', disabled: typed !== name, onClick: go }, 'Delete'))
   },
   h(Field, { label: 'Project name' }, h('input', { className: INPUT, type: 'text', name: 'confirm', value: typed, placeholder: name, autoComplete: 'off', 'data-autofocus': '1', onChange: e => setTyped(e.target.value) })),
@@ -311,7 +326,8 @@ function afterDelete(out) {
 // ------------------------------------------------------------------ project settings
 
 function ProjectSettings({ project }) {
-  const st = useApi('/state').data
+  const stQ = useApi('/state')
+  const st = stQ.data
   const pq = useApi(`/projects/${encodeURIComponent(project)}/events`)
   const proj = st && ((st.projects || []).find(p => p.name === project))
   const [f, setF] = useState(null)
@@ -322,7 +338,8 @@ function ProjectSettings({ project }) {
     if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles })
   }, [proj && proj.name])
   useDirty(f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()]))
-  useExit(() => goBack('home', null, { force: true }), true)
+  useExit(() => goBack('home'), true)
+  if (stQ.error) return h(Missing, { project, text: errText(stQ.error) })
   if (!st) return h(Frame, { main: h(Loading) })
   if (!proj || !f) {
     return h(Missing, { text: st.current_archived ? `${project} is archived` : `no project ${project}` })
@@ -339,12 +356,13 @@ function ProjectSettings({ project }) {
   const archive = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/archive`)
     if (!x.ok) return setErr(x.error)
+    notify(`Archived ${project}`)
     navigate('projects', { tab: 'archived' }, { force: true })
   }
   const events = (pq.data || []).filter(e => e.kind === 'project_changed').slice().reverse()
   const main = frag(
     h('header', 'flex flex-col gap-4',
-      h(Header, { project, title: 'Project settings', right: h(Btn, { onClick: () => goBack('home', null, { force: true }) }, 'Back') })),
+      h(Header, { project, title: 'Project settings', right: h(Btn, { onClick: () => goBack('home') }, 'Back') })),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name, name: 'name' }, h('input', { 'aria-invalid': errs.name ? 'true' : undefined, className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h('input', { 'aria-invalid': errs.folder ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
@@ -374,20 +392,23 @@ function ProjectSettings({ project }) {
 
 // ------------------------------------------------------------------ archived projects
 
-function ArchivedList({ qtext }) {
+function ArchivedList({ qtext, onClear }) {
   const q = useApi('/projects/archived', { live: true })
   const [del, setDel] = useState(null)
+  const [err, setErr] = useState('')
   if (q.error) return h(ErrorLine, { text: errText(q.error) })
   const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
-  const [err, setErr] = useState('')
   const act = async (name, what) => {
     const x = await post(`/projects/${encodeURIComponent(name)}/${what}`)
     if (!x.ok) return setErr(x.error)
     setErr('')
+    if (what === 'restore') notify(`Restored ${name}`)
     if (what === 'open') navigate('home')
   }
   return h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'archived-list' },
-    q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No archived projects') : null,
+    q.data && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim flex items-center justify-between',
+      h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No archived projects'),
+      qtext && onClear ? h(Btn, { kind: 'small', testid: 'clear-search', onClick: onClear }, 'Clear search') : null) : null,
     ...rows.map(p => h(Card, { key: p.name, className: 'p-4 flex items-center justify-between', testid: 'archived-row' },
       h('div', 'flex flex-col gap-1',
         h('div', 'flex items-center gap-2', h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name), h(Badge, { status: 'archived', small: true })),

@@ -252,7 +252,7 @@ const VIEWS = {}
 
 // Accessible names for form fields, by their name attribute (fields carry no visible <label for>).
 const FIELD_NAMES = {
-  name: 'Name', folder: 'Folder', test_command: 'Test command', profile: 'Profile', 'need-text': 'Need',
+  name: 'Name', folder: 'Folder', test_command: 'Test command', profile: 'Profile', 'need-text': 'Need', need: 'Need',
   'req-text': 'Requirement', 'req-detail': 'Acceptance', 'spec-text': 'Specification', 'spec-detail': 'Approach',
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
@@ -272,7 +272,7 @@ function h(tag, props, ...kids) {
   let p = props == null ? {} : typeof props === 'string' ? { className: props } : props
   if (typeof tag === 'string') {
     // Anything clickable is reachable and operable from the keyboard, with the same handler.
-    if (p.onClick && !NATIVE[tag]) {
+    if (p.onClick && (!NATIVE[tag] || (tag === 'a' && !p.href))) {
       p = { ...p, role: p.role || 'button', tabIndex: p.tabIndex != null ? p.tabIndex : 0, onKeyDown: p.onKeyDown || activate(p.onClick) }
     }
     // a field points at its error line (fe-<name>), which exists only while there is an error
@@ -334,6 +334,7 @@ function useExit(fn, task) {
   const ref = useRef(fn)
   ref.current = fn
   useEffect(() => {
+    if (!ref.current) return undefined  // no way out to register (a button that is not the view's exit)
     const x = { go: () => ref.current(), task: !!task }
     EXITS.push(x)
     return () => { const i = EXITS.indexOf(x); if (i >= 0) EXITS.splice(i, 1) }
@@ -346,7 +347,9 @@ function focusInvalid() {
 }
 
 // A line naming what an action did, shown on the view the action lands on until the next view change.
-function notify(text) { $notice.set(text) }
+// Set after the current handler finishes, so it lands on the view the action moves to, whichever order the
+// handler calls notify and navigate in.
+function notify(text) { setTimeout(() => $notice.set(text), 0) }
 
 function unsaved() {
   for (const f of DIRTY) if (f()) return true
@@ -410,7 +413,9 @@ function returnTo(view, params, opts) {
 }
 
 // After a save or a create: the destination, with no entry for the finished form.
-function finish(view, params) {
+// The move after a successful action, with the line that names what it did on the view it lands on.
+function finish(view, params, notice) {
+  if (notice) notify(notice)
   return navigate(view, params, { force: true, replace: true })
 }
 
@@ -425,7 +430,7 @@ function openRung(view, params, opts) {
 function onEscape(e) {
   if (e.key !== 'Escape' || e.defaultPrevented || !EXITS.length) return
   if (!String(location.hash || '').includes(ROUTE)) return
-  if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox]')) return
+  if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox], .rung [data-layer]')) return
   guard(EXITS[EXITS.length - 1].go)
 }
 
@@ -797,24 +802,24 @@ function usePageTitle(project) {
   return VIEWS[v] ? '' : 'Not found'
 }
 
-function Header({ project, right, ro, title }) {
+// The page name is the h1 and the largest text; the project name before it is the way to the project list.
+// `back` is the view's way out: a Back button that Escape also takes.
+function Header({ project, right, ro, title, back, backExit }) {
   const auto = usePageTitle(project)
   const name = title === undefined ? auto : title
   return h('div', 'flex items-center justify-between',
-    h('div', 'flex items-center gap-3 min-w-0',
-      h('span', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
-      h('span', 'text-line', '/'),
+    h('div', 'flex items-center gap-2 min-w-0',
       h('button', {
         type: 'button',
-        className: 'text-xl font-bold tracking-tight text-fg',
+        className: 'text-xs font-semibold text-muted hover:text-fg mono',
         'data-testid': 'project-name',
-        'aria-label': `${project}, projects`,
         title: 'Projects',
         onClick: () => navigate('projects')
       }, project),
-      name ? h('span', 'text-line', '/') : null,
-      name ? h('h1', { className: 'text-sm font-semibold text-muted', 'data-page-title': '1', tabIndex: -1 }, name) : null),
+      name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
+      name ? h('h1', { className: 'text-xl font-bold tracking-tight text-fg truncate', title: name, 'data-page-title': '1', tabIndex: -1 }, name) : null),
     h('div', 'flex items-center gap-2',
+      back ? h(ExitBtn, { testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
       h(DockToggle),
       h('button', {
         type: 'button', 'data-testid': 'open-settings',
@@ -1009,15 +1014,35 @@ function Frame({ main, rail, wide }) {
 // What the last action did (created, saved, raised), on the view it landed on.
 function Notice() {
   const n = useValue($notice)
-  return h('div', { role: 'status', 'data-testid': 'notice', className: n ? 'text-xs text-pass font-medium' : 'hidden' }, n || '')
+  // Always in the page, so screen readers announce the line when it appears.
+  return h('div', { role: 'status', 'data-testid': 'notice', className: 'text-xs text-pass font-medium', style: n ? undefined : { position: 'absolute', width: 1, height: 1, overflow: 'hidden' } }, n || '')
 }
 
 // A destination that does not exist (a missing id, a failed load, an unknown view): what is missing, and a way on.
+// What is missing, as a sentence: the engine's refusal (`no S-99.9 in csvtidy`) names the kind from the id.
+const ID_KIND = { N: 'Need', R: 'Requirement', S: 'Specification', T: 'Test' }
+function missingText(text) {
+  const t = String(text || '')
+  let m = t.match(/^no ([NRST])-(\S+) in (.+)$/)
+  if (m) return `${ID_KIND[m[1]]} ${m[1]}-${m[2]} is not in ${m[3]}`
+  m = t.match(/^no (\w+) (\S+) in (\w+) (\S+)$/)
+  if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} is not in ${m[3]} ${m[4]}`
+  m = t.match(/^no (\w+) (\S+)$/)
+  if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} does not exist`
+  return t ? t[0].toUpperCase() + t.slice(1) : 'Not found'
+}
+
+// A button that is also the view's Escape action (Back, Back to X, Cancel).
+function ExitBtn({ onClick, exit, children, ...rest }) {
+  useExit(exit === false ? null : onClick)
+  return h(Btn, { ...rest, onClick }, children)
+}
+
 function Missing({ project, text }) {
   const back = () => goBack(project ? 'home' : 'projects')
   useExit(back)
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, text),
+    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
@@ -1164,7 +1189,7 @@ function Home({ project }) {
   // different Needs you count, so the two never show different numbers.
   const ny = d && d.tiles ? d.tiles.needs_you : null
   useEffect(() => { if (ny != null) queryClient.invalidateQueries({ queryKey: ['rung', '/state'] }) }, [ny])
-  if (!d) return q.error ? h(Missing, { text: errText(q.error) }) : h(Frame, { main: h(Loading) })
+  if (!d) return q.error ? h(Missing, { project, text: errText(q.error) }) : h(Frame, { main: h(Loading) })
   const items = d.needs_you || []
   const stale = items.filter(i => i.type === 'stale')
   const approvals = items.filter(i => i.type === 'approval')
@@ -1239,7 +1264,8 @@ function StatChip({ label, n, t, of }) {
 }
 
 function Projects({ tab }) {
-  const st = useApi('/state').data
+  const stQ = useApi('/state')
+  const st = stQ.data
   const [qtext, setQ] = useState('')
   const [err, setErr] = useState('')
   const archived = tab === 'archived'
@@ -1254,10 +1280,12 @@ function Projects({ tab }) {
       h('div', 'flex items-center w-full max-w-md bg-card border border-line rounded-[6px] px-3 py-1.5 gap-2',
         h('span', 'text-muted text-xs', '⌕'),
         h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) }))),
-    h(ErrorLine, { text: err }),
-    archived ? h(ArchivedList, { qtext }) : null,
+    h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
+    archived ? h(ArchivedList, { qtext, onClear: () => setQ('') }) : null,
     archived ? null : h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'project-list' },
-      st && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects') : null,
+      st && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim flex items-center justify-between',
+        h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects'),
+        qtext ? h(Btn, { kind: 'small', testid: 'clear-search', onClick: () => setQ('') }, 'Clear search') : h(Btn, { kind: 'small', onClick: () => navigate('project-new') }, 'New project')) : null,
       ...rows.map(p => h(Card, {
         key: p.name, className: 'p-4 flex items-center justify-between', testid: 'project-row',
         onClick: async () => { const x = await post(`/projects/${encodeURIComponent(p.name)}/open`); if (!x.ok) return setErr(x.error); navigate('home') }
@@ -1278,7 +1306,8 @@ function Projects({ tab }) {
 // ------------------------------------------------------------------ new project
 
 function NewProject() {
-  const st = useApi('/state').data
+  const stQ = useApi('/state')
+  const st = stQ.data
   const profiles = ((st && st.profiles) || []).map(p => p.name)
   const [name, setName] = useState('')
   const [folder, setFolder] = useState('')
@@ -1290,9 +1319,10 @@ function NewProject() {
   const hasProjects = st && st.projects && st.projects.length
   // With no project yet, the way out is the start screen (its choices stay reachable after it was dismissed).
   const backToStart = !!st && !hasProjects
-  const exit = hasProjects ? () => goBack('projects', null, { force: true }) : () => navigate('start', null, { force: true, replace: true })
+  // Cancel is the explicit discard; Back (the way back to the start screen) asks first when text is typed.
+  const exit = hasProjects ? () => goBack('projects', null, { force: true }) : () => navigate('start', null, { replace: true })
   useDirty(name.trim() || folder.trim() || cmd.trim())
-  useExit(exit, true)
+  useExit(hasProjects ? () => goBack('projects') : exit, true)
   const fill = async path => {
     // Name, test command and profiles follow the folder until the person edits them.
     if (!path.trim()) return
@@ -1344,7 +1374,7 @@ function NewProject() {
                 onChange: e => { touched.current.profiles = true; setPicked(e.target.checked ? [...picked, p] : picked.filter(x => x !== p)) }
               }),
               h('span', null, p)))), fe('profiles'))),
-      h(ErrorLine, { text: err }),
+      h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
       h('div', 'flex items-center justify-end gap-2 pt-4 border-t border-line',
         hasProjects ? h(Btn, { onClick: exit }, 'Cancel')
           : backToStart ? h(Btn, { testid: 'back-to-start', onClick: exit }, 'Back') : null,
@@ -1536,11 +1566,11 @@ function useHome(project, focus) {
   return useApi(`/projects/${encodeURIComponent(project)}/home${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`)
 }
 
-function Page({ project, focus, sel, children, noTiles, title }) {
+function Page({ project, focus, sel, children, noTiles, title, back, backExit }) {
   const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
-    h('header', 'flex flex-col gap-4', h(Header, { project, title, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
+    h('header', 'flex flex-col gap-4', h(Header, { project, title, back, backExit, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
     q.error && !d ? h(ErrorLine, { text: errText(q.error) }) : null,
     children)
   return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
@@ -1682,7 +1712,7 @@ function Build({ project, need, step }) {
     return h(Page, { project, sel: need }, h('div', 'flex flex-col gap-6',
       h(BuildStrip, { need, flow, current: idx }),
       h(Card, { className: 'p-4 text-xs text-muted', testid: 'locked-step' }, `The ${STEPS[idx]} step is locked`),
-      h('div', null, h(Btn, { onClick: () => returnTo('build', { need, step: STEP_VIEWS[['need', 'requirements', 'specifications', 'tests', 'develop'].indexOf(open)] }) }, 'Back'))))
+      h('div', null, h(ExitBtn, { onClick: () => returnTo('build', { need, step: STEP_VIEWS[['need', 'requirements', 'specifications', 'tests', 'develop'].indexOf(open)] }) }, 'Back'))))
   }
   const props = { project, need, flow }
   if (idx === 1) return h(StepReqs, props)
@@ -1714,7 +1744,8 @@ function StepReqs({ project, need, flow }) {
   const approveAll = async () => {
     const r = await post(`${P(project)}/needs/${need}/approve-requirements`)
     if (!r.ok) return setErr(r.error)
-    navigate('build', { need, step: 'specs' })
+    notify(`Approved the requirements of ${need}`)
+    navigate('build', { need, step: 'specs' }, { force: true })
   }
   const body = h('div', 'flex flex-col gap-6',
     h(BuildStrip, { need, flow, current: 1 }),
@@ -1741,7 +1772,7 @@ function StepReqs({ project, need, flow }) {
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center justify-between pt-2 border-t border-line',
       h('div', 'flex items-center gap-2',
-        h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'need' }) }, 'Back to Need'),
+        h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('rung', { rid: need }) }, 'Back to Need'),
         h(Btn, { kind: 'outline', testid: 'new-requirement', onClick: () => navigate('req-new', { need, ret: 'reqs' }) }, 'New requirement')),
       h('div', 'flex items-center gap-2',
         h(Btn, { kind: 'primaryLg', testid: 'approve-all', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approveAll }, 'Approve all'),
@@ -1810,7 +1841,7 @@ function StepSpecs({ project, need, flow }) {
       })),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2.5 pt-1',
-      h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'reqs' }) }, 'Back to Requirements'),
+      h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'reqs' }) }, 'Back to Requirements'),
       h(Btn, { kind: 'primaryLg', testid: 'approve-drafted', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approve }, 'Approve drafted'),
       h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'tests' }) }, 'Next')))
   return h(Page, { project, sel: need }, body)
@@ -1870,7 +1901,7 @@ function StepTests({ project, need, flow }) {
         ...(s.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed').map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3 pt-2',
-      h(Btn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),
+      h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),
       h(Btn, { kind: 'primaryLg', testid: 'approve-tests', className: 'px-4 py-2', disabled: !st.can_approve || st.done, title: st.blocked_by || '', onClick: approve }, 'Approve tests'),
       h(Btn, { disabled: !st.done, title: st.blocked_by || '', onClick: () => navigate('build', { need, step: 'develop' }) }, 'Next')))
   return h(Page, { project, sel: need }, body)
@@ -1926,7 +1957,7 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
                 navigate('run', { run: res.data.id })
               }
             }, 'Send')),
-    open ? h('div', { className: 'absolute z-10 bg-card border border-line rounded-[6px] p-2 flex flex-col gap-1 shadow-2xl', style: { top: '100%', left: '38%', width: '300px' }, 'data-testid': 'pick-menu' },
+    open ? h('div', { className: 'absolute z-10 bg-card border border-line rounded-[6px] p-2 flex flex-col gap-1 shadow-2xl', style: { top: '100%', left: '38%', width: '300px' }, 'data-testid': 'pick-menu', 'data-layer': '1' },
       ...a.suggestions.map(sg => h('div', {
         key: sg.profile, className: 'flex items-center justify-between px-2 py-1.5 rounded hover:bg-btnh cursor-pointer text-xs', 'data-pick': sg.profile,
         onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
@@ -1940,10 +1971,11 @@ let CTX_PROFILES = {}
 
 function StepDevelop({ project, need, flow }) {
   const q = useRung(project, need)
-  const st = useApi('/settings').data
+  const stQ = useApi('/settings')
+  const st = stQ.data
   const n = q.data
   const [err, setErr] = useState('')
-  if (q.error) return h(Missing, { project, text: errText(q.error) })
+  if (q.error || stQ.error) return h(Missing, { project, text: errText(q.error || stQ.error) })
   if (!n || !st) return h(Page, { project, sel: need }, h(Loading))
   CTX_PROFILES = Object.fromEntries(st.profiles.map(p => [p.name, p]))
   const specs = []
@@ -1963,7 +1995,7 @@ function StepDevelop({ project, need, flow }) {
       h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr })))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',
-      h(Btn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),
+      h(ExitBtn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),
       h(Btn, { kind: 'primaryLg', className: 'px-4 py-2', testid: 'send-all', onClick: sendAll }, 'Send all')))
   return h(Page, { project, sel: need }, body)
 }
@@ -2023,7 +2055,8 @@ function NeedView({ project, r, flow }) {
   const [base, setBase] = useState(null)
   const ro = !!r.read_only
   useDirty(editing && text !== r.text)
-  useExit(() => { if (editing) { setEditing(false); setText(r.text) } })
+  // Escape closes the inline edit (asking first when text is typed), else leaves the need like Back.
+  useExit(() => { if (editing) { setEditing(false); setText(r.text) } else goBack('home') })
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
   const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
@@ -2038,7 +2071,7 @@ function NeedView({ project, r, flow }) {
       h(Badge, { status: r.status })),
     editing
       ? h('div', 'flex flex-col gap-2',
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); setEditing(false); setText(r.text) } } }),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); const close = () => { setEditing(false); setText(r.text) }; if (text !== r.text) $leave.set({ go: close }); else close() } } }),
         h('div', 'flex items-center gap-2',
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
@@ -2073,7 +2106,7 @@ function NeedView({ project, r, flow }) {
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-needs text-on-needs', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: true }); setErr(x.ok ? '' : x.error) } }, 'Accept'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-btn border border-line text-muted', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: false }); setErr(x.ok ? '' : x.error) } }, 'Dismiss'))))) : null,
     h(ErrorLine, { text: err }))
-  return h(Page, { project, sel: r.id }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
+  return h(Page, { project, sel: r.id, back: () => goBack('home'), backExit: false }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
 }
 
 // ------------------------------------------------------------------ requirement editor (also New requirement)
@@ -2104,7 +2137,7 @@ function ReqEditor({ project, r, need, ret }) {
   }, [r && r.id])
   const dest = ret ? ['build', { need: needId, step: ret }] : ['rung', { rid: needId }]
   const done = () => goBack(dest[0], dest[1], { force: true })
-  const saved = () => finish(dest[0], dest[1])
+  const saved = (id, approved) => finish(dest[0], dest[1], `${isNew ? 'Added' : approved ? 'Approved' : 'Saved'} ${id}`)
   useDirty(isNew ? (text.trim() || detail.trim()) : !clean)
   useExit(done, true)
   const save = async approve => {
@@ -2116,7 +2149,7 @@ function ReqEditor({ project, r, need, ret }) {
       res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: base })
     }
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
-    saved()
+    saved((res.data && res.data.id) || (r && r.id) || 'requirement', approve)
   }
   const specs = r ? (r.children || []).filter(s => s.status !== 'dismissed' && s.status !== 'proposed') : []
   const crumbPath = r ? r.path : [{ id: needId }]
@@ -2125,7 +2158,8 @@ function ReqEditor({ project, r, need, ret }) {
       h('div', 'flex items-center justify-between',
         h(Crumbs, { path: crumbPath, last: r ? r.id : 'New requirement', lastTone: 'text-fg' }),
         h(Badge, { status: r ? r.status : 'draft' })),
-      h('div', 'flex items-center',
+      h('div', 'flex flex-col gap-1.5',
+        h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Requirement'),
         h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, autoFocus: isNew, onChange: e => setText(e.target.value) }))),
     r && r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
@@ -2189,7 +2223,7 @@ function ChangeView({ project, change, rid }) {
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-btn text-muted border border-line2', editedAgo(ch)))),
         h('div', 'flex items-center gap-2',
           firstStale ? h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'review-first', onClick: () => navigate('rung', { rid: firstStale }) }, `Review ${firstStale}`) : null,
-          h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'revert', onClick: async () => { const x = await post(`${P(project)}/changes/${ch.id}/revert`); if (!x.ok) return setErr(x.error); navigate('rung', { rid: ch.rung }) } }, 'Revert change'))),
+          h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'revert', onClick: async () => { const x = await post(`${P(project)}/changes/${ch.id}/revert`); if (!x.ok) return setErr(x.error); finish('rung', { rid: ch.rung }, `Reverted ${ch.rung}`) } }, 'Revert change'))),
       h('div', 'grid grid-cols-2 gap-3 pt-3 border-t border-line',
         h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-3', 'data-testid': 'before' },
           h('div', 'flex items-center justify-between pb-1.5 border-b border-line2', h('span', 'text-xs font-semibold text-fail uppercase tracking-wider', 'Before')),
@@ -2206,7 +2240,7 @@ function ChangeView({ project, change, rid }) {
       h('div', 'flex items-center justify-between',
         h('h2', 'text-xs font-semibold uppercase tracking-wider text-stale flex items-center gap-1.5', h('span', 'w-1.5 h-1.5 rounded-full bg-stale'), 'Now stale')),
       h('div', 'flex flex-col gap-2', ...stale.map(id => h(StaleRow, { key: id, project, rid: id })))) : null)
-  return h(Page, { project, sel: rid }, body)
+  return h(Page, { project, sel: rid, back: () => goBack('rung', { rid }) }, body)
 }
 
 function StaleRow({ project, rid }) {
@@ -2295,7 +2329,7 @@ function SpecView({ project, r, ret, need }) {
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'approve', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/approve`, {}, () => backTo(ret, need, () => navigate('rung', { rid: r.id }))()) }, 'Approve'),
         r.ai_derived ? h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate') : null))
-    return h(Page, { project, sel: r.id }, body)
+    return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
   }
   // Released (spec-s11)
   if (r.released && r.status === 'approved') {
@@ -2323,7 +2357,7 @@ function SpecView({ project, r, ret, need }) {
           r.ai_derived ? h(Btn, { testid: 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
       h(ClaimsSection, { project, r, onErr: setErr }),
       h(CarrierSection, { project, r, onErr: setErr }))
-    return h(Page, { project, sel: r.id }, body)
+    return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
   }
   // Approved or stale, not released (spec-s21)
   const ch = r.change
@@ -2361,7 +2395,7 @@ function SpecView({ project, r, ret, need }) {
         !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null,
         h(ExcludedList, { excluded: a.excluded }))),
     h(CarrierSection, { project, r, onErr: setErr }))
-  return h(Page, { project, sel: r.id }, body)
+  return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
 
 function dayClock(ts) {
@@ -2408,7 +2442,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
   useDirty((text != null && text !== (s ? s.text : '')) || (detail != null && detail !== (s ? s.detail : '')))
   const dest = () => (ret ? ['build', { need: need || (r && r.parent), step: ret }] : ['rung', { rid: s ? s.id : reqId }])
   const done = () => goBack(...dest(), { force: true })
-  const saved = () => finish(...dest())
+  const saved = id => finish(...dest(), `Approved ${id}`)
   useExit(done, true)
   if (sq.error || rq.error) return h(Missing, { project, text: errText(sq.error || rq.error) })
   if ((spec && !s) || !r) return h(Page, { project }, h(Loading))
@@ -2420,7 +2454,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       if (x.ok) x = await post(`${P(project)}/rungs/${x.data.id}/approve`)
     }
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
-    saved()
+    saved((x.data && x.data.id) || (s && s.id) || 'specification')
   }
   const path = s ? s.path : [...r.path, { id: r.id }]
   const body = h('div', { className: 'flex flex-col gap-4 bg-card border border-line rounded-[6px] p-5', 'data-testid': 'spec-editor' },
@@ -2428,6 +2462,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       h(Crumbs, { path, last: s ? s.id : 'New specification' }),
       h(Badge, { status: s ? s.status : 'draft' })),
     h('div', 'flex flex-col gap-1.5',
+      h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Specification'),
       h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'spec-text', value: t, autoFocus: true, onChange: e => setText(e.target.value) })),
     h('div', 'flex flex-col gap-1.5',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Approach'),
@@ -2504,7 +2539,7 @@ function TestView({ project, r }) {
               h(Btn, { kind: 'primary', testid: 'approve-result', onClick: () => act(`${P(project)}/tests/${r.id}/executions/${pending.n}/approve`) }, 'Approve result'),
               h(Btn, { onClick: () => goBack('rung', { rid: r.parent }) }, 'Back'))
             : frag(
-              h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote('') }) }, 'Record'),
+              h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote(''); notify(`Recorded a result on ${r.id}`) }) }, 'Record'),
               h(Btn, { onClick: leave }, 'Cancel')))))
     return h(Page, { project, sel: r.id }, body)
   }
@@ -2533,7 +2568,7 @@ function TestView({ project, r }) {
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'run-tests', onClick: () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n })) }, 'Run tests'),
         h(Btn, { testid: 'raise-defect', disabled: !failing.length, onClick: () => openDefect(r.id) }, 'Raise defect'))))
-  return h(Page, { project, sel: r.id }, body)
+  return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
 
 function ExecRow({ test, x }) {
@@ -2557,7 +2592,8 @@ function TestEdit({ project, test, spec, ret, need }) {
   const base = useBase(t && t.version)
   const specId = spec || (t && t.parent)
   const sq = useRung(project, specId)
-  const st = useApi('/settings').data
+  const stQ = useApi('/settings')
+  const st = stQ.data
   const [f, setF] = useState(null)
   const [err, setErr] = useState('')
   const [ran, setRan] = useState(null)
@@ -2582,7 +2618,7 @@ function TestEdit({ project, test, spec, ret, need }) {
       : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder })
   }, [t, st])
   useEffect(() => { if (f && !init.current) init.current = JSON.stringify(f) }, [f])
-  if (tq.error || sq.error) return h(Missing, { project, text: errText(tq.error || sq.error) })
+  if (tq.error || sq.error || stQ.error) return h(Missing, { project, text: errText(tq.error || sq.error || stQ.error) })
   if (!f || !sq.data) return h(Page, { project }, h(Loading))
   const s = sq.data
   const set = k => e => setF({ ...f, [k]: e.target.value })
@@ -2612,12 +2648,11 @@ function TestEdit({ project, test, spec, ret, need }) {
     if (!r.ok) return setErr(r.error)
     finish('exec', { test: id, n: r.data.n })
   }
-  const crumbs = [...s.path.map(p => p.id), s.id, t ? t.id : 'New test'].join(' › ')
   const input = (k, extra) => h('input', { className: cx('bg-well border border-line rounded-[6px] px-3 py-2 mono text-xs text-fg focus:outline-none focus:border-needs', (extra && extra.w) || 'w-full'), type: 'text', name: k, value: f[k], onChange: set(k), 'aria-label': (extra && extra.label) || undefined })
   const body = h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-5', 'data-testid': 'test-editor' },
     h('div', 'flex flex-col gap-1.5 pb-4 border-b border-line',
       h('h2', 'text-base font-semibold text-fg', 'Test editor'),
-      h('div', 'text-xs mono text-muted', crumbs)),
+      h(Crumbs, { path: [...s.path, { id: s.id }], last: t ? t.id : 'New test' })),
     h('div', 'flex flex-col gap-1.5',
       h('span', 'text-xs font-medium text-muted', 'Type'),
       h('div', { className: 'inline-flex bg-well p-1 rounded-[6px] border border-line w-fit', 'data-testid': 'test-type', role: 'radiogroup' },
@@ -2900,6 +2935,7 @@ function RunView({ project, run }) {
         ...(out.length ? out : ['waiting for the worker']).map((l, i) => h('div', { key: i, className: 'flex items-center gap-2 text-muted' }, h('span', null, '>'), h('span', 'text-fg', l))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
+      h(Btn, { testid: 'run-back', onClick: toBuild }, 'Back to build'),
       h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Cancel'),
       h(Btn, { testid: 'open-session', disabled: !r.session, onClick: () => host.navigate(`/${r.session}`) }, 'Open session')))
   return h(Page, { project, sel: spec.id }, body)
@@ -2996,7 +3032,8 @@ function ExecView({ project, test, n }) {
               h('span', { className: 'w-2 h-2 rounded-full bg-needs', style: { animation: 'rung-pulse 2s ease-in-out infinite' } }),
               h('h2', 'text-base font-bold text-fg', `Execution #${x.n}`)),
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-needs/10 text-needs border border-needs/30', `Running ${elapsed(x.started_at)}`)),
-          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Cancel'))),
+          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Cancel'),
+            h(Btn, { kind: 'small', testid: 'exec-back', onClick: () => returnTo('rung', { rid: test }) }, 'Back to test'))),
       h('div', 'grid grid-cols-4 gap-3 py-1',
         h(Fact, { label: 'Commit', value: x.commit || 'none', mono: true }),
         h(Fact, { label: 'Carried by', value: x.carried_by || 'engine', mono: true }),
@@ -3194,9 +3231,23 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
     return () => {
       for (const sib of made) sib.removeAttribute('inert')
       if (opener && opener.focus && document.contains(opener)) opener.focus()
+      else setTimeout(() => { const t = document.querySelector('.rung [data-page-title]'); if (t) t.focus() }, 0)
     }
   }, [])
   const ask = () => { if (dirty) $leave.set({ go: onClose }); else onClose() }
+  const askRef = useRef(ask)
+  askRef.current = ask
+  // Escape closes the topmost dialog wherever focus is, not only from inside it.
+  useEffect(() => {
+    const key = e => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !box.current || box.current.contains(e.target)) return
+      const all = document.querySelectorAll('.rung [role=dialog]')
+      if (all[all.length - 1] !== box.current) return
+      e.preventDefault(); askRef.current()
+    }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [])
   const onKeyDown = e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ask(); return }
     if (e.key !== 'Tab' || !box.current) return
@@ -3338,7 +3389,7 @@ function ArchivedBar({ project }) {
     h('div', 'flex items-center gap-2 text-muted', h(Badge, { status: 'archived' }), h('span', null, project)),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
-      h(Btn, { kind: 'small', testid: 'restore-project', onClick: async () => { const x = await post(`/projects/${encodeURIComponent(project)}/restore`); setErr(x.ok ? '' : x.error) } }, 'Restore')))
+      h(Btn, { kind: 'small', testid: 'restore-project', onClick: async () => { const x = await post(`/projects/${encodeURIComponent(project)}/restore`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Restored ${project}`) } }, 'Restore')))
 }
 
 // ------------------------------------------------------------------ read-out
@@ -3412,7 +3463,7 @@ function RetireDialog({ project, need, onClose }) {
     const x = await post(`${P(project)}/needs/${need}/retire`, { reason })
     if (!x.ok) return setErr(x.error)
     onClose()
-    navigate('home')
+    finish('home', null, `Retired ${need}`)
   }
   return h(Dialog, {
     title: `Retire ${need}`, onClose, dirty: !!reason.trim(), testid: 'retire-dialog',
@@ -3431,7 +3482,7 @@ function RetiredBar({ project, r }) {
       r.retired_at ? h('span', 'mono text-[11px] text-muted', dayClock(r.retired_at)) : null),
     h('div', 'flex items-center gap-2',
       h(ErrorLine, { text: err }),
-      h(Btn, { kind: 'small', testid: 'restore-need', onClick: async () => { const x = await post(`${P(project)}/needs/${r.id}/restore`); setErr(x.ok ? '' : x.error) } }, 'Restore')))
+      h(Btn, { kind: 'small', testid: 'restore-need', onClick: async () => { const x = await post(`${P(project)}/needs/${r.id}/restore`); setErr(x.ok ? '' : x.error); if (x.ok) notify(`Restored ${r.id}`) } }, 'Restore')))
 }
 
 function Retired({ project }) {
@@ -3465,10 +3516,11 @@ function DeleteDialog({ name, onClose, after }) {
     // The deleted project leaves the cached list at once, so the picker never shows it while /state refetches.
     queryClient.setQueryData(['rung', '/state'], d => d && { ...d, projects: (d.projects || []).filter(p => p.name !== name) })
     onClose()
+    notify(`Deleted ${name}`)
     if (after) after(x.data)
   }
   return h(Dialog, {
-    title: `Delete ${name}`, onClose, testid: 'delete-dialog',
+    title: `Delete ${name}`, onClose, testid: 'delete-dialog', dirty: !!typed,
     footer: frag(h(Btn, { onClick: onClose }, 'Cancel'), h(DangerBtn, { testid: 'delete-confirm', disabled: typed !== name, onClick: go }, 'Delete'))
   },
   h(Field, { label: 'Project name' }, h('input', { className: INPUT, type: 'text', name: 'confirm', value: typed, placeholder: name, autoComplete: 'off', 'data-autofocus': '1', onChange: e => setTyped(e.target.value) })),
@@ -3482,7 +3534,8 @@ function afterDelete(out) {
 // ------------------------------------------------------------------ project settings
 
 function ProjectSettings({ project }) {
-  const st = useApi('/state').data
+  const stQ = useApi('/state')
+  const st = stQ.data
   const pq = useApi(`/projects/${encodeURIComponent(project)}/events`)
   const proj = st && ((st.projects || []).find(p => p.name === project))
   const [f, setF] = useState(null)
@@ -3493,7 +3546,8 @@ function ProjectSettings({ project }) {
     if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles })
   }, [proj && proj.name])
   useDirty(f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()]))
-  useExit(() => goBack('home', null, { force: true }), true)
+  useExit(() => goBack('home'), true)
+  if (stQ.error) return h(Missing, { project, text: errText(stQ.error) })
   if (!st) return h(Frame, { main: h(Loading) })
   if (!proj || !f) {
     return h(Missing, { text: st.current_archived ? `${project} is archived` : `no project ${project}` })
@@ -3510,12 +3564,13 @@ function ProjectSettings({ project }) {
   const archive = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/archive`)
     if (!x.ok) return setErr(x.error)
+    notify(`Archived ${project}`)
     navigate('projects', { tab: 'archived' }, { force: true })
   }
   const events = (pq.data || []).filter(e => e.kind === 'project_changed').slice().reverse()
   const main = frag(
     h('header', 'flex flex-col gap-4',
-      h(Header, { project, title: 'Project settings', right: h(Btn, { onClick: () => goBack('home', null, { force: true }) }, 'Back') })),
+      h(Header, { project, title: 'Project settings', right: h(Btn, { onClick: () => goBack('home') }, 'Back') })),
     h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'project-settings' },
       h(Field, { label: 'Name', error: errs.name, name: 'name' }, h('input', { 'aria-invalid': errs.name ? 'true' : undefined, className: INPUT, type: 'text', name: 'name', value: f.name, onChange: set('name') })),
       h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h('input', { 'aria-invalid': errs.folder ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'folder', value: f.folder, onChange: set('folder') })),
@@ -3545,20 +3600,23 @@ function ProjectSettings({ project }) {
 
 // ------------------------------------------------------------------ archived projects
 
-function ArchivedList({ qtext }) {
+function ArchivedList({ qtext, onClear }) {
   const q = useApi('/projects/archived', { live: true })
   const [del, setDel] = useState(null)
+  const [err, setErr] = useState('')
   if (q.error) return h(ErrorLine, { text: errText(q.error) })
   const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
-  const [err, setErr] = useState('')
   const act = async (name, what) => {
     const x = await post(`/projects/${encodeURIComponent(name)}/${what}`)
     if (!x.ok) return setErr(x.error)
     setErr('')
+    if (what === 'restore') notify(`Restored ${name}`)
     if (what === 'open') navigate('home')
   }
   return h('div', { className: 'flex flex-col gap-2.5', 'data-testid': 'archived-list' },
-    q.data && !rows.length ? h('div', { className: 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No archived projects') : null,
+    q.data && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim flex items-center justify-between',
+      h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No archived projects'),
+      qtext && onClear ? h(Btn, { kind: 'small', testid: 'clear-search', onClick: onClear }, 'Clear search') : null) : null,
     ...rows.map(p => h(Card, { key: p.name, className: 'p-4 flex items-center justify-between', testid: 'archived-row' },
       h('div', 'flex flex-col gap-1',
         h('div', 'flex items-center gap-2', h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'project-row-name' }, p.name), h(Badge, { status: 'archived', small: true })),
@@ -3917,7 +3975,7 @@ function App() {
   else if (view === 'project-new') body = h(NewProject)
   else if (view === 'settings') body = h(Settings, { project })
   else if (VIEWS[view]) body = h(VIEWS[view], { key: view + ':' + JSON.stringify(nav), ...props })
-  else body = h(Missing, { project, text: `Page not found: ${view}` })
+  else body = h(Missing, { project, text: 'Page not found' })
   return h(Root, { className: 'relative h-full w-full' },
     h(ViewFocus, { nav }),
     h('div', { className: 'h-full w-full', 'data-rung-view': view }, body),

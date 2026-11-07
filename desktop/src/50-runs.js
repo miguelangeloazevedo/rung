@@ -133,6 +133,7 @@ function RunView({ project, run }) {
         ...(out.length ? out : ['waiting for the worker']).map((l, i) => h('div', { key: i, className: 'flex items-center gap-2 text-muted' }, h('span', null, '>'), h('span', 'text-fg', l))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
+      h(Btn, { testid: 'run-back', onClick: toBuild }, 'Back to build'),
       h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Cancel'),
       h(Btn, { testid: 'open-session', disabled: !r.session, onClick: () => host.navigate(`/${r.session}`) }, 'Open session')))
   return h(Page, { project, sel: spec.id }, body)
@@ -229,7 +230,8 @@ function ExecView({ project, test, n }) {
               h('span', { className: 'w-2 h-2 rounded-full bg-needs', style: { animation: 'rung-pulse 2s ease-in-out infinite' } }),
               h('h2', 'text-base font-bold text-fg', `Execution #${x.n}`)),
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-needs/10 text-needs border border-needs/30', `Running ${elapsed(x.started_at)}`)),
-          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Cancel'))),
+          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Cancel'),
+            h(Btn, { kind: 'small', testid: 'exec-back', onClick: () => returnTo('rung', { rid: test }) }, 'Back to test'))),
       h('div', 'grid grid-cols-4 gap-3 py-1',
         h(Fact, { label: 'Commit', value: x.commit || 'none', mono: true }),
         h(Fact, { label: 'Carried by', value: x.carried_by || 'engine', mono: true }),

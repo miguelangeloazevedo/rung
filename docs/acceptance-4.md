@@ -23,26 +23,32 @@ Pane steps use visible controls (click, keyboard) unless a step says it opens a 
 1. A test walks every view and state the gallery captures (start screen, Needs you, project home, every build step, every rung kind, every editor, runs, attempts, executions, read-out, change, retired needs, project settings, settings, archive, a missing rung, run, attempt, execution and change, an unknown view). For each it records the h1, where focus is, and every visible exit.
 2. From each, it takes every visible exit (Back, Cancel, `Back to X`, the project name, Home) and Escape. Each lands on the view the person came from or the parent named by Round 11, never on a form already left, never in another project, never on Loading for more than 2 seconds, and focus is on the new view's h1.
 3. Missing destinations and the unknown view show the missing page with Back, Home and Projects.
-4. Breadcrumbs, the step strip and the rail mark the current item on every view that has them.
-5. The screenshot shows the missing page for a missing execution.
+4. Breadcrumbs, the step strip and the rail mark the current item with `aria-current` on every view that has them; each view's h1 is its largest heading.
+5. Every row and link that opens something is reached by Tab and opened by Enter; none is an anchor without an href; each is at least 24 by 24 pixels.
+6. A live develop run and a running execution: `Back to build` and `Back to test` leave them running (the run and the execution are still running after the move); Escape does the same.
+7. With the engine refusing `/settings` and `/state`, each view that reads them shows the error with the project name, never Loading or an empty list.
+8. At a pane width of 320 CSS pixels, on Needs you, a project home, a build step and a rung: the main column comes first, the rail and side lists follow it, the step strip wraps, and every visible exit and primary action is inside the viewport.
+9. The screenshot shows the missing page for a missing execution.
 
 ## UC31 Typed text, dialogs and results
 1. On each New form and editor, type text and leave by the rail, the header, the dock and the status bar chip: each asks Discard or Keep editing; Keep editing keeps the text; Discard leaves. Cancel leaves without asking. Save moves on without asking and shows the result line.
 2. Open Raise defect and Retire, type a title or reason, press Escape, the cross and click outside: each asks; Cancel does not. While a dialog is open, Tab stays inside it.
 3. New project with an existing name and a missing folder: each field shows its error, is marked invalid with the error tied to it, and focus is on the first invalid field.
-4. The screenshot shows the Discard or Keep editing question over a typed requirement.
+4. With focus moved outside an open dialog (on its backdrop), Escape still closes it, asking first when it holds text. Retire confirmed from the need page: focus lands on the h1 of the view it lands on.
+5. Each of these shows its result line on the view it lands on, inside a `role=status` element: add and approve a requirement, approve a specification, approve all requirements, record a manual result, revert a change, retire and restore a need, archive, restore and delete a project, raise a defect.
+6. The screenshot shows the Discard or Keep editing question over a typed requirement.
 
 ## UC32 Needs you front page
 1. Setup: three projects through the engine: one with two items that need you and a running develop run, one with one item, one with nothing waiting and one stale rung; one archived project.
-2. Open Rung: it shows `Needs you` with the total 3, the two projects with items grouped and counted, the running marker, the third under `Nothing waiting` with its counts, and `Projects` with each covered count and `Archived 1`. The total equals the status bar chip and the dock.
+2. Open Rung: it shows `Needs you` with the total 3, the two projects with items grouped and counted with their unit, the running work as a link that opens the run, the third under `Nothing waiting` with its counts and units, and `Projects` with each covered count (`N of M covered`), the last opened project marked, and `Archived 1`. The total equals the status bar chip and the dock. Each item's `Open` has the accessible name `Open <id>`; each `Open project` names its project. Rows under `Nothing waiting` meet 4.5:1 contrast.
 3. `Open` on an item opens it in its project; Back returns to `Needs you`. `Open project` opens its home; Back returns to `Needs you`. From any project view, one action reaches `Needs you`.
 4. Approve the item in the second project from its page: on return, `Needs you` shows total 2 and the second project under `Nothing waiting`, without a reload.
 5. The screenshot shows `Needs you` with the three projects.
 
 ## UC33 First install
-1. A fresh store: Rung opens on the start screen with `Try the sample project`, `New project` and the cross. The cross returns to the chat the test came from; stored state has zero projects; opening Rung again shows the start screen.
+1. A fresh store: Rung opens on the start screen with `Try the sample project`, `New project` and the cross. The cross returns to the chat the test came from; stored state has zero projects; opening Rung again shows the start screen. Escape on the start screen does the same as the cross. `New project` then its `Back` returns to the start screen, asking first when a field holds text.
 2. With visible controls only: `New project` with a copy of the `csvtidy` fixture, then a need, one requirement, its specification, a command test, approve each, run: the test passes and `First green test` ticks. The test records each control's label and checks it matches the same control's label elsewhere in the pane.
-3. Every empty list and section met on the way shows a label naming what is missing and one action; the walk records each.
+3. Every empty list and section met on the way shows a label naming what is missing and one action; the walk records each. A project search that matches nothing offers `Clear search`, which restores the list.
 4. The screenshot shows the first green test.
 
 ## UC34 Paste text

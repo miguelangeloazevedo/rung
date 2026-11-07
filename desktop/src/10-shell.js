@@ -118,24 +118,24 @@ function usePageTitle(project) {
   return VIEWS[v] ? '' : 'Not found'
 }
 
-function Header({ project, right, ro, title }) {
+// The page name is the h1 and the largest text; the project name before it is the way to the project list.
+// `back` is the view's way out: a Back button that Escape also takes.
+function Header({ project, right, ro, title, back, backExit }) {
   const auto = usePageTitle(project)
   const name = title === undefined ? auto : title
   return h('div', 'flex items-center justify-between',
-    h('div', 'flex items-center gap-3 min-w-0',
-      h('span', 'text-[11px] font-semibold tracking-wider text-muted uppercase', 'Project'),
-      h('span', 'text-line', '/'),
+    h('div', 'flex items-center gap-2 min-w-0',
       h('button', {
         type: 'button',
-        className: 'text-xl font-bold tracking-tight text-fg',
+        className: 'text-xs font-semibold text-muted hover:text-fg mono',
         'data-testid': 'project-name',
-        'aria-label': `${project}, projects`,
         title: 'Projects',
         onClick: () => navigate('projects')
       }, project),
-      name ? h('span', 'text-line', '/') : null,
-      name ? h('h1', { className: 'text-sm font-semibold text-muted', 'data-page-title': '1', tabIndex: -1 }, name) : null),
+      name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
+      name ? h('h1', { className: 'text-xl font-bold tracking-tight text-fg truncate', title: name, 'data-page-title': '1', tabIndex: -1 }, name) : null),
     h('div', 'flex items-center gap-2',
+      back ? h(ExitBtn, { testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
       h(DockToggle),
       h('button', {
         type: 'button', 'data-testid': 'open-settings',
@@ -330,15 +330,35 @@ function Frame({ main, rail, wide }) {
 // What the last action did (created, saved, raised), on the view it landed on.
 function Notice() {
   const n = useValue($notice)
-  return h('div', { role: 'status', 'data-testid': 'notice', className: n ? 'text-xs text-pass font-medium' : 'hidden' }, n || '')
+  // Always in the page, so screen readers announce the line when it appears.
+  return h('div', { role: 'status', 'data-testid': 'notice', className: 'text-xs text-pass font-medium', style: n ? undefined : { position: 'absolute', width: 1, height: 1, overflow: 'hidden' } }, n || '')
 }
 
 // A destination that does not exist (a missing id, a failed load, an unknown view): what is missing, and a way on.
+// What is missing, as a sentence: the engine's refusal (`no S-99.9 in csvtidy`) names the kind from the id.
+const ID_KIND = { N: 'Need', R: 'Requirement', S: 'Specification', T: 'Test' }
+function missingText(text) {
+  const t = String(text || '')
+  let m = t.match(/^no ([NRST])-(\S+) in (.+)$/)
+  if (m) return `${ID_KIND[m[1]]} ${m[1]}-${m[2]} is not in ${m[3]}`
+  m = t.match(/^no (\w+) (\S+) in (\w+) (\S+)$/)
+  if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} is not in ${m[3]} ${m[4]}`
+  m = t.match(/^no (\w+) (\S+)$/)
+  if (m) return `${m[1][0].toUpperCase() + m[1].slice(1)} ${m[2]} does not exist`
+  return t ? t[0].toUpperCase() + t.slice(1) : 'Not found'
+}
+
+// A button that is also the view's Escape action (Back, Back to X, Cancel).
+function ExitBtn({ onClick, exit, children, ...rest }) {
+  useExit(exit === false ? null : onClick)
+  return h(Btn, { ...rest, onClick }, children)
+}
+
 function Missing({ project, text }) {
   const back = () => goBack(project ? 'home' : 'projects')
   useExit(back)
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
-    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, text),
+    h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,

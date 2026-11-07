@@ -53,7 +53,8 @@ function NeedView({ project, r, flow }) {
   const [base, setBase] = useState(null)
   const ro = !!r.read_only
   useDirty(editing && text !== r.text)
-  useExit(() => { if (editing) { setEditing(false); setText(r.text) } })
+  // Escape closes the inline edit (asking first when text is typed), else leaves the need like Back.
+  useExit(() => { if (editing) { setEditing(false); setText(r.text) } else goBack('home') })
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
   const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
@@ -68,7 +69,7 @@ function NeedView({ project, r, flow }) {
       h(Badge, { status: r.status })),
     editing
       ? h('div', 'flex flex-col gap-2',
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); setEditing(false); setText(r.text) } } }),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); const close = () => { setEditing(false); setText(r.text) }; if (text !== r.text) $leave.set({ go: close }); else close() } } }),
         h('div', 'flex items-center gap-2',
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
@@ -103,7 +104,7 @@ function NeedView({ project, r, flow }) {
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-needs text-on-needs', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: true }); setErr(x.ok ? '' : x.error) } }, 'Accept'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-btn border border-line text-muted', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: false }); setErr(x.ok ? '' : x.error) } }, 'Dismiss'))))) : null,
     h(ErrorLine, { text: err }))
-  return h(Page, { project, sel: r.id }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
+  return h(Page, { project, sel: r.id, back: () => goBack('home'), backExit: false }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
 }
 
 // ------------------------------------------------------------------ requirement editor (also New requirement)
@@ -134,7 +135,7 @@ function ReqEditor({ project, r, need, ret }) {
   }, [r && r.id])
   const dest = ret ? ['build', { need: needId, step: ret }] : ['rung', { rid: needId }]
   const done = () => goBack(dest[0], dest[1], { force: true })
-  const saved = () => finish(dest[0], dest[1])
+  const saved = (id, approved) => finish(dest[0], dest[1], `${isNew ? 'Added' : approved ? 'Approved' : 'Saved'} ${id}`)
   useDirty(isNew ? (text.trim() || detail.trim()) : !clean)
   useExit(done, true)
   const save = async approve => {
@@ -146,7 +147,7 @@ function ReqEditor({ project, r, need, ret }) {
       res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, detail, approve, version: base })
     }
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
-    saved()
+    saved((res.data && res.data.id) || (r && r.id) || 'requirement', approve)
   }
   const specs = r ? (r.children || []).filter(s => s.status !== 'dismissed' && s.status !== 'proposed') : []
   const crumbPath = r ? r.path : [{ id: needId }]
@@ -155,7 +156,8 @@ function ReqEditor({ project, r, need, ret }) {
       h('div', 'flex items-center justify-between',
         h(Crumbs, { path: crumbPath, last: r ? r.id : 'New requirement', lastTone: 'text-fg' }),
         h(Badge, { status: r ? r.status : 'draft' })),
-      h('div', 'flex items-center',
+      h('div', 'flex flex-col gap-1.5',
+        h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Requirement'),
         h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, autoFocus: isNew, onChange: e => setText(e.target.value) }))),
     r && r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
@@ -219,7 +221,7 @@ function ChangeView({ project, change, rid }) {
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-btn text-muted border border-line2', editedAgo(ch)))),
         h('div', 'flex items-center gap-2',
           firstStale ? h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-testid': 'review-first', onClick: () => navigate('rung', { rid: firstStale }) }, `Review ${firstStale}`) : null,
-          h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'revert', onClick: async () => { const x = await post(`${P(project)}/changes/${ch.id}/revert`); if (!x.ok) return setErr(x.error); navigate('rung', { rid: ch.rung }) } }, 'Revert change'))),
+          h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-line text-fg text-xs font-medium', 'data-testid': 'revert', onClick: async () => { const x = await post(`${P(project)}/changes/${ch.id}/revert`); if (!x.ok) return setErr(x.error); finish('rung', { rid: ch.rung }, `Reverted ${ch.rung}`) } }, 'Revert change'))),
       h('div', 'grid grid-cols-2 gap-3 pt-3 border-t border-line',
         h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex flex-col gap-3', 'data-testid': 'before' },
           h('div', 'flex items-center justify-between pb-1.5 border-b border-line2', h('span', 'text-xs font-semibold text-fail uppercase tracking-wider', 'Before')),
@@ -236,7 +238,7 @@ function ChangeView({ project, change, rid }) {
       h('div', 'flex items-center justify-between',
         h('h2', 'text-xs font-semibold uppercase tracking-wider text-stale flex items-center gap-1.5', h('span', 'w-1.5 h-1.5 rounded-full bg-stale'), 'Now stale')),
       h('div', 'flex flex-col gap-2', ...stale.map(id => h(StaleRow, { key: id, project, rid: id })))) : null)
-  return h(Page, { project, sel: rid }, body)
+  return h(Page, { project, sel: rid, back: () => goBack('rung', { rid }) }, body)
 }
 
 function StaleRow({ project, rid }) {
@@ -325,7 +327,7 @@ function SpecView({ project, r, ret, need }) {
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'approve', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/approve`, {}, () => backTo(ret, need, () => navigate('rung', { rid: r.id }))()) }, 'Approve'),
         r.ai_derived ? h(Btn, { testid: 'regenerate', disabled: r.draft_state === 'drafting', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Regenerate') : null))
-    return h(Page, { project, sel: r.id }, body)
+    return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
   }
   // Released (spec-s11)
   if (r.released && r.status === 'approved') {
@@ -353,7 +355,7 @@ function SpecView({ project, r, ret, need }) {
           r.ai_derived ? h(Btn, { testid: 'fresh-draft', onClick: () => act(`${P(project)}/rungs/${r.id}/regenerate`) }, 'Fresh draft') : null)),
       h(ClaimsSection, { project, r, onErr: setErr }),
       h(CarrierSection, { project, r, onErr: setErr }))
-    return h(Page, { project, sel: r.id }, body)
+    return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
   }
   // Approved or stale, not released (spec-s21)
   const ch = r.change
@@ -391,7 +393,7 @@ function SpecView({ project, r, ret, need }) {
         !a.suggestions.length ? h('div', 'text-xs text-fail', 'No eligible profile') : null,
         h(ExcludedList, { excluded: a.excluded }))),
     h(CarrierSection, { project, r, onErr: setErr }))
-  return h(Page, { project, sel: r.id }, body)
+  return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
 
 function dayClock(ts) {
@@ -438,7 +440,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
   useDirty((text != null && text !== (s ? s.text : '')) || (detail != null && detail !== (s ? s.detail : '')))
   const dest = () => (ret ? ['build', { need: need || (r && r.parent), step: ret }] : ['rung', { rid: s ? s.id : reqId }])
   const done = () => goBack(...dest(), { force: true })
-  const saved = () => finish(...dest())
+  const saved = id => finish(...dest(), `Approved ${id}`)
   useExit(done, true)
   if (sq.error || rq.error) return h(Missing, { project, text: errText(sq.error || rq.error) })
   if ((spec && !s) || !r) return h(Page, { project }, h(Loading))
@@ -450,7 +452,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       if (x.ok) x = await post(`${P(project)}/rungs/${x.data.id}/approve`)
     }
     if (!x.ok) { setConflict(x.code === 'conflict' ? x : null); return setErr(x.code === 'conflict' ? '' : x.error) }
-    saved()
+    saved((x.data && x.data.id) || (s && s.id) || 'specification')
   }
   const path = s ? s.path : [...r.path, { id: r.id }]
   const body = h('div', { className: 'flex flex-col gap-4 bg-card border border-line rounded-[6px] p-5', 'data-testid': 'spec-editor' },
@@ -458,6 +460,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       h(Crumbs, { path, last: s ? s.id : 'New specification' }),
       h(Badge, { status: s ? s.status : 'draft' })),
     h('div', 'flex flex-col gap-1.5',
+      h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Specification'),
       h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'spec-text', value: t, autoFocus: true, onChange: e => setText(e.target.value) })),
     h('div', 'flex flex-col gap-1.5',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Approach'),
@@ -534,7 +537,7 @@ function TestView({ project, r }) {
               h(Btn, { kind: 'primary', testid: 'approve-result', onClick: () => act(`${P(project)}/tests/${r.id}/executions/${pending.n}/approve`) }, 'Approve result'),
               h(Btn, { onClick: () => goBack('rung', { rid: r.parent }) }, 'Back'))
             : frag(
-              h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote('') }) }, 'Record'),
+              h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote(''); notify(`Recorded a result on ${r.id}`) }) }, 'Record'),
               h(Btn, { onClick: leave }, 'Cancel')))))
     return h(Page, { project, sel: r.id }, body)
   }
@@ -563,7 +566,7 @@ function TestView({ project, r }) {
       h('div', 'flex items-center gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'run-tests', onClick: () => act(`${P(project)}/tests/${r.id}/run`, {}, d => navigate('exec', { test: r.id, n: d.n })) }, 'Run tests'),
         h(Btn, { testid: 'raise-defect', disabled: !failing.length, onClick: () => openDefect(r.id) }, 'Raise defect'))))
-  return h(Page, { project, sel: r.id }, body)
+  return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
 
 function ExecRow({ test, x }) {
@@ -587,7 +590,8 @@ function TestEdit({ project, test, spec, ret, need }) {
   const base = useBase(t && t.version)
   const specId = spec || (t && t.parent)
   const sq = useRung(project, specId)
-  const st = useApi('/settings').data
+  const stQ = useApi('/settings')
+  const st = stQ.data
   const [f, setF] = useState(null)
   const [err, setErr] = useState('')
   const [ran, setRan] = useState(null)
@@ -612,7 +616,7 @@ function TestEdit({ project, test, spec, ret, need }) {
       : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder })
   }, [t, st])
   useEffect(() => { if (f && !init.current) init.current = JSON.stringify(f) }, [f])
-  if (tq.error || sq.error) return h(Missing, { project, text: errText(tq.error || sq.error) })
+  if (tq.error || sq.error || stQ.error) return h(Missing, { project, text: errText(tq.error || sq.error || stQ.error) })
   if (!f || !sq.data) return h(Page, { project }, h(Loading))
   const s = sq.data
   const set = k => e => setF({ ...f, [k]: e.target.value })
@@ -642,12 +646,11 @@ function TestEdit({ project, test, spec, ret, need }) {
     if (!r.ok) return setErr(r.error)
     finish('exec', { test: id, n: r.data.n })
   }
-  const crumbs = [...s.path.map(p => p.id), s.id, t ? t.id : 'New test'].join(' › ')
   const input = (k, extra) => h('input', { className: cx('bg-well border border-line rounded-[6px] px-3 py-2 mono text-xs text-fg focus:outline-none focus:border-needs', (extra && extra.w) || 'w-full'), type: 'text', name: k, value: f[k], onChange: set(k), 'aria-label': (extra && extra.label) || undefined })
   const body = h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-5', 'data-testid': 'test-editor' },
     h('div', 'flex flex-col gap-1.5 pb-4 border-b border-line',
       h('h2', 'text-base font-semibold text-fg', 'Test editor'),
-      h('div', 'text-xs mono text-muted', crumbs)),
+      h(Crumbs, { path: [...s.path, { id: s.id }], last: t ? t.id : 'New test' })),
     h('div', 'flex flex-col gap-1.5',
       h('span', 'text-xs font-medium text-muted', 'Type'),
       h('div', { className: 'inline-flex bg-well p-1 rounded-[6px] border border-line w-fit', 'data-testid': 'test-type', role: 'radiogroup' },

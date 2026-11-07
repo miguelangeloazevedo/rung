@@ -177,3 +177,23 @@ Open: who makes the demo video and how (Tue 10 Nov); narration.
 | Empty states | Every view and section that can be empty names what is missing and offers the one action that fills it, never an explanation. |
 | First install | From a fresh install, a person reaches a first green test on their own project with visible controls only: start screen, New project, a need, a requirement, a specification, a test, run. The route walk checks every view and state has a visible way out. |
 | UC13.5 and ONB-03 | Superseded by acceptance 4 (Round 12): with no projects the start screen's cross leaves Rung for the view the person came from and creates nothing; the start screen shows again on the next open until a project exists. `test_uc13` asserts the new behaviour, named in acceptance 4. |
+
+## Round 14: third navigation review, corrections and declines (7 Nov 2026)
+
+Three independent reviewers (40 findings) on the scrubbed public code, the gallery and the front page mock. Each correction applies to the pattern, not the example.
+
+| Topic | Decision |
+| --- | --- |
+| A visible way out is the Escape action | One `ExitBtn` renders any Back, `Back to X` or Cancel and registers the same action for Escape: every build step, the locked step, the page Back in the header. |
+| Read views have a Back | Need, specification, command test and change pages show Back in the header (to where you came from, else the parent); Escape takes it. The need's inline edit closes on Escape, asking first when text is typed. |
+| Back asks, Cancel discards | Only a control named Cancel, and the move after a save, skip the Discard or Keep editing question. Back on project settings and on New project (no project yet) now asks. The Delete dialog counts the typed confirmation as typed text. |
+| Live work | A live run shows `Back to build` and a running execution `Back to test`, which leave the work running; `Cancel` stays the stop control (frozen UC28 names it). Escape matches the way out. |
+| Need is one page | `Back to Need` and the strip's Need step open the need page. |
+| Result lines | `notify` lands after the move, whatever the order; `finish(view, params, notice)` carries it. Added for add, approve and save of requirements and specifications, approve all, record, revert, retire, restore, archive and delete. The line is a `role=status` element that is always in the page. |
+| Missing page | One sentence built from the kind and id (`Specification S-99.9 is not in csvtidy`); an unknown view reads `Page not found` without the internal view name. |
+| Failed loads | Every view that reads `/settings` or `/state` shows the load error (Missing with the project, or the error line), never Loading or an empty list; the archive list keeps its hooks before any early return. |
+| Keyboard | An anchor without an href is treated as a button by `h()` (role, tab stop, Enter and Space). Clickable rows already were. Escape closes the topmost dialog wherever focus is; when the opener is gone, focus goes to the page h1. An open profile menu holds Escape as before (frozen UC06). |
+| Headings and labels | The page name is the h1 and the largest heading; the project name before it is a small link with no hidden words in its name. Requirement and Specification fields have visible labels; the need field is named Need. The test editor uses the shared breadcrumbs. |
+| Empty filtered lists | A project search that matches nothing offers `Clear search` (Projects and the archive). |
+| Carried into acceptance 4 | 320 pixel reflow (NAV-14), focusable rows (NAV-15), live views' way out (NAV-16), failed loads (NAV-17, FRT-08), the front page's units, run link, last opened marker, contrast and `Open <id>` names (FRT-02 to FRT-04), Escape on the start screen and New project's Back (FST-02), `Clear search` (FST-04), field errors on every form (NAV-10), `aria-current` (NAV-09). |
+| Declined | Cancel asking before discarding (Round 10: Cancel is the explicit discard). Renaming the run and execution `Cancel` to Stop (frozen UC28). Renaming the locked step's Back (frozen UC03 clicks `Back`). `Open <id>` names on the existing Home and archive rows (frozen UC14 and UC18 find `Open` by exact name; the new front page has them). Focusing the first field on every view change (Round 11 and NAV-08: the h1; new-rung forms already focus their first field). An error summary and an `Error:` window title (forms have at most five fields, each error is tied to its field and focused; the window title belongs to the Desktop). Search across rungs (new scope, not navigation). Raise defect losing text on a view change: the gallery used the forced test hook; visible routes ask. |
