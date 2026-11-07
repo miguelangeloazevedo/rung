@@ -58,7 +58,7 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
     onMouseDown: e => { down.current = e.target === e.currentTarget; if (down.current) e.preventDefault() },
     onMouseUp: e => { if (down.current && e.target === e.currentTarget) ask(); down.current = false }
   },
-    h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
+    h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-full max-w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
         h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
@@ -113,8 +113,8 @@ function StartScreen() {
   // The cross only closes (Round 12, FST-02): it leaves Rung for the view the person came from and creates nothing.
   useExit(closeRung)
   return h('div', { className: 'flex flex-row h-full w-full overflow-hidden', 'data-testid': 'start' },
-    h('div', 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8',
-      h('div', 'w-[520px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
+    h('div', 'flex-1 h-full overflow-y-auto flex p-4',
+      h('div', 'm-auto w-full max-w-[520px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
         h('div', 'flex items-center justify-between',
           h('h1', 'text-xl font-bold tracking-tight text-fg', 'Rung'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Close', 'data-testid': 'start-dismiss', onClick: closeRung }, '✕')),

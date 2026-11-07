@@ -79,6 +79,7 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .gap-4{gap:16px}
 .rung .gap-5{gap:20px}
 .rung .gap-6{gap:24px}
+.rung .gap-y-2{row-gap:8px}
 .rung .grid{display:grid}
 .rung .grid-cols-12{grid-template-columns:repeat(12,minmax(0,1fr))}
 .rung .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -117,7 +118,11 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .leading-relaxed{line-height:1.625}
 .rung .leading-tight{line-height:1.25}
 .rung .line-through{text-decoration:line-through}
+.rung .m-auto{margin:auto}
 .rung .max-w-\\[280px\\]{max-width:280px}
+.rung .max-w-\\[480px\\]{max-width:480px}
+.rung .max-w-\\[520px\\]{max-width:520px}
+.rung .max-w-\\[640px\\]{max-width:640px}
 .rung .max-w-\\[860px\\]{max-width:860px}
 .rung .mb-1{margin-bottom:4px}
 .rung .min-h-\\[180px\\]{min-height:180px}
@@ -238,9 +243,6 @@ const RUNG_CSS = `.rung .absolute{position:absolute}
 .rung .w-5{width:20px}
 .rung .w-8{width:32px}
 .rung .w-\\[280px\\]{width:280px}
-.rung .w-\\[480px\\]{width:480px}
-.rung .w-\\[520px\\]{width:520px}
-.rung .w-\\[640px\\]{width:640px}
 .rung .w-fit{width:fit-content}
 .rung .w-full{width:100%}
 .rung .whitespace-nowrap{white-space:nowrap}
@@ -332,12 +334,14 @@ function useDirty(dirty) {
 
 // A view names its way out (the action of its Back or Cancel); Escape takes it, asking first if text is unsaved.
 // `task` marks a form or an editor: a place that is left, never returned to.
-function useExit(fn, task) {
+// `own`: this exit replaces the whole view (the missing page), so it takes Escape from the view that rendered it,
+// whatever order their effects ran in (a child's effect runs before its parent's, so mount order is no guide).
+function useExit(fn, task, own) {
   const ref = useRef(fn)
   ref.current = fn
   useEffect(() => {
     if (!ref.current) return undefined  // no way out to register (a button that is not the view's exit)
-    const x = { go: () => ref.current(), task: !!task }
+    const x = { go: () => ref.current(), task: !!task, own: !!own }
     EXITS.push(x)
     return () => { const i = EXITS.indexOf(x); if (i >= 0) EXITS.splice(i, 1) }
   }, [])
@@ -463,11 +467,15 @@ function onEscape(e) {
   if (e.key !== 'Escape' || e.defaultPrevented || !EXITS.length) return
   if (!String(location.hash || '').includes(ROUTE)) return
   if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox], .rung [data-layer]')) return
-  guard(EXITS[EXITS.length - 1].go)
+  const owns = EXITS.filter(x => x.own)
+  guard((owns.length ? owns[owns.length - 1] : EXITS[EXITS.length - 1]).go)
 }
 
+// Tests only (window.__rungRefuse): paths the engine is made to refuse, to show how views meet a failed load.
+let REFUSE = new Set()
 async function rest(path, opts) {
   if (!CTX) throw new Error('Rung is not loaded')
+  if (REFUSE.has(String(path).split('?')[0])) throw Object.assign(new Error(`403 refused: ${path}`), { status: 403, body: { detail: `refused: ${path}` } })
   return CTX.rest(path, opts)
 }
 
@@ -871,11 +879,11 @@ function usePageTitle(project) {
 function Header({ project, right, ro, title, back, backExit, extra }) {
   const auto = usePageTitle(project)
   const name = title === undefined ? auto : title
-  return h('div', 'flex items-center justify-between',
+  return h('div', 'flex flex-wrap items-center justify-between gap-2',
     h('div', 'flex items-center gap-2 min-w-0',
       h('button', {
         type: 'button',
-        className: 'text-xs font-semibold text-muted hover:text-fg mono',
+        className: 'inline-flex items-center min-h-[24px] text-xs font-semibold text-muted hover:text-fg mono',
         'data-testid': 'project-name',
         title: 'Needs you',
         'aria-label': `${project}, Needs you`,
@@ -883,7 +891,7 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
       }, project),
       name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
       name ? h('h1', { className: 'text-xl font-bold tracking-tight text-fg truncate', title: name, 'data-page-title': '1', tabIndex: -1 }, name) : null),
-    h('div', 'flex items-center gap-2',
+    h('div', 'flex flex-wrap items-center gap-2',
       back ? h(ExitBtn, { kind: 'head', testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
       h(DockToggle),
       h('button', {
@@ -925,7 +933,7 @@ function Tile({ label, value, of, t, hot, testid }) {
 function Tiles({ tiles }) {
   const t = tiles || { covered: 0, requirements: 0, stale: 0, failing: 0, needs_you: 0 }
   const all = t.requirements > 0 && t.covered === t.requirements
-  return h('div', 'grid grid-cols-4 gap-3',
+  return h('div', 'r-tiles grid grid-cols-4 gap-3',
     all
       ? h('div', { className: 'bg-card border-2 border-pass rounded-[6px] p-3 flex flex-col justify-between', 'data-testid': 'tile-covered' },
         h('span', 'text-[11px] font-semibold text-pass', 'Covered'),
@@ -969,7 +977,7 @@ function Strip({ current, reached, need, done: doneList }) {
         : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
     h('span', { className: cx('text-xs whitespace-nowrap rs-label', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
   })
-  return h('div', { className: 'flex items-center justify-between bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
+  return h('div', { className: 'rs-strip flex flex-wrap items-center justify-between gap-y-2 bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
 }
 
 // ------------------------------------------------------------------ traceability rail
@@ -1071,10 +1079,23 @@ function Rail({ tree, alloc, sel, retired }) {
 
 // ------------------------------------------------------------------ page frame
 
-function Frame({ main, rail, wide }) {
-  return h('div', 'flex flex-row h-full w-full overflow-hidden',
-    h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, h(Notice), main),
-    rail || null)
+// The main column and its rail side by side; on a narrow pane (r-frame's container query) the rail follows the
+// main column and the whole frame scrolls (NAV-14).
+function Frame({ main, rail, wide, quiet }) {
+  return h('div', 'r-frame h-full w-full',
+    h('div', 'r-frame-in flex flex-row h-full w-full overflow-hidden',
+      h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, h(Notice), quiet ? null : h(LoadErrors), main),
+      rail || null))
+}
+
+// A failed read of the project state or the settings, on every view, with the project (NAV-17): a view
+// showing what it loaded before still says that the latest load failed. Reads the shared queries, never fetches.
+function LoadErrors() {
+  const a = useApi('/state', { enabled: false })
+  const b = useApi('/settings', { enabled: false })
+  const e = a.error || b.error
+  if (!e) return null
+  return h(ErrorLine, { text: `${CUR_PROJECT ? CUR_PROJECT + ': ' : ''}${errText(e)}` })
 }
 
 // What the last action did (created, saved, raised), on the view it landed on.
@@ -1113,14 +1134,14 @@ function ExitBtn({ onClick, exit, children, ...rest }) {
 
 function Missing({ project, text }) {
   const back = () => goBack(project ? 'home' : 'projects')
-  useExit(back)
+  useExit(back, false, true)
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
     h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
       h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
-  return project ? h(Page, { project, title: null }, body) : h(Frame, { main: body })
+  return project ? h(Page, { project, title: null, quiet: true }, body) : h(Frame, { main: body, quiet: true })
 }
 
 function Loading() {
@@ -1407,7 +1428,7 @@ function Projects({ tab }) {
       h('span', { className: 'text-muted text-xs', 'aria-hidden': 'true' }, '⌕'),
       h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) })),
     archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', v === 'archived' ? { tab: 'archived' } : null, { replace: true }) }) : null,
-    h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
+    h(ErrorLine, { text: err }),  // a failed /state load shows once, in the frame (LoadErrors)
     archived ? null : h('div', { className: 'flex flex-col gap-2', 'data-testid': 'project-list' },
       st && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-muted flex items-center justify-between gap-2',
         h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects'),
@@ -1490,9 +1511,10 @@ function NewProject() {
   const fe = k => errs[k] ? h('span', { className: 'text-[11px] text-fail', id: 'fe-' + k, role: 'alert', 'data-testid': 'field-error', 'data-field': k }, errs[k]) : null
   const bad = k => (errs[k] ? 'true' : undefined)
   const inp = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'
-  const main = h('div', { className: 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8', 'data-testid': 'new-project' },
-    h('div', 'w-[640px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
-      h('h1', 'text-xl font-bold tracking-tight text-fg', 'New project'),
+  const main = h('div', { className: 'flex-1 h-full overflow-y-auto flex p-4', 'data-testid': 'new-project' },
+    h('div', 'm-auto w-full max-w-[640px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
+      h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'New project'),
+      h(LoadErrors),
       h('div', 'flex flex-col gap-4',
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Name'),
@@ -1514,7 +1536,7 @@ function NewProject() {
                 onChange: e => { touched.current.profiles = true; setPicked(e.target.checked ? [...picked, p] : picked.filter(x => x !== p)) }
               }),
               h('span', null, p)))), fe('profiles'))),
-      h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
+      h(ErrorLine, { text: err }),  // a failed /state load shows once, in the frame (LoadErrors)
       h('div', 'flex items-center justify-end gap-2 pt-4 border-t border-line',
         hasProjects ? h(Btn, { onClick: exit }, 'Cancel')
           : backToStart ? h(Btn, { testid: 'back-to-start', onClick: exit }, 'Back') : null,
@@ -1706,14 +1728,14 @@ function useHome(project, focus) {
   return useApi(`/projects/${encodeURIComponent(project)}/home${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`)
 }
 
-function Page({ project, focus, sel, children, noTiles, title, back, backExit }) {
+function Page({ project, focus, sel, children, noTiles, title, back, backExit, quiet }) {
   const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
     h('header', 'flex flex-col gap-4', h(Header, { project, title, back, backExit, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
     q.error && !d ? h(ErrorLine, { text: errText(q.error) }) : null,
     children)
-  return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
+  return h(Frame, { main, quiet, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
 }
 
 function Crumbs({ path, last, lastTone }) {
@@ -1804,7 +1826,7 @@ function NeedNew({ project }) {
       h('label', 'text-xs font-semibold uppercase tracking-wider text-fg', 'Need'),
       h('textarea', {
         className: 'bg-card border border-line rounded-[6px] px-4 py-3 text-xs font-medium text-fg resize-none focus:border-needs outline-none',
-        rows: 2, name: 'need', value: text, autoFocus: true, onChange: e => setText(e.target.value)
+        rows: 2, name: 'need', value: text, onChange: e => setText(e.target.value)
       })),
     sugs.length || busy ? h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'suggested' },
       h('div', 'flex items-center justify-between',
@@ -2218,7 +2240,7 @@ function NeedView({ project, r, flow }) {
       h(Badge, { status: r.status })),
     editing
       ? h('div', 'flex flex-col gap-2',
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); const close = () => { setEditing(false); setText(r.text) }; if (text !== r.text) $leave.set({ go: close }); else close() } } }),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); const close = () => { setEditing(false); setText(r.text) }; if (text !== r.text) $leave.set({ go: close }); else close() } } }),
         h('div', 'flex items-center gap-2',
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
@@ -2309,7 +2331,7 @@ function ReqEditor({ project, r, need, ret }) {
         h(Badge, { status: r ? r.status : 'draft' })),
       h('div', 'flex flex-col gap-1.5',
         h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Requirement'),
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, autoFocus: isNew, onChange: e => setText(e.target.value) }))),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, onChange: e => setText(e.target.value) }))),
     r && r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
       h('button', { type: 'button', className: 'text-[11px] font-medium text-needs inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
@@ -2615,7 +2637,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       h(Badge, { status: s ? s.status : 'draft' })),
     h('div', 'flex flex-col gap-1.5',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Specification'),
-      h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'spec-text', value: t, autoFocus: true, onChange: e => setText(e.target.value) })),
+      h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'spec-text', value: t, onChange: e => setText(e.target.value) })),
     h('div', 'flex flex-col gap-1.5',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Approach'),
       h('textarea', { className: 'w-full bg-well border border-line rounded-[6px] p-3 text-xs text-fg font-mono leading-relaxed focus:outline-none focus:border-needs resize-none', rows: 3, name: 'spec-detail', value: d, onChange: e => setDetail(e.target.value) })),
@@ -2643,7 +2665,7 @@ function TestView({ project, r }) {
   const [note, setNote] = useState('')
   useDirty(r.type === 'manual' && (result || note.trim()))
   const leave = () => goBack('rung', { rid: r.parent }, { force: true })
-  useExit(() => { if (r.type === 'manual') leave() })
+  // Escape is the header Back (Page back): unforced, so typed evidence asks Discard or Keep editing.
   const execs = r.executions || []
   const act = async (path, body, go) => {
     const x = await post(path, body)
@@ -3263,7 +3285,6 @@ function RunView({ project, run }) {
   useTick(1000)
   const r = q.data
   const specQ = useRung(project, r && r.spec)
-  const st = useApi('/settings').data
   const [err, setErr] = useState('')
   const needRef = useRef(null)
   const toBuild = () => (needRef.current ? returnTo('build', { need: needRef.current, step: 'develop' }) : goBack('home'))
@@ -3676,7 +3697,7 @@ function Dialog({ title, onClose, children, footer, testid, dirty }) {
     onMouseDown: e => { down.current = e.target === e.currentTarget; if (down.current) e.preventDefault() },
     onMouseUp: e => { if (down.current && e.target === e.currentTarget) ask(); down.current = false }
   },
-    h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
+    h('div', { ref: box, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': tid, 'data-testid': testid, onKeyDown, className: 'w-full max-w-[480px] bg-card border border-line rounded-[6px] shadow-2xl flex flex-col' },
       h('div', 'flex items-center justify-between px-5 py-4 border-b border-line',
         h('h3', { id: tid, className: 'text-sm font-semibold text-fg' }, title),
         h('button', { type: 'button', className: 'text-muted', 'aria-label': 'Close', onClick: ask }, '✕')),
@@ -3731,8 +3752,8 @@ function StartScreen() {
   // The cross only closes (Round 12, FST-02): it leaves Rung for the view the person came from and creates nothing.
   useExit(closeRung)
   return h('div', { className: 'flex flex-row h-full w-full overflow-hidden', 'data-testid': 'start' },
-    h('div', 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8',
-      h('div', 'w-[520px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
+    h('div', 'flex-1 h-full overflow-y-auto flex p-4',
+      h('div', 'm-auto w-full max-w-[520px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
         h('div', 'flex items-center justify-between',
           h('h1', 'text-xl font-bold tracking-tight text-fg', 'Rung'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Close', 'data-testid': 'start-dismiss', onClick: closeRung }, '✕')),
@@ -4332,6 +4353,14 @@ const DOCK_CSS = `
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
 .rung .r-main{container-type:inline-size}
 @container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
+.rung .r-frame{container:rframe / inline-size}
+@container rframe (max-width: 640px){
+.rung .r-frame-in{flex-direction:column;overflow-y:auto}
+.rung .r-frame-in>.r-main{flex:none;height:auto;overflow:visible;max-width:none;padding:16px 12px}
+.rung .r-frame-in>:not(.r-main){flex:none;width:100%!important;min-width:0!important;max-width:none!important;height:auto!important;overflow:visible!important;border-left:0!important;border-top:1px solid var(--r-line2)}
+.rung .r-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rung .rs-strip{padding-left:12px;padding-right:12px}
+}
 `
 
 function setDock(open) {
@@ -4407,15 +4436,20 @@ function ViewFocus({ nav }) {
   useEffect(() => {
     let tries = 0
     let id = 0
+    let done = false
     const go = () => {
       const root = document.querySelector('.rung [data-rung-view]')
       if (!root || !String(location.hash || '').includes(ROUTE)) return
       const a = document.activeElement
-      if (a && a !== document.body && root.contains(a)) return
+      const lost = !a || a === document.body
+      // The person (or a dialog) has focus inside the view: leave it there.
+      if (!lost && root.contains(a) && !a.hasAttribute('data-page-title')) return
       if (document.querySelector('.rung [role=dialog]')) return
       const t = root.querySelector('[data-page-title]') || root.querySelector('h1')
-      if (t) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); return }
-      if (++tries < 30) id = setTimeout(go, 100)  // the view is still loading: its title comes with its data
+      // First focus: the title. After that, only a focus dropped to the body is put back (never taken from the app).
+      if (t && (done ? lost : (lost || a !== t))) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); done = true }
+      // Keep watching while the view's data arrives: a title re-created by a render drops focus to the body.
+      if (++tries < 30) id = setTimeout(go, 100)
     }
     id = setTimeout(go, 60)
     return () => clearTimeout(id)
@@ -4452,6 +4486,7 @@ export default {
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
       '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
       // the front page: the list first, the projects beside it, below it when the pane is narrow (NAV-14)
+      '\n.rung [data-rung-view] button,.rung [data-rung-view] [role=button]{min-height:24px;min-width:24px}' +
       '\n.rung .r-col-main{flex:999 1 420px;min-width:0}.rung .r-side{flex:1 1 260px;min-width:0;max-width:100%}' +
       // every control is at least 24 by 24 CSS pixels (WCAG 2.5.8)
       '\n.rung button,.rung [role=button],.rung [role=switch],.rung select{min-height:24px;min-width:24px}' +
@@ -4470,7 +4505,9 @@ export default {
     window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest
-    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock })
+    window.__rungNav = () => ({ ...$nav.get(), project: CUR_PROJECT })  // tests: the view and params shown
+    window.__rungRefuse = paths => { REFUSE = new Set(paths || []) }  // tests: make the engine refuse these paths
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock; delete window.__rungNav; delete window.__rungRefuse })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },

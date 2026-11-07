@@ -69,7 +69,7 @@ function NeedView({ project, r, flow }) {
       h(Badge, { status: r.status })),
     editing
       ? h('div', 'flex flex-col gap-2',
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', autoFocus: true, onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); const close = () => { setEditing(false); setText(r.text) }; if (text !== r.text) $leave.set({ go: close }); else close() } } }),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', value: text, name: 'need-text', onChange: e => setText(e.target.value), onKeyDown: e => { if (e.key === 'Escape') { e.preventDefault(); const close = () => { setEditing(false); setText(r.text) }; if (text !== r.text) $leave.set({ go: close }); else close() } } }),
         h('div', 'flex items-center gap-2',
           h(Btn, { kind: 'primary', testid: 'save-need', onClick: () => save(true) }, 'Save and approve'),
           h(Btn, { onClick: () => { setEditing(false); setText(r.text) } }, 'Cancel')))
@@ -160,7 +160,7 @@ function ReqEditor({ project, r, need, ret }) {
         h(Badge, { status: r ? r.status : 'draft' })),
       h('div', 'flex flex-col gap-1.5',
         h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Requirement'),
-        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, autoFocus: isNew, onChange: e => setText(e.target.value) }))),
+        h('input', { className: 'w-full bg-well border border-line2 rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'req-text', value: text, onChange: e => setText(e.target.value) }))),
     r && r.change && r.change.rung === r.id ? h('div', 'flex items-center justify-between px-3 py-2 rounded-[6px] bg-well border border-line2 text-xs',
       h('div', 'flex items-center gap-2 text-muted', h(Dot, { t: 'stale' }), h('span', null, `${r.id} · ${editedAgo(r.change)}`)),
       h('button', { type: 'button', className: 'text-[11px] font-medium text-needs inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'view-change', onClick: () => navigate('change', { change: r.change.id, rid: r.id }) }, 'View change')) : null,
@@ -466,7 +466,7 @@ function SpecEdit({ project, req, spec, ret, need }) {
       h(Badge, { status: s ? s.status : 'draft' })),
     h('div', 'flex flex-col gap-1.5',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Specification'),
-      h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'spec-text', value: t, autoFocus: true, onChange: e => setText(e.target.value) })),
+      h('input', { className: 'w-full bg-well border border-line rounded-[6px] px-3 py-2 text-sm font-semibold text-fg focus:outline-none focus:border-needs', type: 'text', name: 'spec-text', value: t, onChange: e => setText(e.target.value) })),
     h('div', 'flex flex-col gap-1.5',
       h('label', 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'Approach'),
       h('textarea', { className: 'w-full bg-well border border-line rounded-[6px] p-3 text-xs text-fg font-mono leading-relaxed focus:outline-none focus:border-needs resize-none', rows: 3, name: 'spec-detail', value: d, onChange: e => setDetail(e.target.value) })),
@@ -494,7 +494,7 @@ function TestView({ project, r }) {
   const [note, setNote] = useState('')
   useDirty(r.type === 'manual' && (result || note.trim()))
   const leave = () => goBack('rung', { rid: r.parent }, { force: true })
-  useExit(() => { if (r.type === 'manual') leave() })
+  // Escape is the header Back (Page back): unforced, so typed evidence asks Discard or Keep editing.
   const execs = r.executions || []
   const act = async (path, body, go) => {
     const x = await post(path, body)

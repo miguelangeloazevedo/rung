@@ -51,7 +51,6 @@ function RunView({ project, run }) {
   useTick(1000)
   const r = q.data
   const specQ = useRung(project, r && r.spec)
-  const st = useApi('/settings').data
   const [err, setErr] = useState('')
   const needRef = useRef(null)
   const toBuild = () => (needRef.current ? returnTo('build', { need: needRef.current, step: 'develop' }) : goBack('home'))

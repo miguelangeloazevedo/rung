@@ -53,7 +53,7 @@ STATIC = {
     "justify-end": "justify-content:flex-end", "justify-start": "justify-content:flex-start",
     "self-start": "align-self:flex-start", "self-center": "align-self:center", "self-end": "align-self:flex-end",
     "w-full": "width:100%", "h-full": "height:100%", "min-w-0": "min-width:0", "min-h-0": "min-height:0",
-    "w-auto": "width:auto", "mx-auto": "margin-left:auto;margin-right:auto", "ml-auto": "margin-left:auto",
+    "w-auto": "width:auto", "mx-auto": "margin-left:auto;margin-right:auto", "m-auto": "margin:auto", "ml-auto": "margin-left:auto",
     "rounded": "border-radius:4px", "rounded-md": "border-radius:6px", "rounded-lg": "border-radius:8px",
     "rounded-full": "border-radius:9999px", "rounded-none": "border-radius:0",
     "border": "border-width:1px;border-style:solid", "border-2": "border-width:2px;border-style:solid",

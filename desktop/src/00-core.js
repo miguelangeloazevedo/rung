@@ -92,12 +92,14 @@ function useDirty(dirty) {
 
 // A view names its way out (the action of its Back or Cancel); Escape takes it, asking first if text is unsaved.
 // `task` marks a form or an editor: a place that is left, never returned to.
-function useExit(fn, task) {
+// `own`: this exit replaces the whole view (the missing page), so it takes Escape from the view that rendered it,
+// whatever order their effects ran in (a child's effect runs before its parent's, so mount order is no guide).
+function useExit(fn, task, own) {
   const ref = useRef(fn)
   ref.current = fn
   useEffect(() => {
     if (!ref.current) return undefined  // no way out to register (a button that is not the view's exit)
-    const x = { go: () => ref.current(), task: !!task }
+    const x = { go: () => ref.current(), task: !!task, own: !!own }
     EXITS.push(x)
     return () => { const i = EXITS.indexOf(x); if (i >= 0) EXITS.splice(i, 1) }
   }, [])
@@ -223,11 +225,15 @@ function onEscape(e) {
   if (e.key !== 'Escape' || e.defaultPrevented || !EXITS.length) return
   if (!String(location.hash || '').includes(ROUTE)) return
   if (document.querySelector('.rung [role=dialog], .rung [role=menu], .rung [role=listbox], .rung [data-layer]')) return
-  guard(EXITS[EXITS.length - 1].go)
+  const owns = EXITS.filter(x => x.own)
+  guard((owns.length ? owns[owns.length - 1] : EXITS[EXITS.length - 1]).go)
 }
 
+// Tests only (window.__rungRefuse): paths the engine is made to refuse, to show how views meet a failed load.
+let REFUSE = new Set()
 async function rest(path, opts) {
   if (!CTX) throw new Error('Rung is not loaded')
+  if (REFUSE.has(String(path).split('?')[0])) throw Object.assign(new Error(`403 refused: ${path}`), { status: 403, body: { detail: `refused: ${path}` } })
   return CTX.rest(path, opts)
 }
 

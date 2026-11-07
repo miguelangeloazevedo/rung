@@ -129,11 +129,11 @@ function usePageTitle(project) {
 function Header({ project, right, ro, title, back, backExit, extra }) {
   const auto = usePageTitle(project)
   const name = title === undefined ? auto : title
-  return h('div', 'flex items-center justify-between',
+  return h('div', 'flex flex-wrap items-center justify-between gap-2',
     h('div', 'flex items-center gap-2 min-w-0',
       h('button', {
         type: 'button',
-        className: 'text-xs font-semibold text-muted hover:text-fg mono',
+        className: 'inline-flex items-center min-h-[24px] text-xs font-semibold text-muted hover:text-fg mono',
         'data-testid': 'project-name',
         title: 'Needs you',
         'aria-label': `${project}, Needs you`,
@@ -141,7 +141,7 @@ function Header({ project, right, ro, title, back, backExit, extra }) {
       }, project),
       name ? h('span', { className: 'text-line', 'aria-hidden': 'true' }, '/') : null,
       name ? h('h1', { className: 'text-xl font-bold tracking-tight text-fg truncate', title: name, 'data-page-title': '1', tabIndex: -1 }, name) : null),
-    h('div', 'flex items-center gap-2',
+    h('div', 'flex flex-wrap items-center gap-2',
       back ? h(ExitBtn, { kind: 'head', testid: 'page-back', onClick: back, exit: backExit !== false }, 'Back') : null,
       h(DockToggle),
       h('button', {
@@ -183,7 +183,7 @@ function Tile({ label, value, of, t, hot, testid }) {
 function Tiles({ tiles }) {
   const t = tiles || { covered: 0, requirements: 0, stale: 0, failing: 0, needs_you: 0 }
   const all = t.requirements > 0 && t.covered === t.requirements
-  return h('div', 'grid grid-cols-4 gap-3',
+  return h('div', 'r-tiles grid grid-cols-4 gap-3',
     all
       ? h('div', { className: 'bg-card border-2 border-pass rounded-[6px] p-3 flex flex-col justify-between', 'data-testid': 'tile-covered' },
         h('span', 'text-[11px] font-semibold text-pass', 'Covered'),
@@ -227,7 +227,7 @@ function Strip({ current, reached, need, done: doneList }) {
         : h('span', 'w-5 h-5 rounded-full border border-line text-dim flex items-center justify-center text-[10px] font-medium', String(i + 1)),
     h('span', { className: cx('text-xs whitespace-nowrap rs-label', done ? 'font-semibold text-pass' : on ? 'font-semibold text-needs' : 'font-medium text-dim') }, name)))
   })
-  return h('div', { className: 'flex items-center justify-between bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
+  return h('div', { className: 'rs-strip flex flex-wrap items-center justify-between gap-y-2 bg-card border border-line rounded-[6px] px-6 py-3', 'data-testid': 'build-strip' }, ...kids)
 }
 
 // ------------------------------------------------------------------ traceability rail
@@ -329,10 +329,23 @@ function Rail({ tree, alloc, sel, retired }) {
 
 // ------------------------------------------------------------------ page frame
 
-function Frame({ main, rail, wide }) {
-  return h('div', 'flex flex-row h-full w-full overflow-hidden',
-    h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, h(Notice), main),
-    rail || null)
+// The main column and its rail side by side; on a narrow pane (r-frame's container query) the rail follows the
+// main column and the whole frame scrolls (NAV-14).
+function Frame({ main, rail, wide, quiet }) {
+  return h('div', 'r-frame h-full w-full',
+    h('div', 'r-frame-in flex flex-row h-full w-full overflow-hidden',
+      h('section', { className: cx('r-main flex-1 h-full overflow-y-auto px-8 py-6 flex flex-col gap-6', !wide && 'max-w-[860px]'), 'data-testid': 'main' }, h(Notice), quiet ? null : h(LoadErrors), main),
+      rail || null))
+}
+
+// A failed read of the project state or the settings, on every view, with the project (NAV-17): a view
+// showing what it loaded before still says that the latest load failed. Reads the shared queries, never fetches.
+function LoadErrors() {
+  const a = useApi('/state', { enabled: false })
+  const b = useApi('/settings', { enabled: false })
+  const e = a.error || b.error
+  if (!e) return null
+  return h(ErrorLine, { text: `${CUR_PROJECT ? CUR_PROJECT + ': ' : ''}${errText(e)}` })
 }
 
 // What the last action did (created, saved, raised), on the view it landed on.
@@ -371,14 +384,14 @@ function ExitBtn({ onClick, exit, children, ...rest }) {
 
 function Missing({ project, text }) {
   const back = () => goBack(project ? 'home' : 'projects')
-  useExit(back)
+  useExit(back, false, true)
   const body = h(Card, { className: 'p-4 flex flex-col gap-3', testid: 'missing' },
     h('h1', { className: 'text-sm font-semibold text-fg', role: 'alert', 'data-page-title': '1', tabIndex: -1 }, missingText(text)),
     h('div', 'flex items-center gap-2',
       h(Btn, { kind: 'primary', testid: 'missing-back', onClick: back }, 'Back'),
       project ? h(Btn, { testid: 'missing-home', onClick: () => navigate('home') }, 'Home') : null,
       h(Btn, { testid: 'missing-projects', onClick: () => navigate('projects') }, 'Projects')))
-  return project ? h(Page, { project, title: null }, body) : h(Frame, { main: body })
+  return project ? h(Page, { project, title: null, quiet: true }, body) : h(Frame, { main: body, quiet: true })
 }
 
 function Loading() {

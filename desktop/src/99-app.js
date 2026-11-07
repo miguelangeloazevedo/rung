@@ -42,15 +42,20 @@ function ViewFocus({ nav }) {
   useEffect(() => {
     let tries = 0
     let id = 0
+    let done = false
     const go = () => {
       const root = document.querySelector('.rung [data-rung-view]')
       if (!root || !String(location.hash || '').includes(ROUTE)) return
       const a = document.activeElement
-      if (a && a !== document.body && root.contains(a)) return
+      const lost = !a || a === document.body
+      // The person (or a dialog) has focus inside the view: leave it there.
+      if (!lost && root.contains(a) && !a.hasAttribute('data-page-title')) return
       if (document.querySelector('.rung [role=dialog]')) return
       const t = root.querySelector('[data-page-title]') || root.querySelector('h1')
-      if (t) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); return }
-      if (++tries < 30) id = setTimeout(go, 100)  // the view is still loading: its title comes with its data
+      // First focus: the title. After that, only a focus dropped to the body is put back (never taken from the app).
+      if (t && (done ? lost : (lost || a !== t))) { if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); done = true }
+      // Keep watching while the view's data arrives: a title re-created by a render drops focus to the body.
+      if (++tries < 30) id = setTimeout(go, 100)
     }
     id = setTimeout(go, 60)
     return () => clearTimeout(id)
@@ -87,6 +92,7 @@ export default {
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
       '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
       // the front page: the list first, the projects beside it, below it when the pane is narrow (NAV-14)
+      '\n.rung [data-rung-view] button,.rung [data-rung-view] [role=button]{min-height:24px;min-width:24px}' +
       '\n.rung .r-col-main{flex:999 1 420px;min-width:0}.rung .r-side{flex:1 1 260px;min-width:0;max-width:100%}' +
       // every control is at least 24 by 24 CSS pixels (WCAG 2.5.8)
       '\n.rung button,.rung [role=button],.rung [role=switch],.rung select{min-height:24px;min-width:24px}' +
@@ -105,7 +111,9 @@ export default {
     window.__rungView = navigate      // tests: change the view as an in-page action does
     window.__rungDock = setDock
     window.__rungRest = rest
-    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock })
+    window.__rungNav = () => ({ ...$nav.get(), project: CUR_PROJECT })  // tests: the view and params shown
+    window.__rungRefuse = paths => { REFUSE = new Set(paths || []) }  // tests: make the engine refuse these paths
+    ctx.onDispose(() => { delete window.__rungNavigate; delete window.__rungView; delete window.__rungDock; delete window.__rungNav; delete window.__rungRefuse })
     ctx.onDispose(() => style.remove())
     ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => h(App) },

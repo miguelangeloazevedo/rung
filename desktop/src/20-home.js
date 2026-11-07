@@ -273,7 +273,7 @@ function Projects({ tab }) {
       h('span', { className: 'text-muted text-xs', 'aria-hidden': 'true' }, '⌕'),
       h('input', { className: 'bg-transparent text-xs text-fg outline-none w-full placeholder:text-muted', placeholder: 'Search projects', type: 'text', name: 'search', value: qtext, onChange: e => setQ(e.target.value) })),
     archived || (st && st.archived) ? h(Seg, { options: [['active', 'Active'], ['archived', `Archived ${(st && st.archived) || 0}`]], value: archived ? 'archived' : 'active', testid: 'project-filter', onChange: v => navigate('projects', v === 'archived' ? { tab: 'archived' } : null, { replace: true }) }) : null,
-    h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
+    h(ErrorLine, { text: err }),  // a failed /state load shows once, in the frame (LoadErrors)
     archived ? null : h('div', { className: 'flex flex-col gap-2', 'data-testid': 'project-list' },
       st && !rows.length ? h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-muted flex items-center justify-between gap-2',
         h('span', { 'data-testid': 'empty' }, qtext ? 'No matching projects' : 'No projects'),
@@ -356,9 +356,10 @@ function NewProject() {
   const fe = k => errs[k] ? h('span', { className: 'text-[11px] text-fail', id: 'fe-' + k, role: 'alert', 'data-testid': 'field-error', 'data-field': k }, errs[k]) : null
   const bad = k => (errs[k] ? 'true' : undefined)
   const inp = 'w-full px-3 py-2 bg-well border border-line rounded-[6px] text-xs text-fg outline-none focus:border-needs'
-  const main = h('div', { className: 'flex-1 h-full overflow-y-auto flex items-center justify-center p-8', 'data-testid': 'new-project' },
-    h('div', 'w-[640px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
-      h('h1', 'text-xl font-bold tracking-tight text-fg', 'New project'),
+  const main = h('div', { className: 'flex-1 h-full overflow-y-auto flex p-4', 'data-testid': 'new-project' },
+    h('div', 'm-auto w-full max-w-[640px] bg-card border border-line rounded-[6px] p-6 flex flex-col gap-6',
+      h('h1', { className: 'text-xl font-bold tracking-tight text-fg', 'data-page-title': '1', tabIndex: -1 }, 'New project'),
+      h(LoadErrors),
       h('div', 'flex flex-col gap-4',
         h('div', 'flex flex-col gap-1.5',
           h('label', 'text-xs font-medium text-muted', 'Name'),
@@ -380,7 +381,7 @@ function NewProject() {
                 onChange: e => { touched.current.profiles = true; setPicked(e.target.checked ? [...picked, p] : picked.filter(x => x !== p)) }
               }),
               h('span', null, p)))), fe('profiles'))),
-      h(ErrorLine, { text: err || (stQ.error ? errText(stQ.error) : '') }),
+      h(ErrorLine, { text: err }),  // a failed /state load shows once, in the frame (LoadErrors)
       h('div', 'flex items-center justify-end gap-2 pt-4 border-t border-line',
         hasProjects ? h(Btn, { onClick: exit }, 'Cancel')
           : backToStart ? h(Btn, { testid: 'back-to-start', onClick: exit }, 'Back') : null,

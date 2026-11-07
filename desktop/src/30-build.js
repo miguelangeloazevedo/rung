@@ -12,14 +12,14 @@ function useHome(project, focus) {
   return useApi(`/projects/${encodeURIComponent(project)}/home${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`)
 }
 
-function Page({ project, focus, sel, children, noTiles, title, back, backExit }) {
+function Page({ project, focus, sel, children, noTiles, title, back, backExit, quiet }) {
   const q = useHome(project, focus || sel)
   const d = q.data
   const main = frag(
     h('header', 'flex flex-col gap-4', h(Header, { project, title, back, backExit, ro: !!(d && d.tiles && d.tiles.archived) }), noTiles ? null : h(Tiles, { tiles: d && d.tiles })),
     q.error && !d ? h(ErrorLine, { text: errText(q.error) }) : null,
     children)
-  return h(Frame, { main, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
+  return h(Frame, { main, quiet, rail: h(Rail, { tree: d && d.tree, alloc: d && d.allocation, sel: sel || focus, retired: d && d.retired }) })
 }
 
 function Crumbs({ path, last, lastTone }) {
@@ -110,7 +110,7 @@ function NeedNew({ project }) {
       h('label', 'text-xs font-semibold uppercase tracking-wider text-fg', 'Need'),
       h('textarea', {
         className: 'bg-card border border-line rounded-[6px] px-4 py-3 text-xs font-medium text-fg resize-none focus:border-needs outline-none',
-        rows: 2, name: 'need', value: text, autoFocus: true, onChange: e => setText(e.target.value)
+        rows: 2, name: 'need', value: text, onChange: e => setText(e.target.value)
       })),
     sugs.length || busy ? h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'suggested' },
       h('div', 'flex items-center justify-between',

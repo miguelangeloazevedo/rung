@@ -266,6 +266,14 @@ const DOCK_CSS = `
 .rung .dk-tr-row:focus-visible{outline-offset:-2px!important}
 .rung .r-main{container-type:inline-size}
 @container (max-width: 680px){.rung .rs-step:not(.rs-on) .rs-label{display:none}}
+.rung .r-frame{container:rframe / inline-size}
+@container rframe (max-width: 640px){
+.rung .r-frame-in{flex-direction:column;overflow-y:auto}
+.rung .r-frame-in>.r-main{flex:none;height:auto;overflow:visible;max-width:none;padding:16px 12px}
+.rung .r-frame-in>:not(.r-main){flex:none;width:100%!important;min-width:0!important;max-width:none!important;height:auto!important;overflow:visible!important;border-left:0!important;border-top:1px solid var(--r-line2)}
+.rung .r-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rung .rs-strip{padding-left:12px;padding-right:12px}
+}
 `
 
 function setDock(open) {
