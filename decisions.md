@@ -203,3 +203,11 @@ Three independent reviewers (40 findings) on the scrubbed public code, the galle
 | Topic | Decision |
 | --- | --- |
 | Freeze | Miguel approved `docs/use-cases-4.md` (43 IDs), `docs/acceptance-4.md` (UC30 to UC36) and `scripts/acceptance-4.sh` as committed in `7ead5ed`; their checksums join the frozen set outside the repo. Rounds 13 and 14 stand as written. |
+
+## Round 16: where Rung opens (7 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Opening page | Rung keeps reopening the last opened project (frozen PRJ-04, UC2 step 4). `Needs you` across projects replaces the Projects page: the project name in every header opens it, and Rung opens on it only when no project is current. |
+| Counts | The page's total is the sum of its project groups; each group equals that project's Home tile. The chip and the dock keep counting the current project (frozen Needs you count rule). |
+| Contract | FRT-01, FRT-05 and UC32 step 2 amended with Miguel's approval; acceptance 4 re-frozen. |

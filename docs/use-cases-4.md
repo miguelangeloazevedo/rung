@@ -30,11 +30,11 @@ Actors as in `docs/use-cases.md`: **you**, **agent**, **engine**, **tester**.
 
 | ID | Use case | UC |
 | --- | --- | --- |
-| FRT-01 | With at least one project, Rung opens on `Needs you`: every item that needs you across open projects, grouped by project, with the total. | UC32 |
+| FRT-01 | The project name in every project header opens `Needs you`, which replaces the Projects page: every item that needs you across open projects, grouped by project, with the total. Rung reopens the last opened project (PRJ-04) and opens on `Needs you` only when no project is current. | UC32 |
 | FRT-02 | Each project group shows its count with its unit (`2 need you`), what is running as a link to the run, and `Open project`; each item shows its id, text, what it needs from you and `Open`, which opens it in its project. Each `Open` is named for screen readers with its id (`Open R-4.2`) and each `Open project` with its project. | UC32 |
 | FRT-03 | Projects with nothing waiting are listed under `Nothing waiting` with their stale and covered counts, each with its unit, and `Open project`, at the same contrast as every other row; no enabled control looks disabled. | UC32 |
 | FRT-04 | Beside the list, `Projects` lists every open project with its covered count (`4 of 6 covered`), marks the project last opened, and shows `Archived` with its count; each opens its project or the archive. | UC32 |
-| FRT-05 | The page has `Settings` and `New project`; the total equals the status bar chip and the dock. | UC32 |
+| FRT-05 | The page has `Settings` and `New project`; its total equals the sum of its project groups, and each group's count equals that project's Home tile (and the chip and the dock while it is the current project). | UC32 |
 | FRT-06 | Every project view reaches `Needs you` in one action, and Back from a project home opened there returns to it. | UC32 |
 | FRT-07 | The page updates without a reload when an item stops or starts needing you, and renders 20 projects with 500 rungs each within 1 second. | |
 | FRT-08 | A failed load on `Needs you` shows its error and Retry, never an empty `Nothing waiting`. | |

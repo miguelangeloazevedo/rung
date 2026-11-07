@@ -11,7 +11,7 @@ Done means, on one commit and in this order:
 
 ## Superseded criteria
 
-`docs/acceptance.md` UC13 step 5 and `docs/use-cases.md` ONB-03 are superseded by FST-02 (Round 12): with no projects, the start screen's cross leaves Rung for the view the person came from and creates nothing; the start screen shows again on the next open until a project exists. `tests/e2e/test_uc13_*.py` asserts the FST-02 behaviour for that step; every other step of UC13 is unchanged. Nothing else in the earlier acceptance files changes.
+`docs/acceptance.md` UC13 step 5 and `docs/use-cases.md` ONB-03 are superseded by FST-02 (Round 12): with no projects, the start screen's cross leaves Rung for the view the person came from and creates nothing; the start screen shows again on the next open until a project exists. `tests/e2e/test_uc13_*.py` asserts the FST-02 behaviour for that step; every other step of UC13 is unchanged. Nothing else in the earlier acceptance files changes. PRJ-04 (Rung reopens the last opened project) and the Needs you count rule of `docs/acceptance.md` (chip, tile and list agree for the current project) stand: `Needs you` across projects replaces the Projects page and is where Rung opens only when no project is current (Round 16).
 
 ## How acceptance runs
 
@@ -40,7 +40,7 @@ Pane steps use visible controls (click, keyboard) unless a step says it opens a 
 
 ## UC32 Needs you front page
 1. Setup: three projects through the engine: one with two items that need you and a running develop run, one with one item, one with nothing waiting and one stale rung; one archived project.
-2. Open Rung: it shows `Needs you` with the total 3, the two projects with items grouped and counted with their unit, the running work as a link that opens the run, the third under `Nothing waiting` with its counts and units, and `Projects` with each covered count (`N of M covered`), the last opened project marked, and `Archived 1`. The total equals the status bar chip and the dock. Each item's `Open` has the accessible name `Open <id>`; each `Open project` names its project. Rows under `Nothing waiting` meet 4.5:1 contrast.
+2. Open Rung on the first project's Home and click the project name: it shows `Needs you` with the total 3, the two projects with items grouped and counted with their unit, the running work as a link that opens the run, the third under `Nothing waiting` with its counts and units, and `Projects` with each covered count (`N of M covered`), the last opened project marked, and `Archived 1`. The total equals the sum of the groups, and each group's count equals that project's Home tile; the chip still counts the current project. Each item's `Open` has the accessible name `Open <id>`; each `Open project` names its project. Rows under `Nothing waiting` meet 4.5:1 contrast.
 3. `Open` on an item opens it in its project; Back returns to `Needs you`. `Open project` opens its home; Back returns to `Needs you`. From any project view, one action reaches `Needs you`.
 4. Approve the item in the second project from its page: on return, `Needs you` shows total 2 and the second project under `Nothing waiting`, without a reload.
 5. The screenshot shows `Needs you` with the three projects.
