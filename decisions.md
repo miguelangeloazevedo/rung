@@ -271,3 +271,17 @@ Three independent reviewers (22 findings, 2 rated major) on the Round 18 code an
 | Still prefilled | Rung keeps filling it in when it recognises the folder (pytest, npm test, cargo test, go test, make test, unittest). |
 | Explained on request | A `?` button beside the label (`About the test command`) opens a dialog: what it is, five examples, that Rung puts it in the command tests it drafts and each test keeps its own command, and `Not sure? Leave it empty.` The form itself stays labels and data. |
 
+## Round 21: real drafting and develop profiles in the happy flow (8 Nov 2026)
+
+Recording the happy-flow video with real Hermes profiles (not the stubs) exposed two defects.
+
+| Topic | Decision |
+|---|---|
+| Child working folder | Hermes's file and terminal tools anchor to `TERMINAL_CWD` before the process cwd, and the gateway's value (often the home folder) was inherited by every drafting and develop child: one file search took 105 s and specifications failed at the 180 s limit. `scrubbed_env(folder)` now sets `TERMINAL_CWD` to the project folder for both. |
+| Test drafting | Approve drafted drafted every test inside the request; a profile takes seconds per specification, so the Desktop gave up after 30 s and showed an error while the work went on. Tests are now drafted in the background: the Tests step shows Drafting per specification, Approve tests waits (409 while drafting), a failure shows with Retry, and `/rev` tells the pane when the state changes. `POST .../propose-tests` stays synchronous for API callers unless the body asks for `background`. |
+| Drafting prompts | Drafts are read on screen and approved by a person: short sentences, grounded in the project's files, one rung each, and each draft sees its siblings (other requirements, other specifications) so names and formats agree without overlap. |
+| Approve, then next step | Each approval posts, then moves to the next step before the flow is fetched again, so the step rendered from the old flow and flashed "The Tests step is locked" (seen in the recording). While a fetch is in flight, a step that reads as locked shows Loading; it reads as locked only once the fresh flow says so. One rule in the build router covers every approve-and-advance move. |
+| Test row layout | A long drafted command squeezed the row's controls into one-letter columns. The command wraps, the type tag and Accepted keep their width, and a control's label breaks only between words. |
+| Drafted pass rules | A drafted test whose pass rule has the wrong shape is kept without it (exit code 0) instead of failing approval; drafted commands are what a person would type, short, and keep their data out of the project folder. |
+| What the worker is told | The develop prompt listed each command test but not its pass rule, and failure feedback said only "fail (exit 0)": a test that checks the output could not be met except by guessing (a real builder guessed twice, then asked for input, correctly). The prompt now names each test's pass condition, and the feedback says why a test failed. The deterministic judgement is unchanged. |
+

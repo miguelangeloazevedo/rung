@@ -39,6 +39,7 @@ def build_prompt(engine: Engine, project: str, spec: str, n: int, max_attempts: 
     lines.append("The work is done only when these commands pass (Rung runs them itself after you finish):")
     for t in tests:
         lines.append(f"  {t['id']}: {t['command']}")
+        lines.append(f"    passes when {pass_condition(t.get('pass_rule'))}")
     lines.append(f"This is attempt {n} of {max_attempts}. Change the code in the current folder. Do not edit the tests.")
     lines.append("If you cannot continue without an answer from a person, print one line: RUNG NEEDS INPUT: <question>")
     lines.append("If the work needs a capability outside this specification, do not build it here; print one line: "
@@ -49,13 +50,26 @@ def build_prompt(engine: Engine, project: str, spec: str, n: int, max_attempts: 
     return "\n".join(lines)
 
 
-def failure_summary(results: list[dict]) -> str:
+def pass_condition(rule) -> str:
+    """What a command test checks, in words: the worker is told the test's pass rule, not only its command, so a
+    test that checks the output can be met (a worker told only "failed, exit 0" has to guess the expected text)."""
+    rule = rule if isinstance(rule, dict) else {}
+    if rule.get("kind") == "output_contains":
+        return f"it exits 0 and its output contains: {rule.get('value', '')}"
+    return f"it exits {int(rule.get('value', 0) or 0)}"
+
+
+def failure_summary(results: list[dict], rules: dict | None = None) -> str:
+    """The failed tests with why each failed and the tail of its output; `rules` maps test id to pass rule."""
     parts = []
     for r in results:
         if r["status"] != "pass":
             out = (r.get("output") or "").strip().splitlines()
             tail = "\n".join(out[-30:])
-            parts.append(f"{r['test']} #{r['n']} {r['status']} (exit {r['exit_code']}): {r['command']}\n{tail}")
+            why = ""
+            if rules and r["test"] in rules:
+                why = f"\nIt passes when {pass_condition(rules[r['test']])}."
+            parts.append(f"{r['test']} #{r['n']} {r['status']} (exit {r['exit_code']}): {r['command']}{why}\n{tail}")
     return "\n\n".join(parts)[-FED_LIMIT:]
 
 
@@ -157,7 +171,7 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
             engine.end_attempt(run_id, n, "error", files, commands, wout, reason=reason)
             final = "error"
             break
-        fed = failure_summary(results)
+        fed = failure_summary(results, {t["id"]: t.get("pass_rule") for t in tests})
         if not files:
             engine.end_attempt(run_id, n, "no_change", files, commands, wout, fed_forward=fed, reason="no file changed")
             continue

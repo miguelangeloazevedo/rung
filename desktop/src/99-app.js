@@ -88,7 +88,8 @@ export default {
       '\n.rung{color:var(--r-fg);font-family:var(--dt-font-sans, system-ui, sans-serif)}.rung *,.rung *::before,.rung *::after{box-sizing:border-box;border-color:var(--r-line)}' +
       '\n.rung button{font:inherit;background:none;border-style:solid;border-width:0;cursor:pointer;color:inherit}.rung input,.rung textarea,.rung select{font:inherit;color:inherit}' +
       '\n.rung h1,.rung h2,.rung h3,.rung p{margin:0}.rung table{border-spacing:0}.rung [data-locked="1"]{cursor:not-allowed}' +
-      '\n.rung{overflow-wrap:anywhere}.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
+      // long unbroken text (commands, paths) may break anywhere; a control's label breaks only between words
+      '\n.rung{overflow-wrap:anywhere}.rung button,.rung [role=button]{overflow-wrap:normal}.rung :focus-visible{outline:2px solid var(--r-needs)!important;outline-offset:2px}.rung ul{list-style:none;margin:0;padding:0}' +
       // A long Needs you list keeps every card (the count is the list) but skips layout and paint off screen.
       '\n.rung .r-ny{content-visibility:auto;contain-intrinsic-size:auto 96px}' +
       // the front page: the list first, the projects beside it, below it when the pane is narrow (NAV-14)

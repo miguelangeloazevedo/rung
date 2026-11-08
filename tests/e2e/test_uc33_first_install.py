@@ -153,6 +153,10 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
         pass
     for i in range(sugg.count()):
         w.click("Dismiss", sugg.nth(i))
+    # An approval moves to the next step before the flow is fetched again: that step loads, it never reads as locked.
+    page.evaluate("""() => { window.__lockedSeen = 0; window.__lockedObs && window.__lockedObs.disconnect();
+      window.__lockedObs = new MutationObserver(() => { if (document.querySelector('.rung [data-testid=locked-step]')) window.__lockedSeen++ });
+      window.__lockedObs.observe(document.body, { childList: true, subtree: true }) }""")
     w.click("Create need")
     H.wait_view(page, "build")
     reqs = page.locator(".rung [data-testid=requirements]")
@@ -182,7 +186,9 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     tstep.wait_for(timeout=20000)
     spec_row = page.locator(".rung [data-spec=\"S-1.1\"]")
     spec_row.wait_for(timeout=20000)
-    page.wait_for_timeout(1500)  # the drafting stub may propose a test
+    # Tests are drafted in the background: wait until the drafting stub is done.
+    H.wait_until(lambda: spec_row.locator("[data-test], [data-testid=empty-state]").count()
+                 and not page.locator(".rung [data-testid=tests-drafting]").count(), timeout=20, msg="tests drafted")
     proposed = spec_row.locator("[data-test]")
     if proposed.count():
         tid = proposed.first.get_attribute("data-test")
@@ -203,6 +209,8 @@ def test_fst01_fst02_fst03_fst04_fst05_nav12_first_install(rung, page):
     H.wait_until(lambda: H.button(page, "Approve tests").is_enabled(), msg="Approve tests enabled")
     w.click("Approve tests")
     page.locator(".rung [data-testid=develop-table]").wait_for(timeout=20000)
+    assert page.evaluate("() => { window.__lockedObs.disconnect(); return window.__lockedSeen }") == 0, \
+        "a step read as locked on the way through the approvals"
     page.locator(".rung [data-testid=rail]").get_by_text(tid, exact=False).first.click()
     H.wait_view(page, "rung")
     w.empty(page.locator(".rung [data-testid=executions] [data-testid=empty-state]"), "No executions yet", "Run tests")

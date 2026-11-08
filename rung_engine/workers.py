@@ -115,7 +115,7 @@ class HermesWorker:
         argv = [self.hermes_bin, "-p", ctx.profile, "chat", "-Q", "-q", ctx.prompt, "--max-turns", str(self.max_turns)]
         shown = f"hermes -p {ctx.profile} chat -Q -q <prompt> --max-turns {self.max_turns}"
         proc = subprocess.Popen(argv, cwd=str(ctx.folder), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL, env=scrubbed_env(), start_new_session=True, text=True,
+                                stdin=subprocess.DEVNULL, env=scrubbed_env(ctx.folder), start_new_session=True, text=True,
                                 errors="replace", bufsize=1)
         out_lines: list[str] = []
         lock = threading.Lock()

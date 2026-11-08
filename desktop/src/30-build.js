@@ -155,6 +155,8 @@ function Build({ project, need, step }) {
   if (flowQ.error) return h(Missing, { project, text: errText(flowQ.error) })
   if (!flow) return h(Page, { project, sel: need }, h(Loading))
   if (!flow.steps[key].available) {
+    // An approval moves on before the flow is fetched again: until it is, the next step is not locked, it is loading.
+    if (flowQ.isFetching) return h(Page, { project, sel: need }, h(Loading))
     // A locked step can not be reached by URL either: show the step that is open.
     const open = ['need', 'requirements', 'specifications', 'tests', 'develop'].filter(k => flow.steps[k].available).pop()
     return h(Page, { project, sel: need }, h('div', 'flex flex-col gap-6',
@@ -308,17 +310,17 @@ const TYPE_WORD = { command: 'Command test', manual: 'Manual test', ai_judged: '
 
 function TestRow({ project, t, need, ret, onErr }) {
   const accepted = t.status === 'approved' || t.status === 'stale'
-  return h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex items-center justify-between', 'data-test': t.id, 'data-status': t.status },
-    h('div', 'flex flex-col gap-1',
-      h('div', 'flex items-center gap-2',
-        h('span', 'whitespace-nowrap text-xs font-medium mono text-fg', t.id),
-        h('span', { className: cx('text-xs text-fg', t.type !== 'manual' && 'font-mono'), 'data-testid': 'test-command' }, t.type === 'manual' ? t.text : (t.command || t.text)),
-        h('span', 'px-1.5 py-0.5 rounded text-[10px] font-medium bg-btn text-muted border border-line', TYPE_WORD[t.type] || 'Command test')),
+  return h('div', { className: 'bg-well border border-line2 rounded-[6px] p-3 flex items-center justify-between gap-3', 'data-test': t.id, 'data-status': t.status },
+    h('div', { className: 'flex flex-col gap-1 min-w-0', style: { flex: '1 1 auto' } },
+      h('div', 'flex items-start gap-2 min-w-0',
+        h('span', 'whitespace-nowrap text-xs font-medium mono text-fg shrink-0', t.id),
+        h('span', { className: cx('text-xs text-fg min-w-0 break-words', t.type !== 'manual' && 'font-mono'), style: { overflowWrap: 'anywhere' }, 'data-testid': 'test-command' }, t.type === 'manual' ? t.text : (t.command || t.text)),
+        h('span', 'whitespace-nowrap shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-btn text-muted border border-line', TYPE_WORD[t.type] || 'Command test')),
       t.type !== 'manual' ? h('div', { className: 'text-[11px] mono text-muted', 'data-testid': 'pass-rule' }, passRule(t)) : null,
       t.type === 'ai_judged' ? h('div', { className: 'text-[11px] text-dim', 'data-testid': 'no-gate' }, 'Cannot release a gate') : null),
-    h('div', 'flex items-center gap-2',
+    h('div', 'flex items-center gap-2 shrink-0',
       accepted
-        ? h('span', { className: 'px-2.5 py-1 text-xs font-medium text-pass', 'data-testid': 'accepted' }, 'Accepted')
+        ? h('span', { className: 'whitespace-nowrap px-2.5 py-1 text-xs font-medium text-pass', 'data-testid': 'accepted' }, 'Accepted')
         : h(Btn, { kind: 'acceptSolid', testid: 'accept', onClick: async () => { const r = await post(`${P(project)}/rungs/${t.id}/approve`); onErr(r.ok ? '' : r.error) } }, 'Accept'),
       h(Btn, { kind: 'small', testid: 'edit', onClick: () => navigate('test-edit', { test: t.id, ret, need }) }, 'Edit')))
 }
@@ -333,8 +335,11 @@ function StepTests({ project, need, flow }) {
   if (q.error) return h(Missing, { project, text: errText(q.error) })
   if (!n) return h(Page, { project, sel: need }, h(Loading))
   const st = flow.steps.tests
+  const pr = flow.proposing  // the need's tests drafted in the background
+  const drafting = !!(pr && pr.state === 'drafting')
   const specs = []
   for (const r of n.children || []) for (const s of r.children || []) if (s.status === 'approved' || s.status === 'stale') specs.push(s)
+  const retry = async () => { const x = await post(`${P(project)}/needs/${need}/propose-tests`, { background: true }); setErr(x.ok ? '' : x.error) }
   const approve = async () => {
     const res = await post(`${P(project)}/needs/${need}/approve-tests`)
     if (!res.ok) return setErr(res.error)
@@ -349,8 +354,16 @@ function StepTests({ project, need, flow }) {
             h('span', 'whitespace-nowrap text-xs font-semibold mono text-needs', s.id),
             h('span', 'text-xs font-medium text-fg', s.text)),
           liveTests(s).length ? h(Btn, { kind: 'small', testid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }, 'Add test') : null),
-        liveTests(s).length ? null : h(Empty, { text: 'No tests', action: 'Add test', actionTestid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }),
+        liveTests(s).length ? null
+          : drafting ? h('div', { className: 'flex items-center gap-2 text-xs', 'data-testid': 'tests-drafting' }, h(Badge, { status: 'drafting', small: true }))
+            : h(Empty, { text: 'No tests', action: 'Add test', actionTestid: 'add-test', onClick: () => navigate('test-edit', { spec: s.id, ret: 'tests', need }) }),
         ...liveTests(s).map(t => h(TestRow, { key: t.id, project, t, need, ret: 'tests', onErr: setErr }))))),
+    pr && pr.state === 'failed'
+      ? h('div', { className: 'flex items-center gap-2 text-xs', 'data-testid': 'tests-draft-failed' },
+        h(Badge, { status: 'draft_failed', small: true }),
+        h('span', { className: 'text-[11px] text-muted truncate min-w-0', style: { flex: '0 1 auto' }, title: pr.error }, pr.error),
+        h(Btn, { kind: 'small', testid: 'retry-tests', onClick: retry }, 'Retry'))
+      : null,
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3 pt-2',
       h(ExitBtn, { testid: 'step-back', onClick: () => returnTo('build', { need, step: 'specs' }) }, 'Back to Specifications'),

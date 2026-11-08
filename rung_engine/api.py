@@ -106,7 +106,7 @@ def _need(body, key):
 
 @route("GET", "/rev")
 def _rev(svc, human, body):
-    return {"rev": svc.engine.rev()}
+    return {"rev": svc.engine.rev() + getattr(svc, "changes", 0)}
 
 
 @route("GET", "/state")
@@ -422,25 +422,37 @@ def _approve_reqs(svc, human, body, project, rid):
 
 @route("GET", "/projects/{project}/needs/{rid}/flow")
 def _flow(svc, human, body, project, rid):
-    return svc.engine.flow(project, rid)
+    return _with_proposing(svc, project, rid, svc.engine.flow(project, rid))
+
+
+def _with_proposing(svc, project, rid, flow):
+    """The flow plus the need's background test drafting; Approve tests waits while tests are drafted."""
+    got = svc.proposing(project, rid)
+    flow["proposing"] = got
+    if got and got["state"] == "drafting":
+        flow["steps"]["tests"].update(can_approve=False, blocked_by="tests are being drafted")
+    return flow
 
 
 @route("POST", "/projects/{project}/needs/{rid}/approve-drafted")
 def _approve_drafted(svc, human, body, project, rid):
     approved = svc.engine.approve_drafted(project, rid, human)
-    proposed = svc.propose_tests(project, rid)
-    return {"approved": approved, "proposed_tests": [t["id"] for t in proposed]}
+    return {"approved": approved, "proposing": svc.propose_tests_bg(project, rid)}
 
 
 @route("POST", "/projects/{project}/needs/{rid}/propose-tests")
 def _propose_tests(svc, human, body, project, rid):
+    if isinstance(body, dict) and body.get("background"):
+        return {"proposing": svc.propose_tests_bg(project, rid)}
     return {"proposed_tests": [t["id"] for t in svc.propose_tests(project, rid)]}
 
 
 @route("POST", "/projects/{project}/needs/{rid}/approve-tests")
 def _approve_tests(svc, human, body, project, rid):
+    if (svc.proposing(project, rid) or {}).get("state") == "drafting":
+        raise RungError("tests are being drafted", code="busy", status=409)
     svc.engine.approve_tests(project, rid, human)
-    return svc.engine.flow(project, rid)
+    return _with_proposing(svc, project, rid, svc.engine.flow(project, rid))
 
 
 @route("POST", "/projects/{project}/rungs/{rid}/authoring")

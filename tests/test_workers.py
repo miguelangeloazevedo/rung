@@ -71,3 +71,20 @@ def test_child_hermes_never_inherits_yolo(tmp_path, monkeypatch):
                          deadline=time.time() + 30)
     r = HermesWorker(str(fake)).attempt(ctx)
     assert "yolo=unset" in r.output
+
+
+def test_child_hermes_works_in_the_project_folder(tmp_path, monkeypatch):
+    """Hermes's file and terminal tools anchor to TERMINAL_CWD before the process cwd: a develop or drafting
+    child gets the project folder there, never the value of the process that started it."""
+    from rung_engine.drafting import ProfileDrafter
+    monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
+    fake = tmp_path / "hermes"
+    fake.write_text('#!/bin/sh\necho "{\\"text\\": \\"cwd=$TERMINAL_CWD\\"}"\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    folder = tmp_path / "proj"
+    folder.mkdir()
+    ctx = AttemptContext(folder=folder, spec="S-4.1", n=1, prompt="go", profile="coder",
+                         deadline=time.time() + 30)
+    assert f"cwd={folder.resolve()}" in HermesWorker(str(fake)).attempt(ctx).output
+    got = ProfileDrafter("writer", hermes_bin=str(fake), timeout=30)._ask("x", {"folder": str(folder)})
+    assert got == {"text": f"cwd={folder.resolve()}"}

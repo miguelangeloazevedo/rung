@@ -37,6 +37,10 @@ class Service:
         self.log_dir = Path(log_dir) if log_dir else Path(engine.path).parent / "logs"
         self.inline_runs = inline_runs
         self._threads: list[threading.Thread] = []
+        # Test drafting per need, in the background: {(project, need): {"state": "drafting"|"failed", "error"}}.
+        self._proposing: dict[tuple[str, str], dict] = {}
+        self._plock = threading.Lock()
+        self.changes = 0  # bumped when background state the engine does not store changes (added to /rev)
 
     # ------------------------------------------------------------ helpers
 
@@ -189,7 +193,9 @@ class Service:
             need = self.engine.rung(project, req["parent"])
             d = self.drafter(project)
             pause(d)
-            got = d.derive_spec(need["text"], req["text"], self.engine.project(project))
+            node = next((n for n in self.engine.tree(project) if n["id"] == need["id"]), {"children": []})
+            others = tuple(r["text"] for r in node["children"] if r["id"] != req["id"])
+            got = d.derive_spec(need["text"], req["text"], self.engine.project(project), others)
             self.engine.finish_draft(project, spec_rid, got["text"], got.get("detail", ""), got.get("tags", []),
                                      got.get("required_tags", []),
                                      drafted_by=getattr(d, "profile", "drafting"))
@@ -223,10 +229,46 @@ class Service:
                 for spec in req["children"]:
                     if spec["children"] or spec["status"] != "approved":
                         continue
-                    for fields in d.propose_tests(spec["text"], req["text"], proj):
+                    others = tuple(s["text"] for r in need["children"] for s in r["children"] if s["id"] != spec["id"])
+                    for fields in d.propose_tests(spec["text"], req["text"], proj, others):
                         made.append(self.engine.add_test(project, spec["id"], fields,
                                                          Actor("agent", getattr(d, "profile", "drafting"))))
         return made
+
+    def proposing(self, project: str, need_rid: str) -> dict | None:
+        """Background test drafting for the need: {"state": "drafting"} while it runs, {"state": "failed",
+        "error"} when it failed, None when idle."""
+        with self._plock:
+            got = self._proposing.get((project, need_rid))
+            return dict(got) if got else None
+
+    def propose_tests_bg(self, project: str, need_rid: str, wait: bool = False) -> dict:
+        """Draft the need's tests without holding the request: a drafting profile takes seconds per
+        specification, longer than the Desktop waits for an answer."""
+        key = (project, need_rid)
+        with self._plock:
+            if (self._proposing.get(key) or {}).get("state") == "drafting":
+                return dict(self._proposing[key])
+            self._proposing[key] = {"state": "drafting", "error": ""}
+            self.changes += 1
+
+        def work():
+            try:
+                self.propose_tests(project, need_rid)
+                done = None
+            except Exception as exc:  # shown on the Tests step, with Retry
+                done = {"state": "failed", "error": str(exc)}
+            with self._plock:
+                if done:
+                    self._proposing[key] = done
+                else:
+                    self._proposing.pop(key, None)
+                self.changes += 1
+
+        t = self._bg(work)
+        if wait:
+            t.join()
+        return {"state": "drafting", "error": ""}
 
     def run_test(self, project: str, test_rid: str, carried_by: str = "engine", wait: bool = False,
                  once_by=None) -> int:

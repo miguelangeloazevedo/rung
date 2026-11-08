@@ -119,3 +119,45 @@ def test_agent_cannot_approve_or_create(seeded):
         seeded.create_need("csvtidy", "x", agent)
     with pytest.raises(RungError):
         seeded.edit("csvtidy", "R-3", text="x", actor=agent)
+
+
+
+def test_approve_drafted_drafts_tests_in_the_background(engine, csv_folder, svc, monkeypatch):
+    """Approve drafted answers at once; the tests are drafted in the background (a drafting profile takes
+    seconds per specification, longer than the Desktop waits). A failure shows on the flow; Retry drafts
+    again in the background, and Approve tests waits while it runs."""
+    import threading
+    from rung_engine import api
+    from rung_engine.drafting import StubDrafter
+    from support import seed
+    e = engine
+    seed.seed_merge(e, csv_folder, upto="requirements")
+    svc.set_authoring("csvtidy", "R-4", "ai", wait=True)
+    svc.set_authoring("csvtidy", "R-5", "ai", wait=True)
+    e.write_spec("csvtidy", "R-6", "Preserve column order from the first file")
+    real = StubDrafter.propose_tests
+
+    def boom(self, *a, **k):
+        raise RuntimeError("writer did not answer within 180 s")
+    monkeypatch.setattr(StubDrafter, "propose_tests", boom)
+    flow = lambda: api.handle(svc, "GET", "/projects/csvtidy/needs/N-2/flow", None)[1]  # noqa: E731
+    st, got = api.handle(svc, "POST", "/projects/csvtidy/needs/N-2/approve-drafted", {})
+    assert st == 200 and got["proposing"]["state"] == "drafting"
+    svc.wait_idle()
+    assert flow()["proposing"] == {"state": "failed", "error": "writer did not answer within 180 s"}
+
+    gate = threading.Event()
+    monkeypatch.setattr(StubDrafter, "propose_tests", lambda self, *a, **k: (gate.wait(10), real(self, *a, **k))[1])
+    rev0 = api.handle(svc, "GET", "/rev", None)[1]["rev"]
+    st, got = api.handle(svc, "POST", "/projects/csvtidy/needs/N-2/propose-tests", {"background": True})
+    assert st == 200 and got["proposing"]["state"] == "drafting"
+    f = flow()
+    assert f["proposing"]["state"] == "drafting" and not f["steps"]["tests"]["can_approve"]
+    assert f["steps"]["tests"]["blocked_by"] == "tests are being drafted"
+    assert api.handle(svc, "GET", "/rev", None)[1]["rev"] != rev0, "the pane hears about it"
+    assert api.handle(svc, "POST", "/projects/csvtidy/needs/N-2/approve-tests", {})[0] == 409
+    gate.set()
+    svc.wait_idle()
+    assert flow()["proposing"] is None
+    specs = [s for r in next(n for n in e.tree("csvtidy") if n["id"] == "N-2")["children"] for s in r["children"]]
+    assert specs and all(s["children"] for s in specs)

@@ -102,3 +102,22 @@ def test_res02_runner_stopped_from_outside_is_unknown_not_cancelled(seeded, tmp_
     r = e.run(run["id"])
     assert r["status"] == "unknown" and r["reason"] == "the runner was stopped before the run ended"
     assert {a["status"] for a in r["attempts"]} == {"unknown"}
+
+
+def test_worker_is_told_what_each_test_checks(seeded, svc):
+    """A command test that checks the output can only be met if the worker knows the expected text: the prompt
+    names each test's pass condition, and the feedback after a failed attempt says why the test failed."""
+    from rung_engine.runner import build_prompt, failure_summary
+    e = ready_to_develop(svc)
+    t = e.command_tests("csvtidy", "S-4.1")[0]
+    e.edit_test("csvtidy", t["id"], {"pass_rule": {"kind": "output_contains", "value": "3 rows merged"}})
+    e.approve("csvtidy", t["id"])
+    tid = t["id"]
+    prompt = build_prompt(e, "csvtidy", "S-4.1", 1, 3, "")
+    assert f"{tid}: " in prompt and "passes when it exits 0 and its output contains: 3 rows merged" in prompt
+    fed = failure_summary([{"test": tid, "n": 1, "status": "fail", "exit_code": 0, "command": "x",
+                            "output": "2 rows merged"}],
+                          {tid: {"kind": "output_contains", "value": "3 rows merged"}})
+    assert "It passes when it exits 0 and its output contains: 3 rows merged." in fed and "2 rows merged" in fed
+    assert "passes when it exits 0" in failure_summary(
+        [{"test": tid, "n": 1, "status": "fail", "exit_code": 1, "command": "x", "output": ""}], {tid: None})

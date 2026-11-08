@@ -21,13 +21,15 @@ class Drafter:
     def suggest_requirements(self, need_text: str, project: dict) -> list[str]:
         raise NotImplementedError
 
-    def derive_spec(self, need_text: str, req_text: str, project: dict) -> dict:
+    def derive_spec(self, need_text: str, req_text: str, project: dict, others: tuple = ()) -> dict:
+        """`others`: the need's other requirements, which get specifications of their own."""
         raise NotImplementedError
 
     def support_spec(self, need_text: str, req_text: str, draft: str, project: dict) -> str:
         raise NotImplementedError
 
-    def propose_tests(self, spec_text: str, req_text: str, project: dict) -> list[dict]:
+    def propose_tests(self, spec_text: str, req_text: str, project: dict, others: tuple = ()) -> list[dict]:
+        """`others`: the need's other specifications, which get tests of their own."""
         raise NotImplementedError
 
     def suggest_edits(self, req_text: str, project: dict) -> list[str]:
@@ -76,7 +78,7 @@ class StubDrafter(Drafter):
     def suggest_requirements(self, need_text, project):
         return list(self._get("requirements", need_text.strip(), []))
 
-    def derive_spec(self, need_text, req_text, project):
+    def derive_spec(self, need_text, req_text, project, others=()):
         if self.fail:  # the stub's failure mode, selected through the drafting setting
             raise DraftFailed(self.fail)
         got = self._get("specifications", req_text.strip(), None)
@@ -90,7 +92,7 @@ class StubDrafter(Drafter):
     def support_spec(self, need_text, req_text, draft, project):
         return self._get("support", req_text.strip(), "State the exact command-line flag and the exit code on error.")
 
-    def propose_tests(self, spec_text, req_text, project):
+    def propose_tests(self, spec_text, req_text, project, others=()):
         got = self._get("tests", spec_text.strip(), None)
         if got is None:
             got = [{"type": "command", "command": project.get("test_command") or "pytest"}]
@@ -155,6 +157,31 @@ class StubDrafter(Drafter):
         return [t for t in pool if t.lower() not in have][:3]
 
 
+# Drafts are read on screen and approved by a person: short, grounded in the project, one rung each.
+HERE = "The project's files are in the current folder."
+
+
+def _test_fields(t: dict) -> dict:
+    """A drafted test as the engine takes it: a pass rule of the wrong shape is left out (exit code 0)."""
+    t = dict(t)
+    rule = t.get("pass_rule")
+    ok = isinstance(rule, dict) and (
+        rule.get("kind") == "exit_code" and isinstance(rule.get("value", 0), int)
+        or rule.get("kind") == "output_contains" and isinstance(rule.get("value"), str) and rule["value"].strip())
+    if not ok:
+        t.pop("pass_rule", None)
+    return t
+
+
+def _others(kind: str, texts) -> str:
+    """The siblings a draft must agree with (same names, formats and markers) without covering them."""
+    texts = [t for t in texts if t]
+    if not texts:
+        return ""
+    return (f" The need's other {kind}, drafted separately, which this one must agree with (same names, formats and "
+            f"markers) but not cover: {json.dumps(texts)}.")
+
+
 class ProfileDrafter(Drafter):
     """Asks a Hermes profile for JSON. One short non-interactive chat per request."""
 
@@ -170,7 +197,7 @@ class ProfileDrafter(Drafter):
         proc = subprocess.Popen(
             [self.hermes_bin, "-p", self.profile, "chat", "-Q", "-q", prompt, "--max-turns", "3"],
             cwd=str(Path(project["folder"]).expanduser()), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL, text=True, env=scrubbed_env(), start_new_session=True,
+            stdin=subprocess.DEVNULL, text=True, env=scrubbed_env(project["folder"]), start_new_session=True,
         )
         end = time.monotonic() + self.timeout
         while True:
@@ -195,13 +222,15 @@ class ProfileDrafter(Drafter):
         return json.loads(m.group(1))
 
     def suggest_requirements(self, need_text, project):
-        got = self._ask(f"List three short requirements (one sentence each) for this need: {need_text!r}. "
-                        "JSON array of strings.", project)
+        got = self._ask(f"Need: {need_text!r}. {HERE} List three requirements for this need: one short sentence "
+                        "each (under 15 words), each one thing a person can check. JSON array of strings.", project)
         return [str(x) for x in got][:5]
 
-    def derive_spec(self, need_text, req_text, project):
-        got = self._ask(f"Need: {need_text!r}. Requirement: {req_text!r}. Write one implementable specification. "
-                        'JSON object {"text": one line, "detail": approach, "tags": capability tags}.', project)
+    def derive_spec(self, need_text, req_text, project, others=()):
+        got = self._ask(f"Need: {need_text!r}. Requirement: {req_text!r}. {HERE}{_others('requirements', others)} "
+                        "Write one implementable specification for this requirement only. "
+                        'JSON object {"text": one sentence under 25 words, "detail": the approach in at most two '
+                        'sentences, "tags": up to three capability tags}.', project)
         return {"text": str(got.get("text", "")), "detail": str(got.get("detail", "")),
                 "tags": list(got.get("tags", [])), "required_tags": []}
 
@@ -210,11 +239,20 @@ class ProfileDrafter(Drafter):
                         'JSON object {"suggestion": text}.', project)
         return str(got.get("suggestion", ""))
 
-    def propose_tests(self, spec_text, req_text, project):
-        got = self._ask(f"Specification: {spec_text!r}. Propose tests. Test command of the project: "
-                        f"{project.get('test_command')!r}. JSON array of objects with type command|manual, "
-                        "command for command tests, steps for manual tests.", project)
-        return [dict(t) for t in got if isinstance(t, dict)]
+    def propose_tests(self, spec_text, req_text, project, others=()):
+        # A person approves every test: a command reads like what they would type to try it themselves.
+        got = self._ask(f"Specification: {spec_text!r}. Requirement: {req_text!r}. {HERE}"
+                        f"{_others('specifications', others)} Its test command: "
+                        f"{project.get('test_command')!r}. Propose one or two tests that prove this specification. "
+                        "A command test is what a person would type to try it, run from the project folder: the "
+                        "project's own commands joined with &&, under 160 characters, no shell scripting. Start from "
+                        "a clean state each run and keep any data it writes out of the project folder (the project's "
+                        "files say how). Its pass_rule is {\"kind\": \"output_contains\", \"value\": text the output "
+                        "shows only when it works}, or {\"kind\": \"exit_code\", \"value\": 0} for a test runner. Add a "
+                        "manual test only for what a command cannot check, with at most four short steps. JSON array "
+                        "of objects with type command|manual, command and pass_rule for command tests, steps for "
+                        "manual tests.", project)
+        return [_test_fields(t) for t in got if isinstance(t, dict)]
 
     def suggest_edits(self, req_text, project):
         got = self._ask(f"Suggest up to two sharper acceptance criteria for: {req_text!r}. JSON array of strings.", project)
@@ -245,15 +283,21 @@ class ProfileDrafter(Drafter):
         return [str(x.get("text", "")) if isinstance(x, dict) else str(x) for x in got]
 
 
-def scrubbed_env() -> dict:
+def scrubbed_env(folder=None) -> dict:
     """Environment for child Hermes processes: no Rung or calling-session variables leak in, and no
     approval bypass: a child never inherits YOLO mode from the process that started it, so its flagged
-    actions resolve under Hermes's single-query approval rules."""
+    actions resolve under Hermes's single-query approval rules.
+
+    `folder`: the project folder the child works in. Hermes's file and terminal tools anchor to
+    TERMINAL_CWD before the process cwd, so a value inherited from the parent (the gateway's, often the
+    home folder) would send the child's searches and edits there; the child gets the project folder."""
     env = dict(os.environ)
     for k in list(env):
         if k.startswith("RUNG_") or k.startswith("HERMES_SESSION") or k in (
-                "HERMES_GOAL", "PYTEST_CURRENT_TEST", "HERMES_YOLO_MODE"):
+                "HERMES_GOAL", "PYTEST_CURRENT_TEST", "HERMES_YOLO_MODE", "TERMINAL_CWD"):
             env.pop(k, None)
+    if folder:
+        env["TERMINAL_CWD"] = str(Path(folder).expanduser().resolve())
     return env
 
 
