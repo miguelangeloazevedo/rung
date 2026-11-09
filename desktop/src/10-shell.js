@@ -71,7 +71,10 @@ const BADGE = {
   contract: ['Needs review', 'bg-btn text-fg border border-line'],
   read_only: ['Read only', 'bg-btn text-muted border border-line'],
   proven: ['Proven', 'bg-pass/10 text-pass border border-pass/30'],
-  not_proven: ['Not proven', 'bg-btn text-muted border border-line']
+  not_proven: ['Not proven', 'bg-btn text-muted border border-line'],
+  complete: ['Complete', 'bg-pass/10 text-pass border border-pass/30'],
+  not_complete: ['Not complete', 'bg-btn text-fg border border-line'],
+  out_of_scope: ['Out of scope', 'bg-btn text-muted border border-line']
 }
 
 function SeenFailing({ value, small }) {

@@ -81,6 +81,22 @@ def seed_csvtidy(engine: Engine, folder: Path, with_history: bool = True, r2: st
         engine.run_test("csvtidy", "T-1.1a", carried_by="coder")
 
 
+def seed_completeness(engine: Engine, folder: Path) -> None:
+    """csvtidy N-1 with R-1 verified (S-1.1, T-1.1a passing) and R-2 approved with no specification (Round 24)."""
+    seed_profiles(engine)
+    engine.create_project("csvtidy", str(folder), "pytest", [p["name"] for p in PROFILES])
+    engine.set_setting("drafting", {"kind": "stub", "delay": 0.0})
+    engine.set_setting("worker", {"kind": "stub", "delay": 0.2})
+    engine.create_need("csvtidy", N1, HUMAN)
+    engine.add_requirement("csvtidy", "N-1", R1, HUMAN)
+    engine.add_requirement("csvtidy", "N-1", R2, HUMAN)
+    engine.approve_requirements("csvtidy", "N-1", HUMAN)
+    engine.write_spec("csvtidy", "R-1", S11, tags=["python", "cli", "tests"])
+    engine.approve("csvtidy", "S-1.1", HUMAN)
+    engine.add_test("csvtidy", "S-1.1", {"type": "command", "command": "pytest tests/test_sniff.py"}, HUMAN, status="approved")
+    engine.run_test("csvtidy", "T-1.1a", carried_by="coder")
+
+
 def break_dates(folder: Path):
     """Swap day and month in the fixture's date parser; returns the function that puts it back."""
     dates = Path(folder) / "csvtidy" / "dates.py"

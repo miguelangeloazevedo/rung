@@ -602,7 +602,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
             kids = self._children_rows(row["pk"])
             d["children"] = [build(k) for k in kids if k["status"] != "proposed"]
             if row["kind"] == "requirement":
-                d["coverage"] = self._req_coverage(row)
+                d["coverage"] = "out_of_scope" if d.get("out_of_scope") else self._req_coverage(row)
             if row["kind"] == "specification":
                 v = self._verify(row)
                 d["released"] = v["ok"]
@@ -1301,7 +1301,76 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
     # ------------------------------------------------------------------ build flow (the five-step strip)
 
     def _active_reqs(self, need_pk: int):
-        return [r for r in self._children_rows(need_pk) if r["status"] not in ("proposed", "dismissed")]
+        """Requirements the need still asks for: on the ladder and not retired (Round 24)."""
+        return [r for r in self._children_rows(need_pk) if r["status"] not in ("proposed", "dismissed")
+                and not _l(r["data"], {}).get("out_of_scope")]
+
+    # ------------------------------------------------------------------ need completeness (Round 24, B14)
+
+    @writes()
+    def retire_requirement(self, project: str, req_rid: str, reason: str, actor: Actor = HUMAN) -> dict:
+        """Take a requirement out of scope with a reason. It stays visible, never silently dropped."""
+        if not actor.is_human:
+            raise RungError("only a human can retire a requirement", code="forbidden", status=403)
+        r = self._rung_row(project, req_rid)
+        if r["kind"] != "requirement":
+            raise RungError(f"{req_rid} is not a requirement", code="bad_request", status=400)
+        reason = (reason or "").strip()
+        if not reason:
+            raise RungError("say why it is out of scope", code="bad_request", status=400, field="reason")
+        data = _l(r["data"], {})
+        data["out_of_scope"] = {"reason": reason, "by": actor.name, "at": self.clock()}
+        with self._tx() as c:
+            c.execute("UPDATE rungs SET data=?, updated_at=? WHERE pk=?", (_j(data), self.clock(), r["pk"]))
+            self._touch_project(c, r["project_pk"])
+        return self._rung_dict(self._rung_by_pk(r["pk"]))
+
+    @writes()
+    def restore_requirement(self, project: str, req_rid: str, actor: Actor = HUMAN) -> dict:
+        if not actor.is_human:
+            raise RungError("only a human can restore a requirement", code="forbidden", status=403)
+        r = self._rung_row(project, req_rid)
+        data = _l(r["data"], {})
+        data.pop("out_of_scope", None)
+        with self._tx() as c:
+            c.execute("UPDATE rungs SET data=?, updated_at=? WHERE pk=?", (_j(data), self.clock(), r["pk"]))
+            self._touch_project(c, r["project_pk"])
+        return self._rung_dict(self._rung_by_pk(r["pk"]))
+
+    def need_completeness(self, project: str, need_rid: str, fresh: bool = False) -> dict:
+        """Complete only when every requirement the need asks for is approved, has a specification, and every
+        specification under it is verified now (the one evaluator). Everything else is listed by id."""
+        need = self._rung_row(project, need_rid)
+        if need["kind"] != "need":
+            raise RungError(f"{need_rid} is not a need", code="bad_request", status=400)
+        cur = self._root_basis(need["project_pk"], fresh=fresh)
+        open_, out, verified = [], [], []
+        reqs = [r for r in self._children_rows(need["pk"]) if r["status"] not in ("proposed", "dismissed")]
+        for r in reqs:
+            ret = _l(r["data"], {}).get("out_of_scope")
+            if ret:
+                out.append({"rung": r["rid"], "reason": ret.get("reason", "")})
+                continue
+            if r["status"] != "approved":
+                open_.append({"rung": r["rid"], "code": "not_approved", "text": f"{r['rid']} is {r['status']}"})
+                continue
+            specs = [s for s in self._children_rows(r["pk"]) if s["status"] not in ("proposed", "dismissed")]
+            if not specs:
+                open_.append({"rung": r["rid"], "code": "no_specification", "text": f"{r['rid']} has no specification"})
+                continue
+            for s in specs:
+                v = self._verify(s, cur)
+                if v["ok"]:
+                    verified.append(s["rid"])
+                else:
+                    open_.append({"rung": r["rid"], "spec": s["rid"], "code": "not_verified",
+                                  "verification": v["verification"],
+                                  "text": f"{r['rid']}: {s['rid']} not verified ({v['verification']})"})
+        if need["status"] != "approved":
+            open_.insert(0, {"rung": need["rid"], "code": "not_approved", "text": f"{need['rid']} is {need['status']}"})
+        if not open_ and not verified:
+            open_.append({"rung": need["rid"], "code": "no_requirements", "text": f"{need['rid']} has no requirement in scope"})
+        return {"need": need["rid"], "complete": not open_, "open": open_, "out_of_scope": out, "verified": verified}
 
     def flow(self, project: str, need_rid: str) -> dict:
         need = self._rung_row(project, need_rid)
@@ -2011,7 +2080,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         p = self._project_row(project)
         gone = self._retired_pks(p["pk"])
         reqs = [r for r in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='requirement' AND status IN "
-                                   "('draft','approved','stale')", (p["pk"],)) if r["pk"] not in gone]
+                                   "('draft','approved','stale')", (p["pk"],))
+                if r["pk"] not in gone and not _l(r["data"], {}).get("out_of_scope")]
         covered = sum(1 for r in reqs if self._req_coverage(r) == "covered")
         stale = sum(1 for r in self._q("SELECT pk FROM rungs WHERE project_pk=? AND status='stale'", (p["pk"],))
                     if r["pk"] not in gone)
@@ -2091,8 +2161,12 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
             specs = [s["rid"] for s in self._children_rows(r["pk"])]
             draft.append({"id": r["rid"], "text": r["text"], "kind": "requirement", "specs": specs,
                           "parent": self._rid_of(r["parent_pk"])})
-        needs = [{"id": n["rid"], "text": n["text"], "status": n["status"]} for n in self._q(
-            "SELECT * FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NULL ORDER BY num", (p["pk"],))]
+        needs = []
+        for n in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NULL ORDER BY num",
+                         (p["pk"],)):
+            comp = self.need_completeness(project, n["rid"])
+            needs.append({"id": n["rid"], "text": n["text"], "status": n["status"], "complete": comp["complete"],
+                          "open": comp["open"], "out_of_scope": comp["out_of_scope"]})
         return {"project": self.project(project), "tiles": self.tiles(project), "needs_you": self.needs_you(project),
                 "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs,
                 "next": nxt, "out_of_date": self.outdated_tests(project),

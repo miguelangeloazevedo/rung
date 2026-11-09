@@ -346,6 +346,7 @@ def _rung(svc, human, body, project, rid):
     top = path[0]["id"] if path else rid
     r["read_only"] = e.project(project)["archived"] or bool(tree_index.get(top, {}).get("retired"))
     if r["kind"] == "need":
+        r["completeness"] = e.need_completeness(project, rid)
         r["flow"] = e.flow(project, rid)
         r["suggestions"] = e.suggestions(project, rid, "requirement")
     if r["kind"] == "requirement":
@@ -637,6 +638,24 @@ def _run_milestone(svc, human, body, project, mid):
 @route("POST", "/projects/{project}/milestones/{mid}/export")
 def _export_milestone(svc, human, body, project, mid):
     return svc.engine.export_milestone(project, mid)
+
+
+# ------------------------------------------------------------------ need completeness (Round 24, B14)
+
+
+@route("GET", "/projects/{project}/needs/{rid}/completeness")
+def _completeness(svc, human, body, project, rid):
+    return svc.engine.need_completeness(project, rid)
+
+
+@route("POST", "/projects/{project}/requirements/{rid}/retire")
+def _retire_requirement(svc, human, body, project, rid):
+    return svc.engine.retire_requirement(project, rid, body.get("reason", ""), human)
+
+
+@route("POST", "/projects/{project}/requirements/{rid}/restore")
+def _restore_requirement(svc, human, body, project, rid):
+    return svc.engine.restore_requirement(project, rid, human)
 
 
 # ------------------------------------------------------------------ quick task (Round 24, B11)

@@ -557,6 +557,8 @@ function errInfo(e) {
 // The result line of every action (NAV-11), named once here: a view never adds its own line after post().
 // An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/\/requirements\/([^/]+)\/retire$/, m => `${m[1]} out of scope`],
+  [/\/requirements\/([^/]+)\/restore$/, m => `${m[1]} back in scope`],
   [/\/quick\/([^/]+)\/approve$/, (m, b) => 'Approved ' + Object.keys((b && b.versions) || {}).map(k => `${k} v${b.versions[k]}`).join(', ')],
   [/\/quick\/([^/]+)\/build$/, (m, b, d) => `Building ${m[1]} with ${(d && d.profile) || 'the suggested profile'}`],
   [/^\/projects\/[^/]+\/quick$/, (m, b, d) => `Created ${(d && d.need) || 'the task'}`],
@@ -915,7 +917,10 @@ const BADGE = {
   contract: ['Needs review', 'bg-btn text-fg border border-line'],
   read_only: ['Read only', 'bg-btn text-muted border border-line'],
   proven: ['Proven', 'bg-pass/10 text-pass border border-pass/30'],
-  not_proven: ['Not proven', 'bg-btn text-muted border border-line']
+  not_proven: ['Not proven', 'bg-btn text-muted border border-line'],
+  complete: ['Complete', 'bg-pass/10 text-pass border border-pass/30'],
+  not_complete: ['Not complete', 'bg-btn text-fg border border-line'],
+  out_of_scope: ['Out of scope', 'bg-btn text-muted border border-line']
 }
 
 function SeenFailing({ value, small }) {
@@ -1477,6 +1482,15 @@ function Home({ project }) {
         h(Badge, { status: s.verification, small: true }))),
       d.next.length > 6 ? h('div', 'text-[11px] text-muted', `+${d.next.length - 6}`) : null,
       (d.out_of_date || []).length && !ro ? h('div', 'flex', h(Btn, { kind: 'small', testid: 'recheck', onClick: () => post(`${P(project)}/recheck`) }, `Check again (${d.out_of_date.length})`)) : null) : null,
+    h('section', { className: 'flex flex-col gap-2', 'data-testid': 'home-needs' },
+      h(SectionTitle, { dot: d.needs.every(n => n.complete) ? 'pass' : 'muted', right: `${d.needs.filter(n => n.complete).length} of ${d.needs.length}` }, 'Needs'),
+      ...d.needs.slice(0, 6).map(n => h(Card, { key: n.id, className: 'p-3 flex items-center justify-between gap-3', testid: 'home-need', onClick: () => navigate('rung', { rid: n.id }) },
+        h('div', 'flex items-center gap-2.5 min-w-0', h(Dot, { t: n.complete ? 'pass' : 'muted' }),
+          h('span', 'whitespace-nowrap text-xs font-medium text-fg mono', n.id),
+          h('span', { className: 'text-xs text-fg truncate min-w-0', title: n.text }, n.text),
+          n.open.length ? h('span', { className: 'text-[11px] text-muted truncate min-w-0', title: n.open.map(o => o.text).join('; '), 'data-testid': 'need-open' }, n.open.length === 1 ? n.open[0].text : `${n.open[0].text} +${n.open.length - 1}`) : null),
+        h(Badge, { status: n.complete ? 'complete' : 'not_complete', small: true }))),
+      d.needs.length > 6 ? h('div', 'text-[11px] text-muted', `+${d.needs.length - 6}`) : null),
     (d.milestones || []).length || (d.done || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'home-milestones' },
       h(SectionTitle, { dot: (d.milestones || []).some(m => m.state !== 'verified') ? 'needs' : (d.milestones || []).length ? 'pass' : 'dim', right: (d.milestones || []).length ? h(Btn, { kind: 'small', testid: 'all-milestones', onClick: () => navigate('milestones') }, 'All') : null }, 'Milestones'),
       (d.milestones || []).length
@@ -2394,6 +2408,7 @@ function NeedView({ project, r, flow }) {
   const [err, setErr] = useState('')
   const [conflict, setConflict] = useState(null)
   const [retiring, setRetiring] = useState(false)
+  const [scoping, setScoping] = useState(null)
   const [base, setBase] = useState(null)
   const ro = !!r.read_only
   useDirty(editing && text !== r.text)
@@ -2401,7 +2416,7 @@ function NeedView({ project, r, flow }) {
   useExit(() => { if (editing) { setEditing(false); setText(r.text) } else goBack('home') })
   const reqs = (r.children || []).filter(x => x.status !== 'dismissed' && x.status !== 'proposed')
   const reqTone = x => x.status === 'stale' ? 'text-stale' : x.status === 'draft' ? 'text-dim' : x.coverage === 'failing' ? 'text-fail' : x.coverage === 'covered' ? 'text-pass' : 'text-fg'
-  const reqBadge = x => x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
+  const reqBadge = x => x.coverage === 'out_of_scope' ? 'out_of_scope' : x.status === 'stale' ? 'stale' : x.status === 'draft' ? 'draft' : x.coverage === 'covered' ? 'covered' : x.coverage === 'failing' ? 'failing' : x.status === 'proposed' ? 'proposed' : 'open'
   const save = async approve => {
     const res = await post(`${P(project)}/rungs/${r.id}/edit`, { text, approve, version: base == null ? r.version : base })
     if (!res.ok) { setConflict(res.code === 'conflict' ? res : null); return setErr(res.code === 'conflict' ? '' : res.error) }
@@ -2440,6 +2455,7 @@ function NeedView({ project, r, flow }) {
           h('span', { className: cx('whitespace-nowrap text-xs font-medium mono', reqTone(x)) }, x.id),
           h('span', { className: cx('text-xs', x.status === 'draft' ? 'text-muted' : 'text-fg') }, x.text)),
         h(Badge, { status: reqBadge(x), small: true })))),
+    r.completeness ? h(NeedCompleteness, { project, c: r.completeness, ro, onScope: setScoping }) : null,
     h(SuggestPanel, { project, need: r.id, ro: ro || !!r.retired }),
     (r.suggestions || []).length ? h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'suggested' },
       h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Suggested'),
@@ -2449,7 +2465,48 @@ function NeedView({ project, r, flow }) {
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-needs text-on-needs', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: true }); setErr(x.ok ? '' : x.error) } }, 'Accept'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs font-medium bg-btn border border-line text-muted', onClick: async () => { const x = await post(`${P(project)}/suggestions/${s.id}`, { accept: false }); setErr(x.ok ? '' : x.error) } }, 'Dismiss'))))) : null,
     h(ErrorLine, { text: err }))
-  return h(Page, { project, sel: r.id, back: () => goBack('home'), backExit: false }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null)
+  return h(Page, { project, sel: r.id, back: () => goBack('home'), backExit: false }, flow ? h(BuildStrip, { need: r.id, flow, current: 0 }) : null, body, retiring ? h(RetireDialog, { project, need: r.id, onClose: () => setRetiring(false) }) : null,
+    scoping ? h(ScopeDialog, { project, req: scoping, onClose: () => setScoping(null) }) : null)
+}
+
+// Need completeness (decisions Round 24, B14): the same verdict and open list as Home and `rung verify N-1`.
+const OPEN_WORD = { no_specification: 'No specification', not_verified: 'Not verified', not_approved: 'Not approved', no_requirements: 'No requirements' }
+
+function NeedCompleteness({ project, c, ro, onScope }) {
+  const [err, setErr] = useState('')
+  const reqOpen = c.open.filter(o => o.rung !== c.need)
+  return h('div', { className: 'flex flex-col gap-2 pt-3 border-t border-line', 'data-testid': 'need-completeness' },
+    h('div', 'flex items-center justify-between pb-1',
+      h('span', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Completeness'),
+      h(Badge, { status: c.complete ? 'complete' : 'not_complete', testid: 'need-complete' })),
+    ...c.open.map((o, i) => h('div', { key: 'o' + i, className: 'flex items-center justify-between gap-3 bg-well p-2.5 rounded-[6px] border border-line2', 'data-open': o.rung },
+      h('div', 'flex items-center gap-2.5 min-w-0',
+        h('button', { type: 'button', className: 'whitespace-nowrap text-xs font-medium mono text-fg hover:underline', onClick: () => navigate('rung', { rid: o.spec || o.rung }) }, o.spec ? `${o.rung} · ${o.spec}` : o.rung),
+        h('span', { className: 'text-xs text-muted truncate min-w-0', title: o.text, 'data-testid': 'open-reason' }, OPEN_WORD[o.code] || o.code)),
+      ro || o.rung === c.need || !reqOpen.includes(o) ? null : h(Btn, { kind: 'quiet', testid: 'out-of-scope', label: `Out of scope ${o.rung}`, onClick: () => onScope(o.rung) }, 'Out of scope'))),
+    ...c.out_of_scope.map(o => h('div', { key: 'x' + o.rung, className: 'flex items-center justify-between gap-3 p-2.5 rounded-[6px] border border-line2', 'data-out': o.rung },
+      h('div', 'flex items-center gap-2.5 min-w-0',
+        h('span', 'whitespace-nowrap text-xs font-medium mono text-muted line-through', o.rung),
+        h(Badge, { status: 'out_of_scope', small: true }),
+        h('span', { className: 'text-xs text-muted truncate min-w-0', title: o.reason, tabIndex: 0 }, o.reason)),
+      ro ? null : h(Btn, { kind: 'small', testid: 'back-in-scope', onClick: async () => { const x = await post(`${P(project)}/requirements/${o.rung}/restore`); setErr(x.ok ? '' : x.error) } }, 'Back in scope'))),
+    h(ErrorLine, { text: err }))
+}
+
+function ScopeDialog({ project, req, onClose }) {
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState('')
+  const go = async () => {
+    const x = await post(`${P(project)}/requirements/${req}/retire`, { reason })
+    if (!x.ok) return setErr(x.error)
+    onClose()
+  }
+  return h(Dialog, {
+    title: `${req} out of scope`, onClose, dirty: !!reason.trim(), testid: 'scope-dialog',
+    footer: frag(h(Btn, { onClick: onClose }, 'Cancel'), h(Btn, { kind: 'primary', testid: 'scope-confirm', disabled: !reason.trim(), onClick: go }, 'Out of scope'))
+  },
+  h(Field, { label: 'Reason' }, h('textarea', { className: INPUT, rows: 3, name: 'reason', value: reason, 'data-autofocus': '1', onChange: e => setReason(e.target.value) })),
+  h(ErrorLine, { text: err }))
 }
 
 // ------------------------------------------------------------------ requirement editor (also New requirement)

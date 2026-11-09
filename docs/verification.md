@@ -156,3 +156,12 @@ sends every id with the version the card showed and is refused, approving nothin
 ladder` opens the same need. An edit to an approved check resets its approval and its earlier results stop
 counting, under the same rules as the ladder. Built: SYS items are not involved.
 
+## When is a need complete
+
+A need is complete only when it is approved, every requirement it asks for is approved and has at least one
+specification, and every specification under those requirements is verified now (the same evaluator). Anything
+else is listed by id with its reason: `no_specification`, `not_approved` or `not_verified` with the
+specification and its state. A person can take a requirement out of scope with a reason; it stays listed as out of
+scope, never silently dropped, and can be put back. The need view, Home's Needs list and `hermes rung verify N-1`
+(exit 0 only when complete) read the one method, `Engine.need_completeness`.
+

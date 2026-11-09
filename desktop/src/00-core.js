@@ -313,6 +313,8 @@ function errInfo(e) {
 // The result line of every action (NAV-11), named once here: a view never adds its own line after post().
 // An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/\/requirements\/([^/]+)\/retire$/, m => `${m[1]} out of scope`],
+  [/\/requirements\/([^/]+)\/restore$/, m => `${m[1]} back in scope`],
   [/\/quick\/([^/]+)\/approve$/, (m, b) => 'Approved ' + Object.keys((b && b.versions) || {}).map(k => `${k} v${b.versions[k]}`).join(', ')],
   [/\/quick\/([^/]+)\/build$/, (m, b, d) => `Building ${m[1]} with ${(d && d.profile) || 'the suggested profile'}`],
   [/^\/projects\/[^/]+\/quick$/, (m, b, d) => `Created ${(d && d.need) || 'the task'}`],

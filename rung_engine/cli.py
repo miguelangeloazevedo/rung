@@ -24,8 +24,9 @@ def setup(parser: argparse.ArgumentParser) -> None:
     c.add_argument("--all", action="store_true", help="check every approved specification of the project")
     subs.add_parser("status", help="tiles and the Needs you list")
     subs.add_parser("recheck", help="run again every command test whose pass was recorded on code that changed since")
-    v = subs.add_parser("verify", help="the full verification result of a specification: state, blockers, next action")
-    v.add_argument("spec")
+    v = subs.add_parser("verify", help="the full verification result of a specification (state, blockers, next "
+                                       "action), or of a need (complete, and every open requirement)")
+    v.add_argument("spec", help="a specification id (S-2.1) or a need id (N-1)")
     ms = subs.add_parser("milestone", help="integration milestones: list them, or one milestone's verdict (exit 0 "
                                           "only when verified)")
     ms.add_argument("milestone", nargs="?", help="milestone id, for example M-1")
@@ -128,6 +129,13 @@ def main(args) -> int:
             return 0 if res["ok"] else 1
         if cmd == "verify":
             project = _project(svc, args)
+            if e.rung(project, args.spec)["kind"] == "need":
+                res = e.need_completeness(project, args.spec, fresh=True)
+                lines = [f"{res['need']}: {'complete' if res['complete'] else 'not complete'}"]
+                lines += [f"  {o['code']:22} {o['text']}" for o in res["open"]]
+                lines += [f"  {'out_of_scope':22} {o['rung']}: {o['reason']}" for o in res["out_of_scope"]]
+                _say(args, res, "\n".join(lines))
+                return 0 if res["complete"] else 1
             res = e.verification(project, args.spec, fresh=True)
             lines = [f"{res['spec']}: {res['verification']} "
                      f"({res['required_checks']['satisfied']} of {res['required_checks']['total']} required checks)"]

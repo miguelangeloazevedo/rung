@@ -44,6 +44,10 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   another window while the card is open and an archived project, to discover a card that approves text it did
   not show or that stays Verified after its check changed.
 
+- **Need completeness**: explore a need with a draft requirement, a requirement taken out of scope and put back,
+  a specification whose code drifted and a need with no requirements, to discover a need called complete while
+  something it asks for is unverified, or a requirement that disappears instead of being listed.
+
 ## Running work
 
 - **Agent allocation**: explore profiles with equal scores, all disabled and missing tags, to discover a

@@ -46,6 +46,7 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 | Doctor and demo reset | hermes rung doctor, hermes rung demo reset | tests/test_lifecycle_api_cli.py | tested |
 | Install | INSTALL.md | tests/e2e/test_uc22_ready_for_testers.py | tested |
 | Quick task | Quick task on a project home, the task card | tests/test_quick.py, tests/e2e/test_uc37_quick_task.py, tests/e2e/smoke/test_quick_pane.py | tested |
+| Need completeness | A need's Completeness section, Home's Needs list, `rung verify N-1` | tests/test_completeness.py, tests/e2e/test_uc38_need_completeness.py | tested |
 
 ## How to reach each view
 
