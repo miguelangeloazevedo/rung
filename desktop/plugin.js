@@ -5227,9 +5227,10 @@ Object.assign(BADGE, {
   blocked: ['Blocked', 'text-needs border border-needs'],
   running: BADGE.running || ['Running', 'text-needs border border-needs'],
   not_ready: BADGE.not_ready || ['Not ready', 'bg-btn text-dim border border-line'],
-  waiting: ['Waiting for capacity', 'bg-btn text-fg border border-line']
+  waiting: ['Waiting for capacity', 'bg-btn text-fg border border-line'],
+  needs_you: BADGE.needs_you || ['Needs you', 'text-needs border border-needs']
 })
-const PLAN_WORD = { ready: 'Ready', blocked: 'Blocked', running: 'Running', verified: 'Verified', not_ready: 'Not ready', waiting: 'Waiting for capacity' }
+const PLAN_WORD = { ready: 'Ready', blocked: 'Blocked', running: 'Running', verified: 'Verified', not_ready: 'Not ready', waiting: 'Waiting for capacity', needs_you: 'Needs you' }
 
 function Plan({ project }) {
   const q = useApi(`${P(project)}/plan`, { live: true })

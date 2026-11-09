@@ -292,3 +292,19 @@ def test_bud01_bud02_bud03_budgets_and_recovery(pair):
     e.conn.commit()
     b = e.plan("linkpair")["budget"]
     assert b["exhausted"] and "budget of 1 minutes is used" in b["stopped"] and b["minutes_used"] >= 2
+
+
+def test_sys04_plan_leaves_a_manual_check_to_the_person(pair):
+    """Commands pass and only a manual test is left: the plan says Needs you and Start ready work does not start
+    another run for it, so the next specification gets the place (found recording the demo)."""
+    e, folder = pair
+    e.add_test("linkpair", "S-1.1", {"type": "manual", "steps": ["Open the page", "Click the link"]}, HUMAN,
+               status="approved")
+    e.approve_tests("linkpair", "N-1", HUMAN)
+    assert e.run_test("linkpair", "T-1.1a")["status"] == "pass"
+    pl = {i["spec"]: i for i in e.plan("linkpair")["items"]}
+    assert pl["S-1.1"]["state"] == "needs_you" and "needs a person" in pl["S-1.1"]["reason"], pl["S-1.1"]
+    e.save_profiles([{"name": p["name"], "at_once": 1, "enabled": p["name"] == "coder"} for p in e.profiles()])
+    out = e.start_ready("linkpair", launch=lambda proj, rid: _fake_run(e, proj, rid))
+    assert [x["spec"] for x in out["started"]] == ["S-2.1"]
+    assert not e.runs("linkpair", "S-1.1")

@@ -681,10 +681,18 @@ class SystemMixin:
                     ok, why = self.develop_available(project, s["rid"])
                     last = self._q1("SELECT pk, status, reason FROM runs WHERE spec_pk=? ORDER BY pk DESC LIMIT 1",
                                     (s["pk"],))
+                    person = [t["test"] for t in v.get("tests", []) if t.get("required") and t["type"] != "command"
+                              and t.get("state") != "satisfied"]
+                    commands_pass = all(t.get("state") == "satisfied" for t in v.get("tests", [])
+                                        if t.get("required") and t["type"] == "command")
                     if v["ok"]:
                         state, reason = "verified", ""
                     elif running:
                         state, reason = "running", f"run {running['pk']}"
+                    elif person and commands_pass:
+                        # Another run cannot help: the commands pass on this code and only a person's check is left
+                        # (found recording the demo: Start ready work kept restarting it and starved the next one).
+                        state, reason = "needs_you", f"commands pass; {', '.join(person)} needs a person"
                     elif waits:
                         state, reason = "blocked", waits
                     elif ok and s["status"] == "approved":
