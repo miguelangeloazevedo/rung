@@ -99,11 +99,20 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   discover work started that was not Ready or a budget that is overrun.
 - **Contract checks**: explore a contract changed after its check passed, a check whose command prints nothing and
   a producer fixed while the consumer stays broken, to discover a pass that outlives its contract version.
-- **Milestone system**: explore a journey moved out of scope, an obligation whose output has no number, a probe
-  that matches by chance and a change in a file outside every component, to discover a milestone verified on
-  evidence that does not cover it.
-- **System report and budgets**: explore a report with an unrun manual decision, a budget lowered below what is
-  used and a restart mid-run, to discover Accepted shown with something open or interrupted work counted as passed.
+- **Journeys**: explore a journey moved out of scope after it passed and one with its check removed, to discover
+  an out-of-scope journey counted as passed or an in-scope one without proof.
+- **Regression baseline**: explore a baseline milestone that is itself out of date and a baseline command that
+  prints nothing, to discover a regression a milestone does not see.
+- **Quality obligations**: explore an obligation whose output has no number, a value exactly at the threshold and
+  a review left unrecorded, to discover an unmet obligation shown as met.
+- **Environment**: explore a probe that matches by chance, a migration that changes files and a probe that hangs,
+  to discover a check run on a machine that does not match.
+- **Change impact**: explore a change in a file outside every component, a component with no paths and two
+  components sharing a path, to discover evidence kept current after a change that touches it.
+- **System report**: explore a report with an unrun manual decision and an excluded journey, to discover Accepted
+  shown with something open.
+- **Plan budgets and recovery**: explore a budget lowered below what is used and a restart mid-run, to discover
+  work started past the budget or interrupted work counted as passed.
 
 ## Reading the state
 
