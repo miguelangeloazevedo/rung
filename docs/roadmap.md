@@ -14,7 +14,6 @@ items below that cover them are built.
 
 | ID | Open item | Depends on | Done when |
 | --- | --- | --- | --- |
-| B11, U01 | A small task stays small: one card for outcome, checks and profile over the same ladder | current evidence (built) | a first-time user finishes a quick task without the word specification; the full ladder shows the same rungs; an edit to an approved check voids its evidence |
 | B14 | Need-level completeness | required checks (built) | an approved requirement without a verified specification keeps its need incomplete, listed by id |
 | B18, U10 | Dock for decisions and chat binding | enforcement health (built), next actions (built) | the dock says what the focused chat works on; binding is a reviewable action; a blocked completion opens its evidence |
 | U02 | A first page that shows why to care | sample project (built) | the start screen previews the three states; the sample can be broken and repaired with no bot |

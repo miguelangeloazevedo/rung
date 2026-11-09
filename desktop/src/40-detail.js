@@ -576,7 +576,8 @@ function TestView({ project, r }) {
             : frag(
               h(Btn, { kind: 'primary', testid: 'record', disabled: !result, onClick: () => act(`${P(project)}/tests/${r.id}/record`, { result, note }, () => { setResult(''); setNote('') }) }, 'Record'),
               h(Btn, { onClick: leave }, 'Cancel')))))
-    return h(Page, { project, sel: r.id }, body)
+    // Header Back and Escape, unforced: typed evidence asks Discard or Keep editing (navigation contract).
+    return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
   }
   const badge = h('span', 'flex items-center gap-1.5', h(SeenFailing, { value: r.seen_failing }),
     r.status === 'stale' ? h(Badge, { status: 'stale' }) : h(Badge, { status: r.result === 'not_run' ? 'not_run' : (r.result || 'not_run') }))

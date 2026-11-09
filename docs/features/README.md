@@ -45,6 +45,7 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 | Worst-case data | every view | tests/e2e/smoke/test_readiness_smoke.py | tested |
 | Doctor and demo reset | hermes rung doctor, hermes rung demo reset | tests/test_lifecycle_api_cli.py | tested |
 | Install | INSTALL.md | tests/e2e/test_uc22_ready_for_testers.py | tested |
+| Quick task | Quick task on a project home, the task card | tests/test_quick.py, tests/e2e/test_uc37_quick_task.py, tests/e2e/smoke/test_quick_pane.py | tested |
 
 ## How to reach each view
 
@@ -59,3 +60,4 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 - **readout**: `Read-out` on a need.
 - **retired**: the `Retired` link under the rail.
 - **settings**: `Allocation:` in the rail.
+- **quick-new**, **quick**: `Quick task` in a project home's header.

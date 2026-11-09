@@ -26,6 +26,7 @@ from .claims import ClaimsMixin, _canon
 from .lifecycle import LifecycleMixin
 from .bot import BotMixin
 from .milestones import MilestonesMixin
+from .quick import QuickMixin
 
 KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
@@ -235,7 +236,7 @@ def _letter(k: int) -> str:
     return letters[k - 1] if 1 <= k <= 26 else f"z{k}"
 
 
-class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
+class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin):
     # A callable profile name -> list of Hermes toolset names, or None. Set by the host so a profile's
     # tools are pre-filled from its Hermes configuration the first time Rung lists it.
     tool_source: "Callable[[str], list[str] | None] | None" = None

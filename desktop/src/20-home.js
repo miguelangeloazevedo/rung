@@ -142,7 +142,7 @@ function Home({ project }) {
   const errors = items.filter(i => i.type === 'error')
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
-  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: h(PasteBtn, { project, kind: 'head' }), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
+  const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: frag(h(Btn, { kind: 'head', testid: 'quick-task', onClick: () => navigate('quick-new') }, 'Quick task'), h(PasteBtn, { project, kind: 'head' })), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
     h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project, need: ((d.tree || []).find(n => n.status !== 'dismissed') || {}).id }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {

@@ -639,6 +639,32 @@ def _export_milestone(svc, human, body, project, mid):
     return svc.engine.export_milestone(project, mid)
 
 
+# ------------------------------------------------------------------ quick task (Round 24, B11)
+
+
+@route("POST", "/projects/{project}/quick")
+def _quick_task(svc, human, body, project):
+    return svc.engine.quick_task(project, body.get("outcome", ""), body.get("checks"), body.get("agent") or None, human)
+
+
+@route("GET", "/projects/{project}/quick/{rid}")
+def _quick(svc, human, body, project, rid):
+    return svc.engine.quick(project, rid)
+
+
+@route("POST", "/projects/{project}/quick/{rid}/approve")
+def _quick_approve(svc, human, body, project, rid):
+    return svc.engine.quick_approve(project, rid, body.get("versions"), human)
+
+
+@route("POST", "/projects/{project}/quick/{rid}/build")
+def _quick_build(svc, human, body, project, rid):
+    card = svc.engine.quick(project, rid)
+    if not card["approved"]:
+        raise RungError("approve the task first", code="locked")
+    return svc.send(project, card["spec"], human, body.get("agent") or card["profile"])
+
+
 @route("GET", "/projects/{project}/verification/{rid}")
 def _verification(svc, human, body, project, rid):
     return svc.engine.verification(project, rid, fresh=True)

@@ -40,6 +40,10 @@ charter says otherwise. Record findings as described in `TESTING.md`.
 - **Revert a change**: explore reverting the same change twice and reverting an old change after newer
   ones, to discover stale states that are wrong after the revert.
 
+- **Quick task**: explore a task with five checks, a check edited after approval, a requirement changed in
+  another window while the card is open and an archived project, to discover a card that approves text it did
+  not show or that stays Verified after its check changed.
+
 ## Running work
 
 - **Agent allocation**: explore profiles with equal scores, all disabled and missing tags, to discover a

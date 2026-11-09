@@ -146,3 +146,13 @@ Verification says whether the work is done. Enforcement says whether the done ho
 - `GET /api/plugins/rung/projects/<project>/verification/<spec>`: the same as JSON.
 - The pane: the specification's Verification section; a test's Judged by list; `pass · out of date` in the
   history.
+
+## A small task stays small
+
+`Quick task` (REST `POST /projects/<p>/quick`) writes one need, one requirement, one specification and one to five
+tests in one transaction, as drafts below the person's own need. The card is a view of those rungs: `Approve`
+sends every id with the version the card showed and is refused, approving nothing, when any of them changed;
+`Build and verify` starts the ordinary develop run; the verdict is the same evaluator as everywhere. `Show full
+ladder` opens the same need. An edit to an approved check resets its approval and its earlier results stop
+counting, under the same rules as the ladder. Built: SYS items are not involved.
+
