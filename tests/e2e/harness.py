@@ -158,10 +158,27 @@ def open_rung(page, fresh: bool = True):
         # switched to and back from: return to default again so chats stay the default profile's.
         default_profile(page)
     dismiss_toasts(page)
-    nav = page.get_by_role("link", name="Rung", exact=True)
-    if not nav.count():
-        nav = page.get_by_text("Rung", exact=True).first
-    nav.first.wait_for(state="visible", timeout=30000)
+    # The sidebar entry appears once the Desktop has loaded its plugins; under heavy machine load that can take
+    # longer than one wait, so look again for either form, and reload once if it never came.
+    nav = None
+    for attempt in range(2):
+        deadline = time.time() + 30
+        nav = None
+        while time.time() < deadline:
+            for cand in (page.get_by_role("link", name="Rung", exact=True), page.get_by_text("Rung", exact=True)):
+                if cand.count() and cand.first.is_visible():
+                    nav = cand
+                    break
+            if nav is not None:
+                break
+            page.wait_for_timeout(250)
+        if nav is not None:
+            break
+        if attempt == 0:
+            reload(page)
+            default_profile(page)
+    if nav is None:
+        raise AssertionError("the Rung sidebar entry did not appear (plugin not loaded)")
     nav.first.click()
     page.locator(".rung [data-rung-view]").first.wait_for(state="visible", timeout=30000)
     return page.locator(".rung [data-rung-view]").first
