@@ -540,8 +540,14 @@ async function pickFolder(defaultPath) {
 let REFUSE = new Set()
 async function rest(path, opts) {
   if (!CTX) throw new Error('Rung is not loaded')
-  if (REFUSE.has(String(path).split('?')[0])) throw Object.assign(new Error(`403 refused: ${path}`), { status: 403, body: { detail: `refused: ${path}` } })
-  return CTX.rest(path, opts)
+  const refused = () => REFUSE.has(String(path).split('?')[0])
+  const refuse = () => Object.assign(new Error(`403 refused: ${path}`), { status: 403, body: { detail: `refused: ${path}` } })
+  if (refused()) throw refuse()
+  const out = await CTX.rest(path, opts)
+  // A read already on its way when a test starts refusing its path answers as refused too: a view mounted after
+  // the refusal may share that read, and must meet the refusal (tests only; REFUSE is empty otherwise).
+  if (refused()) throw refuse()
+  return out
 }
 
 function errText(e) {
@@ -659,6 +665,8 @@ function useApi(path, opts) {
     queryFn: () => rest(path),
     enabled: !!path && !(opts && opts.enabled === false),
     staleTime: 0,
+    // Explicit, not the host's default: a view opened again reads afresh, so a failed load shows (NAV-17).
+    refetchOnMount: true,
     // A missing id or a refused request (4xx) is an answer, not a hiccup: show it at once instead of retrying.
     retry: (n, e) => n < 2 && !(e && e.status >= 400 && e.status < 500) && !/^(Error:\s*)?4\d\d\b/.test(String((e && e.message) || '')),
     refetchInterval: opts && opts.live ? 1000 : false
