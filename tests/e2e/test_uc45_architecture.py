@@ -59,8 +59,8 @@ def test_arc01_arc02_arc03_architecture_baseline(rung, tmp_path, page):
     H.wait_view(page, "milestone")
     mc = page.locator(".rung [data-testid=milestone-components]")
     H.wait_until(lambda: mc.locator("input[value=page]").count() == 1, msg="milestone components offered")
+    # Two clicks before the first save comes back keep both choices.
     mc.locator("input[value=api]").click()
-    H.wait_until(lambda: e.milestone("linkpair", m["id"])["components"] == ["api"], msg="api named")
     mc.locator("input[value=page]").click()
     H.wait_until(lambda: e.milestone("linkpair", m["id"])["components"] == ["api", "page"], msg="both named")
     e.approve_milestone("linkpair", m["id"])
@@ -79,6 +79,9 @@ def test_arc01_arc02_arc03_architecture_baseline(rung, tmp_path, page):
     H.wait_until(lambda: con.locator("[data-testid=approve-arch]").count() == 1, msg="version 2 drafted")
     assert e.check("linkpair", "S-1.1")["ok"]  # a draft changes nothing
     con.locator("[data-testid=approve-arch]").click()
+    # The affected list is shown for the draft too, so wait for the approval itself before judging.
+    H.wait_until(lambda: (e.arch_item("linkpair", "contract", "short link JSON").get("current") or {}).get("version") == 2,
+                 msg="version 2 approved")
     aff = con.locator("[data-testid=affected]")
     H.wait_until(lambda: {aff.locator("[data-affected]").nth(i).get_attribute("data-affected")
                           for i in range(aff.locator("[data-affected]").count())} == {"S-1.1", "S-2.1", m["id"]},

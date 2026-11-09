@@ -165,13 +165,13 @@ function SpecSystem({ project, r, onErr }) {
   const aq = useApi(`${P(project)}/architecture`)
   const [req, setReq] = useState('')
   const comps = aq.data ? aq.data.components.filter(c => c.current).map(c => c.name) : []
-  const mine = r.components || []
   const d = r.dependencies || { requires: [], required_by: [] }
   const base = `${P(project)}/rungs/${r.id}`
-  const toggle = async c => {
-    const x = await post(`${base}/components`, { components: mine.includes(c) ? mine.filter(y => y !== c) : [...mine, c] })
+  const [mine, toggle] = useSavedSet(r.components, async next => {
+    const x = await post(`${base}/components`, { components: next })
     onErr(x.ok ? '' : x.error)
-  }
+    return x.ok
+  })
   const add = async () => {
     const x = await post(`${base}/dependencies`, { requires: req.trim() })
     if (!x.ok) return onErr(x.error)
@@ -199,16 +199,34 @@ function SpecSystem({ project, r, onErr }) {
       d.required_by.length ? frag(...d.required_by.map(id => chip(id))) : h('span', 'text-dim', 'None')))
 }
 
+// A checkbox set saved on each click. The next set is built from the last one sent, not from the server copy,
+// so a second click before the refetch keeps the first choice.
+function useSavedSet(server, save) {
+  const sent = useRef(null)
+  const key = (server || []).join('\u0000')
+  const [, bump] = useState(0)
+  if (sent.current && sent.current.join('\u0000') === key) sent.current = null
+  const cur = sent.current || server || []
+  const toggle = async c => {
+    const next = cur.includes(c) ? cur.filter(y => y !== c) : [...cur, c]
+    sent.current = next
+    bump(n => n + 1)
+    const ok = await save(next)
+    if (!ok && sent.current === next) { sent.current = null; bump(n => n + 1) }
+  }
+  return [cur, toggle]
+}
+
 // On a milestone: the components it touches (SYS-02).
 function MilestoneComponents({ project, m, ro, onErr }) {
   const aq = useApi(`${P(project)}/architecture`)
   const comps = aq.data ? aq.data.components.filter(c => c.current).map(c => c.name) : []
-  const mine = m.components || []
-  if (!comps.length && !mine.length) return null
-  const toggle = async c => {
-    const x = await post(`${P(project)}/milestones/${m.id}/components`, { components: mine.includes(c) ? mine.filter(y => y !== c) : [...mine, c] })
+  const [mine, toggle] = useSavedSet(m.components, async next => {
+    const x = await post(`${P(project)}/milestones/${m.id}/components`, { components: next })
     onErr(x.ok ? '' : x.error)
-  }
+    return x.ok
+  })
+  if (!comps.length && !mine.length) return null
   return h('div', { className: 'flex flex-wrap items-center gap-3 text-xs', 'data-testid': 'milestone-components' },
     h('span', 'text-muted', 'Components'),
     ...comps.map(c => h('label', { key: c, className: 'flex items-center gap-1.5 min-h-[24px] text-fg' },
