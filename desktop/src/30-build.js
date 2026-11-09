@@ -463,6 +463,8 @@ function StepDevelop({ project, need, flow }) {
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',
       h(ExitBtn, { className: 'px-4 py-2', testid: 'step-back', onClick: () => returnTo('build', { need, step: 'tests' }) }, 'Back to Tests'),
-      h(Btn, { kind: 'primaryLg', className: 'px-4 py-2', testid: 'send-all', onClick: sendAll }, 'Send all')))
+      h(Btn, { kind: 'primaryLg', className: 'px-4 py-2', testid: 'send-all', onClick: sendAll }, 'Send all'),
+      // The plan starts ready work within a budget; before anything is verified Home has no way to it yet.
+      h(Btn, { kind: 'secondary', className: 'px-4 py-2', testid: 'develop-plan', onClick: () => navigate('plan') }, 'Plan')))
   return h(Page, { project, sel: need }, body)
 }

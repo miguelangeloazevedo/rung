@@ -349,3 +349,9 @@ The same assessment asked for a system-level check over specifications that are 
 | Machine load | While the verification chain runs, video renders from other sessions (ffmpeg, hyperframes, remotion) are reniced to the lowest priority; they keep running. Each chain stage waits for a settled load first. Why: the e2e timing budgets (a 1,040-row Home in two seconds) failed only when other work saturated the machine; the budgets stay as they are. |
 | Demo | The Shortly demo is re-recorded as a longer cut of two to three minutes: the Shortly story plus contracts, the plan with a budget and a milestone journey. Never uploaded. |
 
+## Round 27: the way to the Plan (10 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Plan entry | Recording the demo with real profiles found that the Plan (and its budget) could only be opened from the milestones list, which Home shows once something is verified or a milestone exists: on a new project there was no way to it. The Develop step now has a Plan button beside Send all; Back returns to the Develop step (`tests/e2e/smoke/test_develop_plan_link.py`). |
+| Demo journey check | The milestone's journey check in the demo (`journey/check_clicks.py`) is written by the person, starts Shortly for real and follows a short link three times over HTTP. It lives in `journey/`, listed in the demo project's `.rungignore`, so adding it does not put the specifications' evidence out of date. |
