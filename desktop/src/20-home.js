@@ -35,7 +35,18 @@ function ExecList({ test, execs, limit, showTest }) {
     }))
 }
 
-function StaleCard({ project, item, ro }) {
+// Needs you as a decision surface (decisions Round 24, U04): the outcome the item affects, why it needs you and
+// what changed or failed, from the engine's item; each card's one recommended action carries the r-rec class.
+function DecisionLines({ item, what }) {
+  const o = item.outcome
+  return h('div', { className: 'flex flex-col gap-0.5 min-w-0', 'data-testid': 'decision' },
+    o ? h('span', { className: 'text-[12px] text-fg truncate min-w-0', title: `${o.id} ${o.text}`, 'data-testid': 'decision-outcome' },
+      h('span', 'mono text-muted mr-1.5', o.id), o.text) : null,
+    h('span', { className: 'text-[11px] text-muted truncate min-w-0', title: `${item.why}: ${item.what}`, 'data-testid': 'decision-what' },
+      h('span', { className: 'text-needs font-medium mr-1.5', 'data-testid': 'decision-why' }, item.why), what || item.what))
+}
+
+function StaleCard({ project, item, ro, lead }) {
   const r = useApi(`/projects/${encodeURIComponent(project)}/rungs/${item.id}`).data
   const tests = r && r.kind === 'specification' ? (r.children || []).filter(c => c.type === 'command' && c.status !== 'dismissed') : []
   const first = tests[0]
@@ -50,19 +61,19 @@ function StaleCard({ project, item, ro }) {
           ...path.flatMap(p => [h('span', { key: p.id }, p.id), h('span', { key: p.id + '>' }, '›')]),
           h('span', 'whitespace-nowrap text-needs', item.id)),
         h(Badge, { status: 'stale' })),
-      h('button', { type: 'button', className: 'text-left text-sm font-semibold text-fg hover:underline', onClick: e => { e.stopPropagation(); navigate('rung', { rid: item.id }) } }, `${item.id} · ${item.text}`),
-      ch ? h('div', 'text-[12px] text-muted flex items-center gap-1.5',
-        h('span', {
-          className: 'cursor-pointer hover:text-fg',
+      h('button', { type: 'button', className: 'text-left text-sm font-semibold text-fg hover:underline min-h-[24px]', onClick: e => { e.stopPropagation(); navigate('rung', { rid: item.id }) } }, `${item.id} · ${item.text}`),
+      h(DecisionLines, { item, what: ch ? h('span', {
+          className: 'cursor-pointer hover:text-fg inline-flex items-center min-h-[24px]',
           onClick: e => { e.stopPropagation(); navigate('change', { change: ch.id, rid: item.id }) }
-        }, `${ch.rung} · ${ch.after} · edited ${ago(ch.at)}`)) : null),
+        }, `${ch.rung} · ${ch.after} · edited ${ago(ch.at)}`) : null })),
     first ? h('div', 'flex flex-col gap-2 pt-2 border-t border-line',
       h('div', 'flex items-center justify-between text-[11px] text-muted',
         h('span', 'font-medium mono text-fg', `${first.id} · ${first.command || first.text}`),
         h('span', { className: TONE_TEXT[tone(first)] }, first.status === 'stale' ? 'stale' : resultWord(first.result))),
       h(ExecList, { test: first.id, execs: ex })) : null,
     ro ? null : h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-      h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
+      h(Btn, { kind: lead ? 'acceptSolid' : 'accept', testid: 'review-change', className: 'r-rec', onClick: () => ch ? navigate('change', { change: ch.id, rid: item.id }) : navigate('rung', { rid: item.id }) }, item.action ? item.action.verb : 'Review change'),
+      h(Btn, { testid: 'approve', onClick: async () => { const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/approve`); setErr(res.ok ? '' : res.error) } }, 'Approve'),
       item.kind === 'specification' ? h(Btn, { onClick: () => navigate('rung', { rid: item.id }) }, 'Develop until green') : null,
       first ? h(Btn, { onClick: () => navigate('defect-new', { test: first.id }) }, 'Raise defect') : null,
       h(ErrorLine, { text: err })))
@@ -74,7 +85,7 @@ function proposalSource(item) {
   return [item.proposer ? `by ${item.proposer}` : null, sc ? (/^run \d+$/.test(sc) ? `from ${sc}` : `from chat "${sc}"`) : null].filter(Boolean).join(' · ')
 }
 
-function ProposedCard({ project, item, ro }) {
+function ProposedCard({ project, item, ro, lead }) {
   const [err, setErr] = useState('')
   const act = async which => {
     const res = await post(`/projects/${encodeURIComponent(project)}/rungs/${item.id}/${which}`)
@@ -85,33 +96,47 @@ function ProposedCard({ project, item, ro }) {
     style: { borderLeft: '3px solid var(--r-needs)' },
     'data-testid': 'needs-you-item', 'data-proposed': item.id
   },
-  h('div', 'flex flex-col gap-1',
+  h('div', 'flex flex-col gap-1 min-w-0',
     h('div', 'flex items-center gap-2 text-xs',
       h('span', 'px-1.5 py-0.5 rounded border border-needs text-needs text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap shrink-0', 'Proposed'),
       h('span', 'whitespace-nowrap mono text-muted', item.id),
       h('span', { className: 'text-muted', 'data-testid': 'proposal-source' }, proposalSource(item))),
     h('span', 'text-sm text-fg', item.text),
     h('span', 'text-[11px] text-muted mono', `${item.parent} › ${item.id}`),
+    h(DecisionLines, { item }),
     h(ErrorLine, { text: err })),
   ro ? null : h('div', 'flex items-center gap-2',
-    h(Btn, { kind: 'acceptSolid', testid: 'accept', onClick: () => act('approve') }, 'Accept'),
-    h(Btn, { kind: 'ghostLine', testid: 'dismiss', onClick: () => act('dismiss') }, 'Dismiss')))
+    h(Btn, { kind: lead ? 'acceptSolid' : 'accept', testid: 'review-proposal', className: 'r-rec', onClick: () => navigate('rung', { rid: item.id }) }, 'Review proposal'),
+    h(Btn, { kind: 'small', testid: 'accept', onClick: () => act('approve') }, 'Accept'),
+    h(Btn, { kind: 'small', testid: 'dismiss', onClick: () => act('dismiss') }, 'Dismiss')))
 }
 
-function ApprovalCard({ project, item, ro }) {
+function ApprovalCard({ project, item, ro, lead }) {
   const [err, setErr] = useState('')
-  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item' },
-    h('div', 'flex flex-col gap-1',
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between gap-3', testid: 'needs-you-item' },
+    h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs',
         h(Badge, { status: 'pending' }),
         h('span', 'mono text-muted', `${item.id} #${item.n}`),
         h('span', 'text-muted', `recorded by ${item.recorder || 'you'}`)),
       h('span', 'text-sm text-fg', item.text),
       item.note ? h('span', 'text-[11px] text-muted', item.note) : null,
+      h(DecisionLines, { item }),
       h(ErrorLine, { text: err })),
     h('div', 'flex items-center gap-2',
-      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'approve-result', onClick: async () => { const r = await post(`/projects/${encodeURIComponent(project)}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
-      h(Btn, { kind: 'ghostLine', onClick: () => navigate('rung', { rid: item.id }) }, 'Open')))
+      ro ? null : h(Btn, { kind: lead ? 'acceptSolid' : 'accept', testid: 'approve-result', className: 'r-rec', onClick: async () => { const r = await post(`/projects/${encodeURIComponent(project)}/tests/${item.id}/executions/${item.n}/approve`); setErr(r.ok ? '' : r.error) } }, 'Approve result'),
+      h(Btn, { kind: 'small', testid: 'open', onClick: () => navigate('rung', { rid: item.id }) }, 'Open')))
+}
+
+// An empty Needs you names the work left and where (U04): never an all-done screen while needs are open.
+function NothingNeedsYou({ u }) {
+  const left = (u && u.needs) || []
+  return h('div', { className: 'bg-card border border-line rounded-[6px] p-3 flex items-center gap-3 flex-wrap text-xs', 'data-testid': 'nothing-needs-you', 'data-open': u ? u.open : 0 },
+    h('span', 'text-dim', 'Nothing needs you'),
+    left.length ? frag(
+      h('span', { className: 'text-fg', 'data-testid': 'unfinished' }, `${u.open} open`),
+      ...left.slice(0, 6).map(n => h('button', { key: n.id, type: 'button', className: 'mono text-fg hover:underline', 'data-need': n.id, onClick: () => navigate('rung', { rid: n.id }) }, `${n.id} (${n.open})`)),
+      left.length > 6 ? h('span', 'text-muted', `+${left.length - 6}`) : null) : null)
 }
 
 function RunningRow({ run }) {
@@ -122,7 +147,7 @@ function RunningRow({ run }) {
   return h(Card, { className: 'p-3 flex flex-col gap-2', testid: 'running-item', onClick: () => navigate('run', { run: run.id }) },
     h('div', 'flex items-center justify-between text-xs',
       h('span', 'text-fg mono', `${run.spec} · ${run.profile} · attempt ${n} of ${run.max_attempts} · running ${dur(secs)}`),
-      h('span', 'text-[11px] text-needs font-medium', run.status === 'queued' ? 'queued' : 'in progress')),
+      h('span', { className: 'text-[11px] text-needs font-medium', 'data-testid': 'running-state' }, run.status === 'queued' ? 'queued' : 'Agent still working')),
     h('div', 'w-full h-1 bg-btn rounded-full overflow-hidden',
       h('div', { className: 'h-full bg-needs rounded-full', style: { width: `${pct}%` } })))
 }
@@ -143,6 +168,7 @@ function Home({ project }) {
   const inputs = items.filter(i => i.type === 'needs_input')
   const ro = !!(d.tiles && d.tiles.archived)
   const head = h('header', 'flex flex-col gap-4', h(Header, { project, ro, extra: frag(h(Btn, { kind: 'head', testid: 'quick-task', onClick: () => navigate('quick-new') }, 'Quick task'), h(PasteBtn, { project, kind: 'head' })), back: cameFrom('projects') ? () => goBack('projects') : undefined }), ro ? h(ArchivedBar, { project }) : null,
+    h(SampleBar, { project, ro }),
     h(Tiles, { tiles: d.tiles }), ro ? null : h(FirstGreen, { project, need: ((d.tree || []).find(n => n.status !== 'dismissed') || {}).id }))
   const sel = d.allocation && d.allocation.spec
   if (!(d.needs || []).length) {
@@ -151,7 +177,7 @@ function Home({ project }) {
         h('div', { className: 'flex-1 flex flex-col items-center justify-center py-20 gap-4', 'data-testid': 'empty-project' },
           h('div', 'w-12 h-12 rounded-[6px] bg-card border border-line flex items-center justify-center text-muted', '≡'),
           h('h2', 'text-base font-semibold text-fg', 'No needs yet'),
-          ro ? null : h('button', { type: 'button', className: 'px-4 py-2 rounded-[6px] bg-needs text-on-needs font-medium text-xs', onClick: () => navigate('need-new') }, 'Write the first need'),
+          ro ? null : h('button', { type: 'button', className: 'px-4 py-2 rounded-[6px] bg-needs text-on-needs font-medium text-xs', 'data-primary': '1', onClick: () => navigate('need-new') }, 'Write the first need'),
           d.retired ? h('button', { type: 'button', className: 'text-[11px] text-muted hover:text-fg', 'data-testid': 'retired-link', onClick: () => navigate('retired') }, `Retired ${d.retired}`) : null))
     })
   }
@@ -160,12 +186,12 @@ function Home({ project }) {
     h('section', { className: 'flex flex-col gap-2.5', 'data-testid': 'needs-you' },
       h(SectionTitle, { tone: items.length ? 'needs' : null, dot: items.length ? 'needs' : 'dim', right: '' }, 'Needs you'),
       items.length
-        ? frag(...stale.map(i => h(StaleCard, { key: 's' + i.id, project, item: i, ro })),
-          ...errors.map(i => h(ErrorCard, { key: 'e' + i.id + i.n, project, item: i, ro })),
-          ...inputs.map(i => h(NeedsInputCard, { key: 'i' + i.run, project, item: i, ro })),
-          ...approvals.map(i => h(ApprovalCard, { key: 'a' + i.id + i.n, project, item: i, ro })))
-        : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing needs you'),
-      proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map(i => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro }))) : null),
+        ? frag(...stale.map((i, n) => h(StaleCard, { key: 's' + i.id, project, item: i, ro, lead: n === 0 })),
+          ...errors.map((i, n) => h(ErrorCard, { key: 'e' + i.id + i.n, project, item: i, ro, lead: !stale.length && n === 0 })),
+          ...inputs.map((i, n) => h(NeedsInputCard, { key: 'i' + i.run, project, item: i, ro, lead: !stale.length && !errors.length && n === 0 })),
+          ...approvals.map((i, n) => h(ApprovalCard, { key: 'a' + i.id + i.n, project, item: i, ro, lead: !stale.length && !errors.length && !inputs.length && n === 0 })))
+        : h(NothingNeedsYou, { u: d.unfinished }),
+      proposed.length ? h('div', 'flex flex-col gap-2 mt-3', ...proposed.map((i, n) => h(ProposedCard, { key: 'p' + i.id, project, item: i, ro, lead: !(stale.length + errors.length + inputs.length + approvals.length) && n === 0 }))) : null),
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'running' },
       h(SectionTitle, { dot: (d.running || []).length || (d.claims || []).length || (d.running_tests || []).length ? 'needs' : 'dim' }, 'Running'),
       (d.running || []).length || (d.running_tests || []).length || (d.claims || []).length
@@ -585,6 +611,6 @@ function Settings({ project }) {
     h(ErrorLine, { text: err }),
     h('div', 'sticky bottom-0 bg-page flex items-center justify-end gap-3 pt-2 pb-6',
       h('button', { type: 'button', className: 'px-4 py-1.5 rounded-[6px] border border-line text-xs font-semibold text-muted', onClick: cancel }, 'Cancel'),
-      h('button', { type: 'button', className: 'px-4 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', onClick: save }, 'Save')))
+      h('button', { type: 'button', className: 'px-4 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs', 'data-primary': '1', onClick: save }, 'Save')))
   return h(Frame, { main, wide: true })
 }

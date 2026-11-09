@@ -315,6 +315,100 @@ class LifecycleMixin:
             self.set_setting("last_project", last)
         return made
 
+    # ------------------------------------------------------------------ answer the worker (Round 24, U04)
+
+    def answer_run(self, project: str, run_id: int, answer: str, actor=None) -> dict:
+        """A person answers the question a develop run stopped on. The answer is stored with the question and given
+        to the next run of that specification (`run_answer`); the caller starts that run."""
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human answers the worker", code="forbidden", status=403)
+        answer = (answer or "").strip() if isinstance(answer, str) else ""
+        if not answer:
+            raise RungError("the answer is empty", code="bad_request", status=400, field="answer")
+        with self._lock:
+            p = self._project_row(project)
+            r = self._q1("SELECT r.*, s.rid AS srid FROM runs r JOIN rungs s ON s.pk = r.spec_pk "
+                         "WHERE r.pk=? AND r.project_pk=?", (int(run_id), p["pk"]))
+            if r is None:
+                raise RungError(f"no run {run_id} in {project}", code="not_found", status=404)
+            if r["status"] != "needs_input":
+                raise RungError(f"run {run_id} is not waiting for an answer", code="conflict", status=409)
+            if self._q1("SELECT 1 FROM runs WHERE spec_pk=? AND pk>?", (r["spec_pk"], r["pk"])):
+                raise RungError(f"a newer run of {r['srid']} exists", code="conflict", status=409)
+            with self._tx() as c:
+                self._log(c, p["pk"], "run_answered", {"run": r["pk"], "spec": r["srid"], "question": r["reason"] or "",
+                                                        "answer": answer[:2000]}, actor.name)
+                self._touch_project(c, p["pk"])
+        return {"run": r["pk"], "spec": r["srid"], "profile": r["profile"], "question": r["reason"] or "", "answer": answer}
+
+    def run_answer(self, project: str, spec_rid: str) -> dict | None:
+        """The latest question a run of this specification asked and the person's answer, or None."""
+        p = self._project_row(project)
+        for e in reversed(self._q("SELECT * FROM events WHERE project_pk=? AND kind='run_answered' ORDER BY pk",
+                                  (p["pk"],))):
+            d = json.loads(e["data"])
+            if d.get("spec") == spec_rid:
+                return {"question": d.get("question", ""), "answer": d.get("answer", ""), "by": e["by_name"]}
+        return None
+
+    # ------------------------------------------------------------------ break and repair the sample (Round 24, U02)
+
+    SAMPLE_FILE = "wordcount/count.py"
+    SAMPLE_BREAK = ("return len(text.split())", "return len(text.split(\" \"))")
+
+    def _sample_folder(self) -> Path:
+        from .core import RungError
+        row = self._q1("SELECT * FROM projects WHERE name=?", (SAMPLE_NAME,))
+        if row is None or not self._is_sample(row):
+            raise RungError("there is no sample project", code="not_found", status=404)
+        if row["archived_at"] is not None:
+            raise RungError("the sample is archived", code="read_only", status=409)
+        return Path(row["folder"]).expanduser().resolve()
+
+    def sample_state(self) -> dict | None:
+        """Whether the sample's code is as bundled or broken by `Break the sample`; None when there is no sample."""
+        row = self._q1("SELECT * FROM projects WHERE name=?", (SAMPLE_NAME,))
+        if row is None or not self._is_sample(row):
+            return None
+        target = Path(row["folder"]).expanduser() / self.SAMPLE_FILE
+        try:
+            broken = target.read_text() != (SAMPLE_SRC / self.SAMPLE_FILE).read_text()
+        except OSError:
+            broken = True
+        return {"broken": broken, "file": self.SAMPLE_FILE}
+
+    def break_sample(self, actor=None) -> dict:
+        """Change one line of the sample's code, as a person or an agent might: no bot runs, nothing else is
+        touched. Its passing test is then Out of date until checked again on the new code."""
+        return self._sample_write(actor, broken=True)
+
+    def repair_sample(self, actor=None) -> dict:
+        """Put the sample's file back as bundled. No bot runs."""
+        return self._sample_write(actor, broken=False)
+
+    def _sample_write(self, actor, broken: bool) -> dict:
+        from . import evidence
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human breaks or repairs the sample", code="forbidden", status=403)
+        with self._lock:
+            folder = self._sample_folder()
+            target = (folder / self.SAMPLE_FILE).resolve()
+            if not target.is_relative_to(folder):  # a symlink planted in the sample never leads outside it
+                raise RungError("the sample file is outside the sample folder", code="forbidden", status=403)
+            good = (SAMPLE_SRC / self.SAMPLE_FILE).read_text()
+            target.write_text(good.replace(*self.SAMPLE_BREAK) if broken else good)
+            evidence.forget(folder)
+            p = self._project_row(SAMPLE_NAME)
+            with self._tx() as c:
+                self._log(c, p["pk"], "sample_broken" if broken else "sample_repaired", {"file": self.SAMPLE_FILE},
+                          actor.name)
+                self._touch_project(c, p["pk"])
+        return {"broken": broken, "file": self.SAMPLE_FILE, "bot": False}
+
     # ------------------------------------------------------------------ need read-out
 
     def readout(self, project: str, rid: str) -> dict:
@@ -377,6 +471,102 @@ class LifecycleMixin:
             "total": len(delivered),
         }
 
+    # ------------------------------------------------------------------ result first (Round 24, U12)
+
+    def set_try(self, project: str, instruction: str = "", command: str = "", actor=None) -> dict:
+        """Declare how a person tries the result: an instruction and an optional command. Rung shows both and
+        never runs the command."""
+        from .core import HUMAN, RungError
+        actor = actor or HUMAN
+        if not actor.is_human:
+            raise RungError("only a human declares how to try the result", code="forbidden", status=403)
+        if not isinstance(instruction, str) or not isinstance(command, str):
+            raise RungError("instruction and command are text", code="bad_request", status=400)
+        self._check_writable(project)
+        value = {"instruction": instruction.strip()[:2000], "command": command.strip()[:500]}
+        p = self._project_row(project)
+        with self._tx() as c:
+            c.execute("UPDATE projects SET try_it=? WHERE pk=?", (json.dumps(value, sort_keys=True), p["pk"]))
+            self._log(c, p["pk"], "try_declared", value, actor.name)
+            self._touch_project(c, p["pk"])
+        return value
+
+    def try_it(self, project: str) -> dict:
+        p = self._project_row(project)
+        v = json.loads(p["try_it"] or "{}") if "try_it" in p.keys() else {}
+        return {"instruction": v.get("instruction", ""), "command": v.get("command", "")}
+
+    def result(self, project: str, rid: str) -> dict:
+        """The read-out's first part: the outcome and its verified behaviours, what the newest run changed, the
+        checks run, the manual review left, the code basis, how to try it, and the labelled evidence. Every
+        verdict is `verification()`'s; nothing here runs anything."""
+        from .core import RungError
+        n = self._rung_row(project, rid)
+        if n["kind"] != "need":
+            raise RungError(f"{rid} is not a need", code="bad_request", status=400)
+        p = self._project_row(n["project_pk"])
+        cur = self._root_basis(p["pk"], fresh=True)
+        verified, checks, manual, optional, gone_stale, evidence_lines = [], [], [], [], [], []
+        spec_pks = []
+        for req in self._children_rows(n["pk"]):
+            if req["status"] not in ("approved", "stale", "draft") or json.loads(req["data"] or "{}").get("out_of_scope"):
+                continue
+            for s in self._children_rows(req["pk"]):
+                if s["status"] not in ("approved", "stale"):
+                    continue
+                spec_pks.append(s["pk"])
+                v = self._verify(s, cur)
+                if v["ok"]:
+                    verified.append({"spec": s["rid"], "text": s["text"], "requirement": req["rid"]})
+                for st in v["tests"]:
+                    t = self._rung_row(project, st["test"])
+                    data = json.loads(t["data"] or "{}")
+                    if st["type"] == "manual" and not st["required"]:
+                        optional.append({"test": st["test"], "text": t["text"], "state": st["state"]})
+                    if st["type"] == "manual" and st["state"] != "satisfied":
+                        manual.append({"test": st["test"], "text": t["text"], "required": st["required"],
+                                       "state": st["state"]})
+                    e = self._q1("SELECT * FROM executions WHERE test_pk=? AND status NOT IN ('running','cancelled') "
+                                 "ORDER BY seq DESC LIMIT 1", (t["pk"],))
+                    if e is None:
+                        continue
+                    label = "manual" if e["kind"] == "manual" else "model" if st["type"] == "ai_judged" else "automated"
+                    row = {"test": st["test"], "spec": s["rid"], "n": e["n"], "status": e["status"], "label": label,
+                           "what": data.get("command") if label != "manual" else t["text"],
+                           "by": e["recorder"] or e["carried_by"], "at": e["ended_at"] or e["started_at"],
+                           "basis": evidence.short(e["basis_end"] or e["basis_start"]), "state": st["state"]}
+                    checks.append(row)
+                    if st["state"] == "out_of_date":
+                        gone_stale.append({"test": st["test"], "n": e["n"], "basis": row["basis"]})
+                    evidence_lines.append({"label": label, "text": f"{st['test']} #{e['n']} {e['status']}: {row['what']}",
+                                           "by": row["by"], "at": row["at"]})
+                    if e["note"]:
+                        evidence_lines.append({"label": "manual", "text": f"{st['test']} #{e['n']} note: {e['note']}",
+                                               "by": e["recorder"] or "", "at": row["at"]})
+        changed = None
+        if spec_pks:
+            run = self._q1(f"SELECT r.*, s.rid AS srid FROM runs r JOIN rungs s ON s.pk = r.spec_pk WHERE r.spec_pk IN "
+                           f"({','.join('?' * len(spec_pks))}) ORDER BY r.pk DESC LIMIT 1", tuple(spec_pks))
+            if run is not None:
+                files = []
+                for a in self._q("SELECT * FROM attempts WHERE run_pk=? ORDER BY n", (run["pk"],)):
+                    for f in json.loads(a["files_changed"] or "[]"):
+                        f = f.get("path", "") if isinstance(f, dict) else str(f)
+                        if f and f not in files:
+                            files.append(f)
+                    out = (a["worker_output"] or "").strip().splitlines()
+                    if out:
+                        evidence_lines.append({"label": "model", "text": f"run {run['pk']} attempt {a['n']}: {out[-1][:300]}",
+                                               "by": run["profile"], "at": a["ended_at"] or a["started_at"]})
+                changed = {"run": run["pk"], "spec": run["srid"], "profile": run["profile"], "status": run["status"],
+                           "files": files}
+        comp = self.need_completeness(project, n["rid"], fresh=True)
+        evidence_lines.sort(key=lambda x: x["at"] or 0)
+        return {"need": n["rid"], "outcome": n["text"], "complete": comp["complete"], "verified": verified,
+                "what_changed": changed, "checks": checks, "manual": manual, "optional": optional,
+                "no_longer_applies": gone_stale, "obligations": comp["open"], "basis": evidence.short(cur),
+                "try": self.try_it(project), "evidence": evidence_lines}
+
     def readout_markdown(self, project: str, rid: str) -> str:
         r = self.readout(project, rid)
         need = r["need"]
@@ -405,6 +595,24 @@ class LifecycleMixin:
                            + seen(p['seen_failing']))
             else:
                 out.append(f"- {d['id']} {d['text']}: not proven, {d['reason']}")
+        res = self.result(project, rid)
+        out += ["", "## Result", "", f"Outcome: {res['outcome']}", f"Complete: {'yes' if res['complete'] else 'no'}",
+                f"Code basis: {res['basis']}", "", "Verified behaviours:"]
+        out += [f"- {v['spec']} {v['text']}" for v in res["verified"]] or ["- none"]
+        wc = res["what_changed"]
+        out += ["", "What changed:"]
+        out += ([f"- run {wc['run']} of {wc['spec']} by {wc['profile']} ({wc['status']}): " + (", ".join(wc["files"]) or "no files")]
+                if wc else ["- no develop run"])
+        out += ["", "Open obligations:"]
+        out += [f"- {o['rung']}{' ' + o['spec'] if o.get('spec') else ''}: {o['text']}" for o in res["obligations"]] or ["- none"]
+        out += ["", "Optional checks:"]
+        out += [f"- {o['test']} {o['text']} ({o['state'].replace('_', ' ')})" for o in res["optional"]] or ["- none"]
+        out += ["", "Evidence that no longer applies:"]
+        out += [f"- {g['test']} #{g['n']} passed on code {g['basis']}, not the code as it is now" for g in res["no_longer_applies"]] or ["- none"]
+        if res["try"]["instruction"] or res["try"]["command"]:
+            out += ["", "Try it:", res["try"]["instruction"]] + ([f"Command (a person runs it): {res['try']['command']}"] if res["try"]["command"] else [])
+        out += ["", "Evidence:"]
+        out += [f"- [{x['label']}] {x['text']} ({x['by']}, {_stamp(x['at'])})" for x in res["evidence"]] or ["- none"]
         return "\n".join(out).replace("\u2014", "-") + "\n"
 
     def export_readout(self, project: str, rid: str) -> dict:

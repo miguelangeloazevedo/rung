@@ -3,6 +3,8 @@
 // The project header's buttons: one size and look, at least 24 pixels tall.
 const HEAD_BTN = 'inline-flex items-center min-h-[24px] px-2 py-0.5 rounded text-[11px] font-medium bg-card border border-line text-muted hover:text-fg'
 
+const SOLID = { primary: 1, primaryLg: 1, acceptSolid: 1 }
+
 function Btn({ kind, onClick, disabled, children, title, testid, className, label, current }) {
   const base = {
     primary: 'px-3 py-1.5 rounded-[6px] bg-needs text-on-needs font-semibold text-xs',
@@ -22,6 +24,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className, labe
     className: cx(base, 'whitespace-nowrap shrink-0', disabled && 'opacity-40 cursor-not-allowed', className),
     'aria-disabled': disabled ? 'true' : undefined,
     'data-locked': disabled ? '1' : undefined,
+    // U13: a solid accent button is the view's one primary action (HIE-01 counts these).
+    'data-primary': SOLID[kind] ? '1' : undefined,
     'data-testid': testid,
     'aria-label': label,
     'aria-current': current ? 'page' : undefined,
@@ -74,7 +78,8 @@ const BADGE = {
   not_proven: ['Not proven', 'bg-btn text-muted border border-line'],
   complete: ['Complete', 'bg-pass/10 text-pass border border-pass/30'],
   not_complete: ['Not complete', 'bg-btn text-fg border border-line'],
-  out_of_scope: ['Out of scope', 'bg-btn text-muted border border-line']
+  out_of_scope: ['Out of scope', 'bg-btn text-muted border border-line'],
+  broken: ['Broken', 'bg-stale/15 text-stale border border-stale/30']
 }
 
 function SeenFailing({ value, small }) {
@@ -299,6 +304,23 @@ function TreeNeed({ n, sel, hl }) {
     reqs.length ? h('div', 'pl-4 ml-1 border-l border-line flex flex-col gap-3 mt-1.5', ...reqs.map(c => h(TreeReq, { key: c.id, n: c, sel, hl }))) : null)
 }
 
+// Score parts (decisions Round 24, R11): each part is focusable and says what it measures on focus and hover,
+// from the engine's own words. The visible text keeps its short form.
+const PART_HELP_FALLBACK = {}
+function ScoreParts({ parts, help, short, className }) {
+  const hp = help || PART_HELP_FALLBACK
+  const names = [['tags', 'tags'], ['load', 'load'], ['reliability', short ? 'rel' : 'reliability'], ['cost', 'cost']]
+  return h('span', { className: cx('mono', className), 'data-testid': 'score-parts' },
+    ...names.flatMap(([k, label], i) => [
+      i ? h('span', { key: k + '-sep', 'aria-hidden': 'true' }, ' · ') : null,
+      h('span', { key: k, tabIndex: 0, className: 'r-part rounded', 'data-part': k, title: hp[k] || '', 'aria-label': `${label} ${parts[k]}: ${hp[k] || ''}` }, `${label} ${parts[k]}`)]).filter(Boolean))
+}
+
+function WhyLine({ why }) {
+  if (!why || !why.length) return null
+  return h('span', { className: 'text-[10px] text-muted leading-tight', 'data-testid': 'why-fits' }, why.join(' · '))
+}
+
 function Allocation({ alloc }) {
   if (!alloc) return null
   const rows = alloc.suggestions || []
@@ -316,8 +338,8 @@ function Allocation({ alloc }) {
             h('div', 'flex items-center justify-between text-xs',
               h('span', 'font-semibold text-fg', r.profile),
               h('span', 'font-bold text-needs mono', String(r.score))),
-            h('div', 'text-[10px] mono text-muted leading-tight',
-              `tags ${r.parts.tags} · load ${r.parts.load} · reliability ${r.parts.reliability} · cost ${r.parts.cost}`),
+            h('div', 'text-[10px] text-muted leading-tight', h(ScoreParts, { parts: r.parts, help: alloc.parts_help })),
+            h(WhyLine, { why: r.why }),
             h('div', 'w-full h-1 bg-well rounded-full overflow-hidden mt-0.5',
               h('div', { className: 'h-full bg-needs rounded-full', style: { width: `${Math.min(100, r.score)}%` } })))
           : h('div', { key: r.profile, className: 'flex flex-col gap-1 bg-card p-2 rounded-[6px] border border-line2', 'data-alloc': r.profile },

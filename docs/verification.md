@@ -175,3 +175,119 @@ task and offers `Bind to task`: the confirmation names the chat, the profile and
 specification is verified. Only `Bind` opens a claim, through the same rules as the agent's `rung_claim`
 (REST `POST /projects/<p>/rungs/<S>/bind`), so the done hook enforces it for that chat.
 
+## The sample shows verification move
+
+The sample home offers `Break the sample`, which changes one line of `wordcount/count.py` in the sample's own
+folder (inside Rung's data folder, never another project) and `Repair the sample`, which puts the bundled file
+back. No bot runs. The test that passed is then Out of date (its pass was on other code); checking again fails it;
+after the repair, checking again verifies it. A released specification keeps its Verification section, and its
+headline reads Released only while it is verified now.
+
+## Needs you is a list of decisions
+
+Every Needs you item carries the outcome it affects (the nearest requirement, or the need), why it needs a person
+(`Changed upstream`, `Proposed`, `Result recorded`, `Could not run`, `Worker asked`), what changed or failed, and
+one recommended action: `Review change`, `Review proposal`, `Approve result`, `Repair test setup` or
+`Answer the worker`. The answer is stored with its question (event `run_answered`) and the next run of that
+specification starts with the same profile; its prompt carries the question and the answer. A test that could
+not run inside a develop run that is still retrying is the agent's, not yours; Home lists that run under Running
+as `Agent still working`. An empty Needs you names how many open items remain and under which needs, from the
+same need completeness as the need view.
+
+## The read-out leads with the result
+
+A need's read-out opens with its Result: the requested outcome, the verified behaviours (specifications whose
+verification is Verified now), what the newest develop run changed (its files), the checks run with their latest
+results, the manual review left, and the code basis the evidence applies to. A project may declare how to try
+the result (an instruction and an optional command); Rung shows both and never runs the command. The evidence
+sits collapsed; each line is labelled `automated` (a command test result), `manual` (a person's observation) or
+`model` (worker output). The export adds open obligations, optional checks, and evidence that no longer applies:
+a pass recorded on code that has changed since.
+
+## Allocation labels say what they count
+
+A suggestion's score has four parts. `tags` is the share of the specification's capability tags the profile
+carries; `load` is the develop runs and open claims it carries now; `reliability` is the share of its past command
+executions that completed with a pass or a fail rather than an error, not a chance of success; `cost` is the
+cost preference band set for it in Settings, not money spent. Each part says this on focus and hover. Every
+suggestion lists the inputs behind it (tags carried, current load, executions counted, cost band) and every
+excluded profile its reason. An independent carrier is a different profile from the one that wrote the
+specification or its tests; the person can still pick any eligible profile.
+
+## Architecture and contracts (SYS-02)
+
+A project holds components (name, responsibility, paths) and contracts (kind, producer, consumers, artifact
+paths, text). A change is a new draft version; a person approves it and the older versions stay in history.
+Specifications and milestones name the components they touch. Approving a changed contract lists every
+specification and milestone touching its producer or a consumer; each reads Out of date (`contract_changed`)
+until its tests run again on the current code, and a milestone until it is approved again. A draft changes
+nothing.
+
+## Dependencies (SYS-03)
+
+A specification may require other specifications. The edge is separate from the ladder; a self edge, a cycle
+(named as a path), an unknown id or an id from another project is refused. A develop run waits until every
+prerequisite is Verified: a start is refused with the path (`S-2.1 waits for S-1.1: Failed`); work without that
+prerequisite still starts.
+
+## Isolated runs (SYS-05)
+
+A project's runs work in the project folder (the default) or Isolated. An isolated run copies the project files
+(`.gitignore` and `.rungignore` apply) into its own workspace and works there. Its test results are local: they
+are kept on its attempts and never count as an execution of the project. A person integrates a finished run:
+its changed files are applied only when none of them changed in the project since the copy; otherwise the
+integration is refused naming the files and nothing is applied. After integrating, the run's tests and every
+test the change made out of date run on the project folder. Two changes that each pass alone can still fail a
+milestone together, so the integrated system is judged by its milestone, never by the local passes.
+
+## The plan (SYS-04)
+
+The plan lists every approved specification of the in-scope requirements in dependency order, each Ready,
+Blocked (by which prerequisite), Running, Waiting for capacity (every eligible profile at its At once limit),
+Not ready or Verified. Start ready work starts only the Ready ones, one at a time, rechecking each profile's limit
+before each start. An optional budget counts the attempts of the runs the plan started; once used, the plan
+starts nothing more and says so. Model usage reads unavailable unless a worker reports it.
+
+## Contract checks (SYS-06)
+
+A contract carries checks: commands an agent may propose and only a person approves. A check runs on the project
+folder against the real producer and consumer files and is recorded with the contract version and the code it
+ran on. It reads Satisfied, Failed, Not run, Could not verify, or Out of date when the contract has a newer
+approved version or the code it ran on changed. A milestone touching the producer or a consumer is blocked by any
+approved check that is not Satisfied (`contract_failed`, `contract_out_of_date`, `contract_not_run`).
+
+## Journeys, regression, quality and environment (SYS-07 to SYS-10)
+
+These extend a milestone; they never decide completion on their own.
+
+- **Journeys**: each in scope (with the check that proves it) or out of scope with a reason. An in-scope journey
+  with no check blocks the milestone; out-of-scope journeys are exported as such and never count as passed.
+- **Regression baseline**: earlier milestones and an optional command. Their checks run on the same code as the
+  milestone's own; a break blocks it (`regression_failed`) even when its own check passes.
+- **Quality obligations**: a command check with a measure (a pattern on its output), a threshold and direction,
+  a unit, a workload and an environment, or a required human review. A value past the threshold blocks
+  (`obligation_unmet`) and names the number, the threshold and the workload; output with no value is Could not
+  verify.
+- **Environment**: probes (a command and the text it must print) and a migration, run before the checks. A probe
+  that does not match makes the run Could not verify (`environment_mismatch`); a failed migration blocks
+  (`migration_failed`). What each probe printed is recorded with the run.
+
+## Change impact (SYS-11)
+
+A specification or milestone that names components with paths is judged on those paths and on every file outside
+all components; a change elsewhere leaves its evidence current. With no component, or components without paths,
+the whole project is the basis. Naming components changes the basis, so earlier evidence reads Out of date until
+its tests run again. Check everything reruns every test, contract check and milestone check regardless of impact.
+
+## System report (SYS-12)
+
+One deterministic report over the project: every milestone with its verdict, journeys, obligations, regression
+baseline, environment, dependencies, exclusions and manual decisions with who carried them. It reads Accepted
+only when every milestone is verified on the code as it is now; otherwise it names each open item. No model
+writes it.
+
+## Plan budgets and recovery (SYS-13)
+
+A person sets the plan's budget in attempts, minutes or both. Once either is used the plan starts nothing more and
+states which. Verified work is never started again. A run in progress when the runner stopped reads Interrupted,
+never passed; the plan shows it Ready with that reason, and Start ready work resumes only work not verified.

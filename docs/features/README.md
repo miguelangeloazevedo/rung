@@ -48,6 +48,23 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 | Quick task | Quick task on a project home, the task card | tests/test_quick.py, tests/e2e/test_uc37_quick_task.py, tests/e2e/smoke/test_quick_pane.py | tested |
 | Need completeness | A need's Completeness section, Home's Needs list, `rung verify N-1` | tests/test_completeness.py, tests/e2e/test_uc38_need_completeness.py | tested |
 | This chat | The dock's first section: the focused chat's task, Bind to task | tests/test_binding.py, tests/e2e/test_uc39_dock_task.py | tested |
+| Sample break and repair | The start screen preview; the sample home's Break the sample and Repair the sample | tests/test_sample_break.py, tests/e2e/test_uc40_first_page.py | tested |
+| Needs you decisions | Each Needs you card's outcome, why, what and recommended action; Answer the worker; the empty state's open work | tests/test_needs_you_decisions.py, tests/e2e/test_uc41_needs_you.py | tested |
+| Result first read-out | The read-out's Result section, Try the result in project settings, labelled evidence and the export's obligations | tests/test_result_first.py, tests/e2e/test_uc42_results.py | tested |
+| Allocation labels | Each score part's description on focus and hover, why the top profile fits, excluded profiles with reasons, Independent carrier help | tests/test_allocation_labels.py, tests/e2e/test_uc43_allocation_labels.py | tested |
+| View hierarchy | One h1 and at most one primary action per view at 1280 by 800, in the dock and at 200 percent zoom; truncated text in full on focus | tests/e2e/test_uc44_hierarchy.py | tested |
+| Architecture | The Architecture view: components and contracts, each a draft a person approves, history kept; a contract's affected work; the components a specification or milestone touches | tests/test_system.py, tests/e2e/test_uc45_architecture.py | tested |
+| Dependencies | A specification's System section: Requires, Required by, Waits for; a start refused with the blocked path | tests/test_system.py, tests/e2e/test_uc46_dependencies.py | tested |
+| Isolated runs | Project settings' Runs; a run's Workspace with its changed files, conflicts and Integrate | tests/test_isolation.py, tests/e2e/test_uc47_isolated_runs.py | tested |
+| Plan | The Plan view: each specification Ready, Blocked by, Running, Waiting for capacity or Verified, in dependency order; Start ready work; the attempt budget | tests/test_system.py, tests/e2e/test_uc48_plan.py | tested |
+| Contract checks | A contract's checks: a proposed command a person approves, run against the real producer and consumer files; Satisfied, Failed, Out of date (older contract version or changed code), Not run | tests/test_system.py, tests/e2e/test_uc49_contract_checks.py | tested |
+| Journeys | A milestone's journeys, in scope with a check or out of scope with a reason; an in-scope journey with no check blocks | tests/test_milestone_system.py, tests/e2e/test_uc50_journeys.py | tested |
+| Regression baseline | Earlier milestones and a command a milestone must not break; their checks run on the same code | tests/test_milestone_system.py, tests/e2e/test_uc51_regression.py | tested |
+| Quality obligations | A check with a measure, threshold, unit, workload and environment, or a required human review; the measured value against its threshold | tests/test_milestone_system.py, tests/e2e/test_uc52_quality.py | tested |
+| Environment | A milestone's probes and migration, run before its checks, with what each printed | tests/test_milestone_system.py, tests/e2e/test_uc53_environment.py | tested |
+| Change impact | Judged on: the components' paths a milestone or specification names; Check everything | tests/test_milestone_system.py, tests/e2e/test_uc54_change_impact.py | tested |
+| System report | Every milestone with its journeys, obligations, dependencies, environment, exclusions and manual decisions; Accepted only when all are verified now | tests/test_milestone_system.py, tests/e2e/test_uc55_system_report.py | tested |
+| Plan budgets and recovery | The plan's attempt and minute budget with its stop reason; an interrupted run reads Interrupted, never passed | tests/test_system.py, tests/e2e/test_uc56_budgets.py | tested |
 
 ## How to reach each view
 

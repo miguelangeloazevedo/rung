@@ -403,7 +403,8 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
         shown
           ? frag(
             h('span', 'font-medium text-fg mono', `${shown.profile} ${shown.score}`),
-            h('span', 'text-[10px] mono text-muted', `tags ${shown.parts.tags} · load ${shown.parts.load} · reliability ${shown.parts.reliability} · cost ${shown.parts.cost}`),
+            h('span', 'text-[10px] text-muted', h(ScoreParts, { parts: shown.parts, help: a.parts_help })),
+            h(WhyLine, { why: shown.why }),
             a.pick ? h('span', { className: 'text-[10px] text-needs', 'data-testid': 'picked-by' }, a.pick.picked_by === 'you' ? 'picked by you' : `picked by ${a.pick.picked_by}`) : null)
           : h('span', 'text-fail', 'No eligible profile')),
     h('div', { className: 'text-muted text-[11px]', 'data-testid': 'budget' }, a.human_only || !shown ? '' : `${prof ? prof.max_runs : 1} attempts · ${timeoutMin} min`),
@@ -428,7 +429,7 @@ function DevelopRow({ project, spec, last, timeoutMin, onErr }) {
         onClick: async () => { setOpen(false); const res = await post(`${P(project)}/specs/${spec.id}/pick`, { agent: sg.profile }); onErr(res.ok ? '' : res.error) }
       },
       h('span', 'mono text-fg', sg.profile),
-      h('span', 'mono text-muted', `${sg.score} · tags ${sg.parts.tags} · load ${sg.parts.load} · rel ${sg.parts.reliability} · cost ${sg.parts.cost}`)))) : null,
+      h('span', 'text-muted', h('span', 'mono', `${sg.score} · `), h(ScoreParts, { parts: sg.parts, help: a.parts_help, short: true }))))) : null,
     (a.excluded || []).length ? h('div', 'col-span-5 pt-2', h(ExcludedList, { excluded: a.excluded })) : null)
 }
 

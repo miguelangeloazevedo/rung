@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 
+from . import allocation
+
 KINDS = ("need", "requirement", "specification", "test")
 PARENT_KIND = {"requirement": "need", "specification": "requirement", "test": "specification"}
 SUGGEST_COUNT = 3
@@ -164,7 +166,8 @@ class BotMixin:
         excluded = [{"profile": f.name, "reason": "; ".join(allocation.reasons(f, needs))}
                     for f in facts if allocation.reasons(f, needs)]
         ranked = [s.as_dict() for s in allocation.rank(facts, needs=needs)]
-        return {"need": need["rid"], "chosen": ranked[0] if ranked else None, "ranked": ranked, "excluded": excluded}
+        return {"need": need["rid"], "chosen": ranked[0] if ranked else None, "ranked": ranked, "excluded": excluded,
+                "parts_help": dict(allocation.PART_HELP)}
 
     def _authors_of(self, r) -> list[str]:
         """Every profile that wrote this rung: an agent author of any version, its drafter, its proposer."""

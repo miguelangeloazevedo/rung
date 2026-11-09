@@ -97,6 +97,26 @@ def seed_completeness(engine: Engine, folder: Path) -> None:
     engine.run_test("csvtidy", "T-1.1a", carried_by="coder")
 
 
+def seed_needs_you(engine: Engine, folder: Path) -> None:
+    """csvtidy with one of each Needs you item (Round 24, U04): R-1 changed (S-1.1 stale), a proposed requirement,
+    a recorded manual pass waiting for approval, a test that could not run, and a run that asked a question."""
+    import json
+
+    from rung_engine.runner import run_loop
+    from rung_engine.workers import StubWorker
+    seed_csvtidy(engine, folder)
+    engine.add_test("csvtidy", "S-2.1", {"type": "command", "command": "sleep 5", "timeout": 1}, HUMAN, status="approved")
+    engine.run_test("csvtidy", "T-2.1c", carried_by="coder")  # timed out: could not run
+    engine.record_manual("csvtidy", "T-2.1b", "pass", "Sorted by date, all rows in order")
+    engine.propose("csvtidy", "N-1", "requirement", "Keep the header row untouched", "coder")
+    stub = folder / ".outcome-stub" / "S-2.1"
+    stub.mkdir(parents=True, exist_ok=True)
+    (stub / "attempt-1.json").write_text(json.dumps({"outcome": "needs_input", "reason": "Which locale is the default?"}))
+    run = engine.start_run("csvtidy", "S-2.1", profile="coder")
+    run_loop(engine, run["id"], worker=StubWorker(str(folder / ".outcome-stub"), delay=0))
+    engine.edit("csvtidy", "R-1", text="Sniff the delimiter, then confirm it on the whole file")
+
+
 def break_dates(folder: Path):
     """Swap day and month in the fixture's date parser; returns the function that puts it back."""
     dates = Path(folder) / "csvtidy" / "dates.py"

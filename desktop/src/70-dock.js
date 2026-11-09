@@ -282,8 +282,7 @@ function DockProject({ project }) {
     h(DockLadder, { tree },
       tree.length
         ? frag(
-          h('label', { className: 'sr-only', htmlFor: 'rung-dock-need' }, 'Need'),
-          h('select', { id: 'rung-dock-need', className: 'dk-select', value: need, title: (() => { const x = tree.find(t => t.id === need); return x ? `${x.id}  ${x.text}` : '' })(), 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
+          h('select', { id: 'rung-dock-need', 'aria-label': 'Need', className: 'dk-select', value: need, title: (() => { const x = tree.find(t => t.id === need); return x ? `${x.id}  ${x.text}` : '' })(), 'data-testid': 'dock-need', onChange: e => noteNeed(project, e.target.value) },
             ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
           node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
         : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => openRung('need-new') })))

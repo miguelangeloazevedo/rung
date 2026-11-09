@@ -47,6 +47,12 @@ Restart the Desktop, then pick **Rung** in the sidebar and **Try the sample proj
   names a user journey, the specifications it spans and its own checks; it is Verified only when every
   included specification is verified now and its checks pass on the same code
   (`hermes rung milestone M-1 --run`, exit 0 only when verified).
+- **Quick task.** A small change in one step: the outcome and its checks become ordinary ladder rows you
+  approve once, built and verified by the same runner.
+- **System work.** Components and contracts a person approves; specification dependencies; a plan that
+  starts only ready work within an attempt and minute budget; isolated runs integrated only without
+  conflicts; contract checks; journeys, regression baselines, quality obligations and environment probes on
+  a milestone; a system report that reads Accepted only when every milestone is verified now.
 
 ## How it works
 
@@ -88,8 +94,9 @@ Agents can propose and report; only a person approves text, tests and manual res
   remove the data.
 - **Project folders.** Rung reads the folders you name for your projects, and test commands and develop
   runs work inside them. Nothing else on disk is read or changed.
-- **Shell commands.** A command test runs the command you wrote, after you approve it, in the project
-  folder, with a timeout and an output limit.
+- **Shell commands.** A command test, contract check, milestone check, environment probe or migration
+  runs the command a person approved, in the project folder, with a timeout and an output limit. An
+  isolated run copies the project files to a workspace in the store and works there.
 - **Hermes child runs.** A develop run, and drafting by a profile when you choose it, start
   `hermes -p <profile> chat -Q -q` in the project folder. That chat uses the profile's own model, tools
   and credentials, under Hermes's approval rules for single-query sessions (`approvals.single_query_mode`,
@@ -118,6 +125,11 @@ Agents can propose and report; only a person approves text, tests and manual res
 
 ## Changelog
 
+- **1.2.0.** Quick task, need completeness, the dock bound to the focused chat, a sample that shows
+  verification move, Needs you as decisions, a result-first read-out, allocation labels that say what
+  they count. Architecture and contracts, dependencies, isolated runs, the plan with budgets and
+  recovery, contract checks, milestone journeys, regression, quality obligations and environment, change
+  impact by component, and the system report.
 - **1.1.0.** Current evidence: one verification result for every surface (gate, hook, pane, dock,
   read-out, CLI), passes bound to the code they ran on, protected test files, required and optional
   manual checks, Out of date with recheck, a Verification section and next action per specification,

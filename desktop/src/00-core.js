@@ -313,6 +313,10 @@ function errInfo(e) {
 // The result line of every action (NAV-11), named once here: a view never adds its own line after post().
 // An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/\/projects\/[^/]+\/try$/, () => 'Saved how to try the result'],
+  [/\/runs\/(\d+)\/answer$/, (m, b, d) => `Answered run ${m[1]}; started run ${(d && d.id) || ''}`.trim()],
+  [/^\/sample\/break$/, (m, b, d) => `Sample broken: ${(d && d.file) || 'one file'} changed, no bot ran`],
+  [/^\/sample\/repair$/, (m, b, d) => `Sample repaired: ${(d && d.file) || 'one file'} as bundled, no bot ran`],
   [/\/rungs\/([^/]+)\/bind$/, (m, b, d) => `Bound ${(d && d.chat) || 'this chat'} to ${m[1]} as ${(d && d.profile) || ''}`.trim()],
   [/\/requirements\/([^/]+)\/retire$/, m => `${m[1]} out of scope`],
   [/\/requirements\/([^/]+)\/restore$/, m => `${m[1]} back in scope`],

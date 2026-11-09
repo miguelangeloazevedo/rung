@@ -330,3 +330,15 @@ The same assessment asked for a system-level check over specifications that are 
 | Roadmap | `docs/roadmap.md` holds every brief item not done, with its dependency and criterion; built items move to `docs/verification.md`. |
 | Time box | Stop at Tue 10 Nov 20:00 Brussels; video and dossier refresh start by Tue 14:00 with whatever is left. |
 
+## Round 25: SYS-06 to SYS-13 (9 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Contract checks (SYS-06) | Ordinary commands attached to an approved contract; a person approves each. A result keeps the contract version and the code basis; either changing makes it Out of date. |
+| Milestone extensions (SYS-07 to SYS-10) | Journeys, regression baseline, quality obligations and environment live on the milestone and feed its one verdict; there is no second completion authority. |
+| Quality values | A measure is a pattern on the check's own output. No number found reads Could not verify, never passed. Security and accessibility obligations may be a required human review instead of a threshold. |
+| Change impact (SYS-11) | Named component paths scope the evidence basis, plus every file outside all components. No paths means the whole project. Naming components is itself a basis change. Check everything ignores impact. |
+| Scoped milestone verdict | A milestone with a component scope whose only gap is out-of-date specifications reads Out of date; an unscoped milestone keeps Not ready. |
+| System report (SYS-12) | Deterministic, built from stored verdicts on the current basis; Accepted only when every milestone is verified now; each open item is named. |
+| Budgets (SYS-13) | Attempts, minutes or both, set only by a person. An interrupted run is shown as such and is never counted as passed; resuming starts only unverified work. |
+

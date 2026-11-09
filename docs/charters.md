@@ -52,6 +52,28 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   specification is held elsewhere and a task whose code drifted, to discover a dock that binds without a
   confirmation, names the wrong chat or leads with anything but the focused chat's task.
 
+- **Sample break and repair**: explore breaking the sample twice, repairing while a test runs, an archived sample
+  and a sample whose file was edited by hand, to discover a break that touches another folder, runs a bot or
+  leaves the sample Verified on code that no longer passes.
+
+- **Needs you decisions**: explore a run that errors on its last retry, a proposal whose parent is retired, an
+  answer sent twice and an empty list with unfinished needs, to discover an item without its outcome, two
+  recommended actions on one card or an empty state that reads as all done.
+
+- **Result first read-out**: explore a need with no develop run, a run that changed no files, a try command with
+  shell characters and an export after the code moved, to discover a read-out that hides an open obligation, runs
+  the try command or presents stale evidence as current.
+
+- **Allocation labels**: explore a profile with no execution history, a specification with no tags and an
+  independent carrier where every profile is an author, to discover a score part that reads as money or a chance
+  of success, or an exclusion with no reason.
+- **View hierarchy**: explore every view at the dock's width and at 200 percent zoom, with long names, to discover
+  two primary actions, a view without a heading or text cut off with no way to read it.
+- **Architecture**: explore a contract with one consumer removed, a draft left unapproved and a component renamed,
+  to discover affected work that is not listed or a draft that changes a verdict.
+- **Dependencies**: explore long chains, a removed prerequisite and a prerequisite in another need, to discover a
+  start that is allowed while a prerequisite is not verified, or a refusal that names the wrong path.
+
 ## Running work
 
 - **Agent allocation**: explore profiles with equal scores, all disabled and missing tags, to discover a
@@ -71,6 +93,17 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   counts before a human approves it.
 - **Seen failing**: explore tests that pass first time, fail then pass, and are edited after passing, to
   discover a marker that disagrees with the execution history.
+- **Isolated runs**: explore two runs on the same file, a file deleted in the workspace and a run stopped mid-way,
+  to discover a change applied over another, or a local pass that counts for the project.
+- **Plan**: explore a plan with every profile at its limit, a budget of one attempt and a failing prerequisite, to
+  discover work started that was not Ready or a budget that is overrun.
+- **Contract checks**: explore a contract changed after its check passed, a check whose command prints nothing and
+  a producer fixed while the consumer stays broken, to discover a pass that outlives its contract version.
+- **Milestone system**: explore a journey moved out of scope, an obligation whose output has no number, a probe
+  that matches by chance and a change in a file outside every component, to discover a milestone verified on
+  evidence that does not cover it.
+- **System report and budgets**: explore a report with an unrun manual decision, a budget lowered below what is
+  used and a restart mid-run, to discover Accepted shown with something open or interrupted work counted as passed.
 
 ## Reading the state
 

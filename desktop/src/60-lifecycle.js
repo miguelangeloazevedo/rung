@@ -174,10 +174,53 @@ function StartScreen() {
         h('div', 'flex items-center justify-between',
           h('h1', 'text-xl font-bold tracking-tight text-fg', 'Rung'),
           h('button', { type: 'button', className: 'px-2 py-1 rounded text-xs text-muted hover:text-fg', 'aria-label': 'Close', 'data-testid': 'start-dismiss', onClick: closeRung }, '✕')),
+        h('p', { className: 'text-sm text-fg leading-relaxed', 'data-testid': 'start-sentence' },
+          'Agents build what you approve; only tests passing on the code as it is now count as done.'),
+        h(StartPreview),
         h('div', 'flex flex-col gap-2.5',
           h(Btn, { kind: 'primaryLg', testid: 'start-sample', disabled: busy, onClick: sample }, 'Try the sample project'),
           h(Btn, { testid: 'start-new', onClick: () => navigate('project-new') }, 'New project')),
         h(ErrorLine, { text: err }))))
+}
+
+// Three states a first-time person meets: a requested behaviour, a blocked check, verified evidence (U02).
+const PREVIEW = [
+  ['requested', 'R-1', 'Count words separated by any whitespace', 'approved', 'Requested'],
+  ['blocked', 'T-1.1a', 'failed (#2) on code 4f2a91', 'failed', 'Blocked'],
+  ['verified', 'S-1.1', 'T-1.1a passed (#3) on code 7c0d3e', 'verified', 'Verified']
+]
+function StartPreview() {
+  return h('ol', { className: 'flex flex-col gap-1.5', 'data-testid': 'start-preview', 'aria-label': 'Preview' },
+    ...PREVIEW.map(([k, id, text, status, word]) => h('li', { key: k, className: 'flex items-center gap-2.5 bg-well border border-line2 rounded-[6px] px-2.5 py-2 min-w-0', 'data-state': k },
+      h('span', 'w-[72px] shrink-0 text-xs text-muted', word),
+      h('span', 'whitespace-nowrap text-xs font-medium mono text-fg', id),
+      h('span', { className: 'text-xs text-muted truncate min-w-0 flex-1', title: text }, text),
+      h(Badge, { status, small: true }))))
+}
+
+// The sample's own controls: change one line of its code and put it back, so a person sees verification move.
+function SampleBar({ project, ro }) {
+  const q = useApi('/sample/state', { live: true })
+  const st = q.data
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  if (project !== 'sample' || !st || st.none) return null
+  const act = async which => {
+    setBusy(true)
+    const x = await post(`/sample/${which}`)
+    setBusy(false)
+    setErr(x.ok ? '' : x.error)
+    if (x.ok) queryClient.invalidateQueries({ queryKey: ['rung', '/sample/state'] })
+  }
+  return h('div', { className: 'flex items-center justify-between gap-3 bg-card border border-line rounded-[6px] px-3 py-2', 'data-testid': 'sample-bar', 'data-broken': st.broken ? 'true' : 'false' },
+    h('div', 'flex items-center gap-2.5 min-w-0',
+      h('span', { className: 'text-[11px] font-semibold uppercase tracking-wider text-muted', 'data-testid': 'sample-label' }, 'Sample'),
+      h('span', { className: 'text-xs mono text-muted truncate min-w-0', title: st.file }, st.file),
+      st.broken ? h(Badge, { status: 'broken', small: true }) : null),
+    ro ? null : h('div', 'flex items-center gap-2',
+      h(Btn, { kind: 'small', testid: 'sample-break', disabled: busy || st.broken, onClick: () => act('break') }, 'Break the sample'),
+      st.broken ? h(Btn, { kind: 'small', testid: 'sample-repair', disabled: busy, onClick: () => act('repair') }, 'Repair the sample') : null),
+    h(ErrorLine, { text: err }))
 }
 
 // ------------------------------------------------------------------ First green checklist
@@ -215,19 +258,29 @@ function FirstGreen({ project, need }) {
 
 // ------------------------------------------------------------------ Needs you: error and needs input
 
-function ErrorCard({ project, item, ro }) {
-  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
+function ErrorCard({ project, item, ro, lead }) {
+  return h(Card, { className: 'r-ny px-4 py-3 flex items-center justify-between gap-3', testid: 'needs-you-item', style: { borderLeft: '3px solid var(--r-needs)' } },
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'error' }), h('span', 'mono text-muted', `${item.id} #${item.n}`)),
       h('span', 'text-sm text-fg', item.text),
-      item.reason ? h('span', { className: 'text-[11px] mono text-muted truncate', 'data-testid': 'error-reason', title: item.reason }, item.reason) : null),
-    h('div', 'flex items-center gap-2',
+      item.reason ? h('span', { className: 'text-[11px] mono text-muted truncate', 'data-testid': 'error-reason', title: item.reason }, item.reason) : null,
+      item.outcome ? h(DecisionLines, { item }) : null),
+    h('div', 'flex items-center gap-2 shrink-0',
+      ro ? null : h(Btn, { kind: lead ? 'acceptSolid' : 'accept', testid: 'repair-test', className: 'r-rec', onClick: () => navigate('test-edit', { test: item.id }) }, 'Repair test setup'),
       h(Btn, { kind: 'small', testid: 'open-error', onClick: () => navigate('exec', { test: item.id, n: item.n }) }, 'Open'),
       ro ? null : h(Btn, { kind: 'small', onClick: () => navigate('rung', { rid: item.id }) }, 'Open test')))
 }
 
-function NeedsInputCard({ project, item, ro }) {
+function NeedsInputCard({ project, item, ro, lead }) {
   const [err, setErr] = useState('')
+  const [answering, setAnswering] = useState(false)
+  const [answer, setAnswer] = useState('')
+  useDirty(answering && !!answer.trim())
+  const send = async () => {
+    const x = await post(`/projects/${encodeURIComponent(project)}/runs/${item.run}/answer`, { answer })
+    if (!x.ok) return setErr(x.error)
+    navigate('run', { run: x.data.id }, { force: true })
+  }
   const again = async () => {
     const x = await post(`/projects/${encodeURIComponent(project)}/specs/${item.id}/send`, {})
     if (!x.ok) return setErr(x.error)
@@ -237,10 +290,18 @@ function NeedsInputCard({ project, item, ro }) {
     h('div', 'flex flex-col gap-1 min-w-0',
       h('div', 'flex items-center gap-2 text-xs', h(Badge, { status: 'needs_input' }), h('span', 'mono text-muted', `${item.id} · run ${item.run} · ${item.profile}`)),
       h('span', { className: 'text-sm text-fg', 'data-testid': 'needs-input-reason' }, item.text),
+      item.outcome ? h(DecisionLines, { item }) : null,
+      answering ? h('div', { className: 'flex flex-col gap-2 pt-2', 'data-testid': 'answer-form', 'data-layer': '1' },
+        h('label', { className: 'text-[11px] text-muted', htmlFor: `rung-answer-${item.run}` }, 'Answer'),
+        h('textarea', { id: `rung-answer-${item.run}`, className: INPUT, rows: 2, name: 'answer', value: answer, 'data-autofocus': '1', onChange: e => setAnswer(e.target.value) }),
+        h('div', 'flex items-center gap-2',
+          h(Btn, { kind: 'primary', testid: 'send-answer', disabled: !answer.trim(), onClick: send }, 'Send answer'),
+          h(Btn, { testid: 'answer-cancel', onClick: () => { setAnswering(false); setAnswer('') } }, 'Cancel'))) : null,
       h(ErrorLine, { text: err })),
-    h('div', 'flex items-center gap-2',
+    h('div', 'flex items-center gap-2 shrink-0',
+      ro || answering ? null : h(Btn, { kind: lead ? 'acceptSolid' : 'accept', testid: 'answer-worker', className: 'r-rec', onClick: () => setAnswering(true) }, 'Answer the worker'),
       h(Btn, { kind: 'small', onClick: () => navigate('run', { run: item.run }) }, 'Open run'),
-      ro ? null : h(Btn, { kind: 'acceptSolid', testid: 'run-again', onClick: again }, 'Run again')))
+      ro ? null : h(Btn, { kind: 'small', testid: 'run-again', onClick: again }, 'Run again')))
 }
 
 function ArchivedBar({ project }) {
@@ -254,8 +315,45 @@ function ArchivedBar({ project }) {
 
 // ------------------------------------------------------------------ read-out
 
+// Result first (decisions Round 24, U12): outcome and verified behaviours, then what the newest run changed, the
+// checks run, the manual review left, the code basis and how to try it; the evidence sits collapsed, each line
+// labelled automated, manual or model. Every verdict is the engine's.
+function ResultSection({ r }) {
+  const [open, setOpen] = useState(false)
+  const row = (label, value, testid) => h('div', { className: 'flex items-baseline gap-3 text-xs', 'data-testid': testid },
+    h('span', 'text-muted w-36 shrink-0', label), h('div', 'min-w-0 flex-1 text-fg', value))
+  const none = h('span', 'text-dim', 'None')
+  const wc = r.what_changed
+  return h(Section, { title: 'Result', testid: 'readout-result', right: h(Badge, { status: r.complete ? 'complete' : 'not_complete', small: true }) },
+    h(Well, { className: 'flex flex-col gap-2.5' },
+      h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'result-outcome' }, r.outcome),
+      row('Verified behaviours', r.verified.length ? h('div', 'flex flex-col gap-0.5',
+        ...r.verified.map(v => h('span', { key: v.spec, 'data-verified': v.spec }, h('span', 'mono text-muted mr-1.5', v.spec), v.text))) : none, 'result-verified'),
+      row('What changed', wc ? h('div', 'flex flex-col gap-0.5',
+        h('span', 'text-muted', `Run ${wc.run} of ${wc.spec} by ${wc.profile}`),
+        ...(wc.files.length ? wc.files.map(f => h('span', { key: f, className: 'mono', 'data-file': f }, f)) : [none])) : none, 'result-changed'),
+      row('Checks run', r.checks.length ? h('div', 'flex flex-col gap-0.5',
+        ...r.checks.map(c => h('span', { key: c.test, className: 'flex items-center gap-1.5', 'data-check': c.test },
+          h('span', 'mono', `${c.test} #${c.n}`), h(Badge, { status: c.status, small: true }), h('span', { className: 'text-muted truncate min-w-0', title: c.what || '' }, c.what || '')))) : none, 'result-checks'),
+      row('Remaining manual review', r.manual.length ? h('div', 'flex flex-col gap-0.5',
+        ...r.manual.map(m => h('span', { key: m.test }, h('span', 'mono text-muted mr-1.5', m.test), m.text, m.required ? '' : ' (optional)'))) : none, 'result-manual'),
+      row('Code basis', h('span', 'mono', r.basis), 'result-basis'),
+      r.try.instruction || r.try.command ? row('Try it', h('div', 'flex flex-col gap-1',
+        r.try.instruction ? h('span', { 'data-testid': 'try-instruction' }, r.try.instruction) : null,
+        r.try.command ? h('code', { className: 'mono text-[11px] bg-card border border-line rounded px-1.5 py-0.5 self-start', 'data-testid': 'try-command' }, r.try.command) : null), 'result-try') : null),
+    h('div', 'flex flex-col gap-1.5 pt-1',
+      h('button', { type: 'button', className: 'text-[11px] text-muted hover:text-fg self-start', 'aria-expanded': open ? 'true' : 'false', 'data-testid': 'evidence-toggle', onClick: () => setOpen(!open) },
+        `${open ? 'Hide' : 'Show'} evidence (${r.evidence.length})`),
+      open ? h('div', { className: 'bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px] flex flex-col gap-1', 'data-testid': 'evidence-lines' },
+        ...r.evidence.map((x, i) => h('div', { key: i, className: 'flex items-baseline gap-2 min-w-0', 'data-label': x.label },
+          h('span', 'text-needs w-20 shrink-0', x.label),
+          h('span', { className: 'text-fg truncate min-w-0 flex-1', title: x.text }, x.text),
+          h('span', 'text-muted shrink-0', `${x.by || ''} · ${dayClock(x.at)}`)))) : null))
+}
+
 function ReadOut({ project, need }) {
   const q = useApi(`${P(project)}/needs/${need}/readout`, { live: true })
+  const rq = useApi(`${P(project)}/needs/${need}/result`, { live: true })
   useExit(() => goBack('rung', { rid: need }))
   const [exported, setExported] = useState(null)
   const [err, setErr] = useState('')
@@ -279,6 +377,7 @@ function ReadOut({ project, need }) {
     exported ? h(Well, { className: 'flex items-center justify-between text-xs', testid: 'export-path' },
       h('span', 'text-muted', 'Exported'), h('span', 'mono text-fg', shortPath(exported))) : null,
     h(ErrorLine, { text: err }),
+    rq.data ? h(ResultSection, { r: rq.data }) : null,
     h(Section, { title: 'Intent', testid: 'readout-intent' },
       h(Well, { className: 'flex flex-col gap-1' },
         h('span', { className: 'text-sm font-semibold text-fg', 'data-testid': 'intent-text' }, n.text),
@@ -401,10 +500,14 @@ function ProjectSettings({ project }) {
   const [errs, setErrs] = useState({})
   const [err, setErr] = useState('')
   const [del, setDel] = useState(false)
+  const tq = useApi(`/projects/${encodeURIComponent(project)}/try`)
+  const [tr, setTr] = useState(null)
+  useEffect(() => { if (!tr && tq.data) setTr(tq.data) }, [!!tq.data])
   useEffect(() => {
     if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles })
   }, [proj && proj.name])
-  useDirty(f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()]))
+  const tryDirty = !!(tr && tq.data && (tr.instruction !== tq.data.instruction || tr.command !== tq.data.command))
+  useDirty(tryDirty || (f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()])))
   useExit(() => goBack('home'), true)
   if (stQ.error) return h(Missing, { project, text: errText(stQ.error) })
   if (!st) return h(Frame, { main: h(Loading) })
@@ -441,6 +544,17 @@ function ProjectSettings({ project }) {
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center justify-end gap-2 pt-3 border-t border-line',
         h(Btn, { kind: 'primary', testid: 'save-project', onClick: save }, 'Save'))),
+    proj ? h(RunModeSection, { project, proj, onErr: setErr }) : null,
+    tr ? h('section', { className: 'bg-card border border-line rounded-[6px] p-5 flex flex-col gap-4', 'data-testid': 'try-settings' },
+      h(SectionTitle, null, 'Try the result'),
+      h(Field, { label: 'Instruction', optional: true, name: 'try_instruction' }, h('input', { className: INPUT, type: 'text', name: 'try_instruction', value: tr.instruction, onChange: e => setTr({ ...tr, instruction: e.target.value }) })),
+      h(Field, { label: 'Command', optional: true, name: 'try_command' }, h('input', { className: cx(INPUT, 'font-mono'), type: 'text', name: 'try_command', value: tr.command, onChange: e => setTr({ ...tr, command: e.target.value }) })),
+      h('div', 'flex items-center justify-end gap-2 pt-3 border-t border-line',
+        h(Btn, { kind: 'small', testid: 'save-try', disabled: !tryDirty, onClick: async () => {
+          const x = await post(`/projects/${encodeURIComponent(project)}/try`, tr)
+          if (!x.ok) return setErr(x.error)
+          setErr(''); setTr(x.data); tq.refetch && tq.refetch()
+        } }, 'Save'))) : null,
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'project-history' },
       h(SectionTitle, null, 'History'),
       events.length

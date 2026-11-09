@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Columns added after schema 1, applied to older stores by `migrate`. New stores get them from SCHEMA.
 MIGRATIONS = {
@@ -26,6 +26,18 @@ MIGRATIONS = {
         ("executions", "basis_end", "TEXT NOT NULL DEFAULT ''"),
         ("executions", "reason", "TEXT NOT NULL DEFAULT ''"),
         ("rungs", "assets", "TEXT"),
+    ],
+    # How to try the result (Round 24, U12): an instruction and an optional command a person starts.
+    5: [
+        ("projects", "try_it", "TEXT NOT NULL DEFAULT '{}'"),
+        # Components a milestone touches (SYS-02); the architecture itself is in new tables.
+        ("milestones", "system", "TEXT NOT NULL DEFAULT '{}'"),
+        # Isolated runs (SYS-05, B12): the project's run mode, a run's workspace, an attempt's local results.
+        ("projects", "run_mode", "TEXT NOT NULL DEFAULT 'shared'"),
+        ("runs", "workspace", "TEXT NOT NULL DEFAULT ''"),
+        ("attempts", "local_results", "TEXT NOT NULL DEFAULT '[]'"),
+        # The plan (SYS-04): its attempt budget and the runs it started.
+        ("projects", "plan", "TEXT NOT NULL DEFAULT '{}'"),
     ],
 }
 
@@ -270,6 +282,7 @@ CREATE TABLE IF NOT EXISTS milestones (
     journey      TEXT NOT NULL DEFAULT '',
     architecture TEXT NOT NULL DEFAULT '',
     scope        TEXT NOT NULL DEFAULT '[]',
+    system       TEXT NOT NULL DEFAULT '{}',
     status       TEXT NOT NULL DEFAULT 'draft',
     version      INTEGER NOT NULL DEFAULT 1,
     approved_by  TEXT,
@@ -305,6 +318,61 @@ CREATE TABLE IF NOT EXISTS milestone_runs (
     carried_by  TEXT NOT NULL DEFAULT '',
     basis_start TEXT NOT NULL DEFAULT '',
     basis_end   TEXT NOT NULL DEFAULT '',
+    started_at  REAL NOT NULL,
+    ended_at    REAL,
+    UNIQUE(check_pk, n)
+);
+
+-- Architecture baseline (Round 24, SYS-02): components and contracts, each a series of versions a person
+-- approves. Approved versions stay as history.
+CREATE TABLE IF NOT EXISTS arch (
+    pk          INTEGER PRIMARY KEY,
+    project_pk  INTEGER NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    UNIQUE(project_pk, kind, name)
+);
+
+CREATE TABLE IF NOT EXISTS arch_versions (
+    pk          INTEGER PRIMARY KEY,
+    arch_pk     INTEGER NOT NULL REFERENCES arch(pk) ON DELETE CASCADE,
+    version     INTEGER NOT NULL,
+    data        TEXT NOT NULL DEFAULT '{}',
+    status      TEXT NOT NULL DEFAULT 'draft',
+    by_name     TEXT NOT NULL DEFAULT '',
+    approved_by TEXT,
+    approved_at REAL,
+    created_at  REAL NOT NULL,
+    UNIQUE(arch_pk, version)
+);
+
+-- Contract checks (Round 24, SYS-06): approved commands run against a contract's real artifacts; each result
+-- keeps the contract version and the code basis it was recorded on.
+CREATE TABLE IF NOT EXISTS contract_checks (
+    pk          INTEGER PRIMARY KEY,
+    arch_pk     INTEGER NOT NULL REFERENCES arch(pk) ON DELETE CASCADE,
+    cid         TEXT NOT NULL,
+    command     TEXT NOT NULL,
+    timeout     INTEGER NOT NULL DEFAULT 120,
+    status      TEXT NOT NULL DEFAULT 'draft',
+    by_name     TEXT NOT NULL DEFAULT '',
+    approved_by TEXT,
+    approved_at REAL,
+    created_at  REAL NOT NULL,
+    UNIQUE(arch_pk, cid)
+);
+
+CREATE TABLE IF NOT EXISTS contract_runs (
+    pk          INTEGER PRIMARY KEY,
+    check_pk    INTEGER NOT NULL REFERENCES contract_checks(pk) ON DELETE CASCADE,
+    n           INTEGER NOT NULL,
+    contract_version INTEGER NOT NULL,
+    status      TEXT NOT NULL,
+    exit_code   INTEGER,
+    output      TEXT NOT NULL DEFAULT '',
+    basis       TEXT NOT NULL DEFAULT '',
+    carried_by  TEXT NOT NULL DEFAULT '',
     started_at  REAL NOT NULL,
     ended_at    REAL,
     UNIQUE(check_pk, n)

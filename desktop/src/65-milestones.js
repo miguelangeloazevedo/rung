@@ -39,7 +39,10 @@ function Milestones({ project }) {
   const rows = q.data
   return h(Page, { project, title: 'Milestones', back: () => goBack('home') },
     h('section', { className: 'flex flex-col gap-2', 'data-testid': 'milestones' },
-      h(SectionTitle, { right: ro ? null : h(Btn, { kind: 'small', testid: 'milestone-new', onClick: () => navigate('milestone-new') }, 'New milestone') }, 'Integration milestones'),
+      h(SectionTitle, { right: h('span', 'flex items-center gap-2', h(Btn, { kind: 'small', testid: 'open-plan', onClick: () => navigate('plan') }, 'Plan'),
+        h(Btn, { kind: 'small', testid: 'open-report', onClick: () => navigate('system-report') }, 'System report'),
+        h(Btn, { kind: 'small', testid: 'open-architecture', onClick: () => navigate('architecture') }, 'Architecture'),
+        ro ? null : h(Btn, { kind: 'small', testid: 'milestone-new', onClick: () => navigate('milestone-new') }, 'New milestone')) }, 'Integration milestones'),
       !rows ? h(Loading) : rows.length ? frag(...rows.map(m => h(MilestoneRow, { key: m.id, m })))
         : h(Empty, { text: 'No milestones', action: ro ? null : 'New milestone', onClick: () => navigate('milestone-new'), testid: 'no-milestones' })))
 }
@@ -139,7 +142,8 @@ function MilestoneView({ project, mid }) {
       h(ErrorLine, { text: err }),
       m.blockers.length ? h('div', { className: 'flex flex-col gap-1', 'data-testid': 'milestone-blockers' },
         ...m.blockers.map((b, i) => h('div', { key: i, className: 'flex items-center gap-2 text-xs', 'data-code': b.code },
-          h(Dot, { t: b.code === 'failed' ? 'fail' : b.code === 'out_of_date' ? 'stale' : 'needs' }), h('span', 'text-fg', b.text)))) : null,
+          h(Dot, { t: B_TONE[b.code] || 'needs' }), h('span', 'text-fg', b.text)))) : null,
+      h(MilestoneComponents, { project, m, ro, onErr: setErr }),
       h(Section, { title: 'Journey', testid: 'milestone-journey' }, h(Well, { className: 'text-xs text-fg' }, m.journey)),
       m.architecture ? h(Section, { title: 'Architecture and constraints', testid: 'milestone-architecture' }, h(Well, { className: 'text-xs text-muted' }, m.architecture)) : null,
       h(Section, { title: 'Included work', testid: 'milestone-scope', right: h('span', 'text-[11px] mono text-muted', `${m.scope.filter(s => s.ok).length} of ${m.scope.length} verified`) },
@@ -165,7 +169,8 @@ function MilestoneView({ project, mid }) {
               h(Badge, { status: r.status, small: true })))))),
         m.status === 'draft' && !ro ? h('div', 'flex items-center gap-2 pt-1',
           h('input', { className: INPUT + ' mono', name: 'check-command', 'aria-label': 'Check command', value: cmd, onChange: e => setCmd(e.target.value) }),
-          h(Btn, { kind: 'small', testid: 'add-check', onClick: addCheck, disabled: !cmd.trim() }, 'Add check')) : null)))
+          h(Btn, { kind: 'small', testid: 'add-check', onClick: addCheck, disabled: !cmd.trim() }, 'Add check')) : null),
+      h(MilestoneSystem, { project, m, ro, onErr: setErr })))
 }
 
 Object.assign(VIEWS, {

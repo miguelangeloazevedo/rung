@@ -189,6 +189,21 @@ def _sample(svc, human, body):
     return svc.engine.create_sample(human)
 
 
+@route("GET", "/sample/state")
+def _sample_state(svc, human, body):
+    return svc.engine.sample_state() or {"broken": False, "file": None, "none": True}
+
+
+@route("POST", "/sample/break")
+def _sample_break(svc, human, body):
+    return svc.engine.break_sample(human)
+
+
+@route("POST", "/sample/repair")
+def _sample_repair(svc, human, body):
+    return svc.engine.repair_sample(human)
+
+
 @route("POST", "/sample/reset")
 def _sample_reset(svc, human, body):
     return svc.engine.reset_sample(human)
@@ -360,6 +375,8 @@ def _rung(svc, human, body, project, rid):
         r["authoring"] = (req or {}).get("authoring")  # the requirement's mode, which its control writes
         ok, why = e.develop_available(project, rid)
         r["develop"] = {"available": ok, "blocked_by": why or None}
+        r["dependencies"] = e.dependencies(project, rid)  # SYS-03: the edges both ways
+        r["waits_for"] = e.blocked_by(e._rung_row(project, rid))
     if r["kind"] == "test":
         r["executions"] = e.executions(project, rid)
         r["protected"] = e.protected(project, rid)
@@ -640,6 +657,153 @@ def _export_milestone(svc, human, body, project, mid):
     return svc.engine.export_milestone(project, mid)
 
 
+# ------------------------------------------------------------------ architecture and dependencies (SYS-02, SYS-03)
+
+
+def _only(body, allowed):
+    unknown = sorted(set(body) - set(allowed))
+    if unknown:
+        raise ApiError(400, "unknown field " + ", ".join(unknown), "bad_request")
+
+
+@route("GET", "/projects/{project}/architecture")
+def _architecture(svc, human, body, project):
+    return svc.engine.architecture(project)
+
+
+@route("POST", "/projects/{project}/architecture")
+def _save_arch(svc, human, body, project):
+    _only(body, ("kind", "name", "responsibility", "paths", "contract_kind", "producer", "consumers", "artifacts",
+                 "text"))
+    fields = {k: body[k] for k in ("responsibility", "paths", "producer", "consumers", "artifacts", "text") if k in body}
+    if "contract_kind" in body:
+        fields["kind"] = body["contract_kind"]
+    return svc.engine.save_arch(project, body.get("kind", ""), body.get("name", ""), fields, human)
+
+
+@route("POST", "/projects/{project}/architecture/approve")
+def _approve_arch(svc, human, body, project):
+    _only(body, ("kind", "name"))
+    return svc.engine.approve_arch(project, body.get("kind", ""), body.get("name", ""), human)
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/components")
+def _spec_components(svc, human, body, project, rid):
+    _only(body, ("components",))
+    return svc.engine.set_spec_components(project, rid, body.get("components"), human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/system")
+def _milestone_system(svc, human, body, project, mid):
+    _only(body, ("field", "value"))
+    return svc.engine.set_milestone_system(project, mid, body.get("field", ""), body.get("value"), human)
+
+
+@route("POST", "/projects/{project}/check-everything")
+def _check_everything(svc, human, body, project):
+    return svc.engine.check_everything(project, carried_by=human.name)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/components")
+def _milestone_components(svc, human, body, project, mid):
+    _only(body, ("components",))
+    return svc.engine.set_milestone_components(project, mid, body.get("components"), human)
+
+
+@route("GET", "/projects/{project}/rungs/{rid}/dependencies")
+def _dependencies(svc, human, body, project, rid):
+    return svc.engine.dependencies(project, rid)
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/dependencies")
+def _add_dependency(svc, human, body, project, rid):
+    _only(body, ("requires",))
+    return svc.engine.add_dependency(project, rid, body.get("requires", ""), human)
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/dependencies/remove")
+def _remove_dependency(svc, human, body, project, rid):
+    _only(body, ("requires",))
+    return svc.engine.remove_dependency(project, rid, body.get("requires", ""), human)
+
+
+@route("POST", "/projects/{project}/contract-checks")
+def _cc_add(svc, human, body, project):
+    _only(body, ("contract", "command", "timeout"))
+    return svc.engine.add_contract_check(project, body.get("contract", ""), body.get("command", ""),
+                                         body.get("timeout") or 120, human)
+
+
+@route("POST", "/projects/{project}/contract-checks/approve")
+def _cc_approve(svc, human, body, project):
+    _only(body, ("contract", "check"))
+    return svc.engine.approve_contract_check(project, body.get("contract", ""), body.get("check", ""), human)
+
+
+@route("POST", "/projects/{project}/contract-checks/run")
+def _cc_run(svc, human, body, project):
+    _only(body, ("contract",))
+    return svc.engine.run_contract_checks(project, body.get("contract", ""), carried_by=human.name)
+
+
+@route("GET", "/projects/{project}/plan")
+def _plan(svc, human, body, project):
+    return svc.engine.plan(project)
+
+
+@route("POST", "/projects/{project}/plan/start")
+def _plan_start(svc, human, body, project):
+    _only(body, ("need",))
+    return svc.engine.start_ready(project, body.get("need"), human,
+                                  launch=lambda proj, rid: {k: v for k, v in svc.send(proj, rid, human).items()
+                                                            if k != "_thread"})
+
+
+@route("POST", "/projects/{project}/plan/budget")
+def _plan_budget(svc, human, body, project):
+    _only(body, ("attempts", "minutes"))
+    return svc.engine.set_plan_budget(project, body.get("attempts"), human, minutes=body.get("minutes"))
+
+
+@route("GET", "/projects/{project}/system-report")
+def _system_report(svc, human, body, project):
+    out = svc.engine.system_report(project)
+    out["markdown"] = svc.engine.system_report_markdown(project)
+    return out
+
+
+@route("POST", "/projects/{project}/run-mode")
+def _run_mode(svc, human, body, project):
+    _only(body, ("mode",))
+    return svc.engine.set_run_mode(project, body.get("mode", ""), human)
+
+
+@route("POST", "/projects/{project}/runs/{run}/integrate")
+def _integrate(svc, human, body, project, run):
+    return svc.engine.integrate_run(project, int(run), human)
+
+
+# ------------------------------------------------------------------ result first (Round 24, U12)
+
+
+@route("GET", "/projects/{project}/needs/{rid}/result")
+def _result(svc, human, body, project, rid):
+    return svc.engine.result(project, rid)
+
+
+@route("GET", "/projects/{project}/try")
+def _try_get(svc, human, body, project):
+    return svc.engine.try_it(project)
+
+
+@route("POST", "/projects/{project}/try")
+def _try_set(svc, human, body, project):
+    unknown = sorted(set(body) - {"instruction", "command"})
+    if unknown:
+        raise ApiError(400, "unknown field " + ", ".join(unknown), "bad_request")
+    return svc.engine.set_try(project, body.get("instruction", ""), body.get("command", ""), human)
+
+
 # ------------------------------------------------------------------ chat binding (Round 24, B18)
 
 
@@ -746,6 +910,16 @@ def _pick(svc, human, body, project, rid):
     if not isinstance(agent, str):
         raise RungError("agent is a profile name", code="bad_request", status=400, field="agent")
     return svc.engine.pick(project, rid, agent, human)
+
+
+@route("POST", "/projects/{project}/runs/{run}/answer")
+def _answer(svc, human, body, project, run):
+    """Answer the worker: store the answer with its question, then start the next run of that specification with
+    the same profile; the next run's prompt carries the question and the answer."""
+    if not str(run).isdigit():
+        raise ApiError(400, "run is a number", "bad_request")
+    a = svc.engine.answer_run(project, int(run), body.get("answer"), human)
+    return svc.send(project, a["spec"], human, a["profile"])
 
 
 @route("POST", "/projects/{project}/specs/{rid}/send")

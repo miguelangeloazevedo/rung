@@ -65,6 +65,9 @@ function RunView({ project, run }) {
   const needId = spec.path[0] && spec.path[0].id
   needRef.current = needId
   const stop = async () => { const x = await post(`/runs/${r.id}/cancel`); setErr(x.ok ? '' : x.error) }
+  const ws = r.workspace
+  const canIntegrate = !!(ws && !ws.integrated_at && r.status === 'passed' && ws.changed.length)
+  const integrate = async () => { const x = await post(`${P(project)}/runs/${r.id}/integrate`); setErr(x.ok ? '' : x.error) }
   if (!live) {
     const tone = outcomeTone(r.status)
     const reqText = (spec.path.find(p => p.id === r.requirement) || {}).text || ''
@@ -96,9 +99,17 @@ function RunView({ project, run }) {
           h('span', 'text-xs mono text-fg', `${r.requirement} ${reqText}`),
           h(Badge, { status: r.coverage === 'covered' ? 'covered' : r.coverage === 'failing' ? 'failing' : r.coverage === 'stale' ? 'stale' : 'open' }))),
       r.reason && r.status !== 'passed' ? h('div', { className: cx('text-xs', TONE_TEXT[tone === 'dim' ? 'muted' : tone]), 'data-testid': 'run-reason' }, r.reason) : null,
+      ws ? h('div', { className: 'flex flex-col gap-2 pt-2 border-t border-line', 'data-testid': 'workspace' },
+        h('div', 'flex items-center justify-between',
+          h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Workspace'),
+          h(Badge, { status: ws.integrated_at ? 'integrated' : 'local', small: true })),
+        h('div', { className: 'flex flex-col gap-0.5 bg-well p-2.5 rounded-[6px] border border-line2 font-mono text-[11px]', 'data-testid': 'workspace-files' },
+          ...(ws.changed.length ? ws.changed.map(f => h('div', { key: f, className: cx('flex items-center gap-2', ws.conflicts.includes(f) ? 'text-fail' : 'text-fg'), 'data-file': f, 'data-conflict': ws.conflicts.includes(f) ? '1' : undefined },
+            h('span', null, f), ws.conflicts.includes(f) ? h('span', 'text-[10px]', 'changed in the project since') : null)) : [h('span', { key: 'none', className: 'text-dim' }, 'No files changed')]))) : null,
       h(ErrorLine, { text: err }),
       h('div', 'flex items-center gap-2 pt-2 border-t border-line',
-        h(Btn, { kind: 'primary', testid: 'back-to-build', onClick: toBuild }, 'Back to build'),
+        canIntegrate ? h(Btn, { kind: 'primary', testid: 'integrate', onClick: integrate }, 'Integrate') : null,
+        h(Btn, { kind: canIntegrate ? undefined : 'primary', testid: 'back-to-build', onClick: toBuild }, 'Back to build'),
         h(Btn, { testid: 'open-spec', onClick: () => navigate('rung', { rid: spec.id }) }, 'Open specification'),
         r.status !== 'passed' ? h(Btn, { testid: 'run-again', disabled: !spec.develop.available, onClick: async () => { const x = await post(`${P(project)}/specs/${spec.id}/send`, {}); if (!x.ok) return setErr(x.error); navigate('run', { run: x.data.id }) } }, 'Run again') : null))
     return h(Page, { project, sel: spec.id }, body)

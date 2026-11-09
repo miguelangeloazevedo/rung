@@ -27,6 +27,7 @@ from .lifecycle import LifecycleMixin
 from .bot import BotMixin
 from .milestones import MilestonesMixin
 from .quick import QuickMixin
+from .system import SystemMixin
 
 KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
@@ -236,7 +237,7 @@ def _letter(k: int) -> str:
     return letters[k - 1] if 1 <= k <= 26 else f"z{k}"
 
 
-class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin):
+class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin, SystemMixin):
     # A callable profile name -> list of Hermes toolset names, or None. Set by the host so a profile's
     # tools are pre-filled from its Hermes configuration the first time Rung lists it.
     tool_source: "Callable[[str], list[str] | None] | None" = None
@@ -516,7 +517,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         return {"name": r["name"], "folder": r["folder"], "test_command": r["test_command"],
                 "profiles": _l(r["profiles"], []), "created_at": r["created_at"],
                 "last_activity": r["last_activity"], "archived": r["archived_at"] is not None,
-                "archived_at": r["archived_at"], "sample": self._is_sample(r)}
+                "archived_at": r["archived_at"], "sample": self._is_sample(r),
+                "run_mode": (r["run_mode"] if "run_mode" in r.keys() else "shared") or "shared"}
 
     def projects(self, archived: bool = False) -> list[dict]:
         """The picker: active projects, or with `archived` the archived ones."""
@@ -1470,7 +1472,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         d["reason"] = e["reason"]
         d["out_of_date"] = False
         if d["counts"] and e["status"] == "pass" and b:
-            cur = self._root_basis(test_row["project_pk"])
+            cur = self._spec_cur(self._rung_by_pk(test_row["parent_pk"]), self._root_basis(test_row["project_pk"]))
             d["out_of_date"] = e["reason"] == "changed_during_check" or (evidence.UNKNOWN not in (b, cur) and b != cur)
         return d
 
@@ -1508,7 +1510,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
                       "context, commit_ref, basis_start, started_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (t["pk"], n, seq, data.get("type", "command"), "running", data.get("command", ""), carried_by,
                        run_pk, attempt, context_line(), git_commit(folder),
-                       evidence.basis(p["folder"], fresh=True), self.clock()))
+                       self._spec_cur(self._rung_by_pk(t["parent_pk"]), evidence.basis(p["folder"], fresh=True)),
+                       self.clock()))
             self._touch_project(c, t["project_pk"])
         return n
 
@@ -1562,7 +1565,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
             if data.get("type") == "ai_judged" and status == "pass":
                 status = "pass"  # recorded, but never releases a gate (see _released)
         after = evidence.manifest(root)
-        end_basis = evidence.digest(after)
+        spec_row = self._rung_by_pk(t["parent_pk"])
+        end_basis = self._scoped_digest(t["project_pk"], self._spec_comps(spec_row), after) or evidence.digest(after)
         evidence.forget(root)
         if status in ("pass", "fail") and evidence.modified(before, after):
             reason = "changed_during_check"  # a file the check ran against changed under it: it applies to neither
@@ -1612,7 +1616,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         if _l(t["data"], {}).get("type") != "manual":
             raise RungError(f"{test_rid} is not a manual test", code="bad_request", status=400)
         now = self.clock()
-        b = evidence.basis(self._project_row(t["project_pk"])["folder"], fresh=True)
+        b = self._spec_cur(self._rung_by_pk(t["parent_pk"]),
+                           evidence.basis(self._project_row(t["project_pk"])["folder"], fresh=True))
         with self._tx() as c:
             n = c.execute("SELECT COALESCE(MAX(n),0)+1 FROM executions WHERE test_pk=?", (t["pk"],)).fetchone()[0]
             seq = self._next_seq(c)
@@ -1720,6 +1725,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
 
         state: satisfied | failed | missing | checking | could_not_verify | manual_pending | out_of_date | stale.
         A cancelled execution leaves no evidence; the result before it still has to match the current code."""
+        cur = self._spec_cur(self._rung_by_pk(t["parent_pk"]), cur)  # SYS-11: judged on its components' paths
         data = _l(t["data"], {})
         ttype = data.get("type", "command")
         d = {"test": t["rid"], "type": ttype, "required": self._required(data), "execution": None,
@@ -1918,6 +1924,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
                     block("out_of_date", f"{rid} passed (#{n}) while files changed under it", test=rid, execution=n)
                 else:
                     block("out_of_date", f"{rid} passed (#{n}) on code that has changed since", test=rid, execution=n)
+        for cb in self._spec_contract_blockers(spec):  # SYS-02: an approved contract change since the last run
+            block(cb.pop("code"), cb.pop("text"), **cb)
         if cur == evidence.UNKNOWN and tests:
             block("basis_unknown", "the project's files cannot be read whole (the folder is missing, or it holds "
                   f"more than {evidence.MAX_FILES} files after .gitignore and .rungignore)")
@@ -1936,7 +1944,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         elif any(b["code"] in ("manual_pending", "manual_missing") for b in blockers) and \
                 all(b["code"] in ("manual_pending", "manual_missing") for b in blockers):
             state = "awaiting_manual"
-        elif any(b["code"] == "out_of_date" for b in blockers):
+        elif any(b["code"] in ("out_of_date", "contract_changed") for b in blockers):
             state = "out_of_date"
         elif any(b["code"] in ("could_not_verify", "verification_changed", "basis_unknown") for b in blockers):
             state = "could_not_verify"
@@ -1949,12 +1957,13 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
     @staticmethod
     def _next_action(blockers: list[dict]) -> dict | None:
         order = ["stale", "not_approved", "no_tests", "basis_unknown", "verification_changed", "manual_pending", "failed",
-                 "could_not_verify", "out_of_date", "not_run", "manual_missing", "checking", "no_passing"]
+                 "could_not_verify", "out_of_date", "contract_changed", "not_run", "manual_missing", "checking",
+                 "no_passing"]
         kinds = {"stale": "review_change", "not_approved": "approve", "no_tests": "add_test",
                  "verification_changed": "review_test_files", "manual_pending": "approve_manual_result",
                  "failed": "repair", "could_not_verify": "repair_test_setup", "out_of_date": "run_tests",
                  "not_run": "run_tests", "manual_missing": "record_manual_result", "checking": "wait",
-                 "no_passing": "run_tests", "basis_unknown": "repair_project_folder"}
+                 "no_passing": "run_tests", "basis_unknown": "repair_project_folder", "contract_changed": "run_tests"}
         for code in order:
             b = next((x for x in blockers if x["code"] == code), None)
             if b:
@@ -2058,6 +2067,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         # A test whose latest result is Error: it could not run, which is neither a pass nor a fail.
         for e in self._q("SELECT e.*, r.rid AS trid FROM executions e JOIN rungs r ON r.pk = e.test_pk "
                          "WHERE r.project_pk=? AND e.status='error' AND e.seq > r.valid_from "
+                         # a develop run still retrying within its budget is the agent's, not yours (U04)
+                         "AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.pk = e.run_pk AND u.status IN ('queued','running')) "
                          "AND r.status IN ('approved','stale','draft') AND NOT EXISTS (SELECT 1 FROM executions x "
                          "WHERE x.test_pk = e.test_pk AND x.seq > e.seq AND x.status IN ('pass','fail','error','pending')) "
                          "ORDER BY e.pk", (p["pk"],)):
@@ -2074,7 +2085,37 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
                 continue
             items.append({"type": "needs_input", "id": r["srid"], "kind": "specification", "run": r["pk"],
                           "text": r["reason"] or "", "profile": r["profile"]})
-        return items
+        return [self._decision(p["pk"], i) for i in items]
+
+    # Needs you as a decision surface (decisions Round 24, U04): each item names the outcome it affects, why it
+    # needs a person, what changed or failed, and one recommended action with its own verb. Data only.
+    ACTIONS = {"stale": "Review change", "proposed": "Review proposal", "approval": "Approve result",
+               "error": "Repair test setup", "needs_input": "Answer the worker"}
+    WHY = {"stale": "Changed upstream", "proposed": "Proposed", "approval": "Result recorded",
+           "error": "Could not run", "needs_input": "Worker asked"}
+
+    def _decision(self, project_pk: int, item: dict) -> dict:
+        r = self._q1("SELECT * FROM rungs WHERE project_pk=? AND rid=?", (project_pk, item["id"]))
+        outcome = None
+        while r is not None:  # the nearest requirement above the item; a requirement or need names its need
+            if r["kind"] == "need" or (r["kind"] == "requirement" and r["rid"] != item["id"]):
+                outcome = {"id": r["rid"], "text": r["text"]}
+                break
+            r = self._q1("SELECT * FROM rungs WHERE pk=?", (r["parent_pk"],)) if r["parent_pk"] else None
+        t = item["type"]
+        if t == "stale":
+            ch = item.get("change")
+            what = f"{ch['rung']} changed: {ch['after']}" if ch else f"{item['id']} is stale"
+        elif t == "proposed":
+            what = f"{item['id']} by {item.get('proposer') or 'an agent'}: {item['text']}"
+        elif t == "approval":
+            what = f"{item['id']} #{item['n']} recorded pass by {item.get('recorder') or 'you'}"
+        elif t == "error":
+            what = item.get("reason") or item["text"]
+        else:
+            what = item["text"] or f"run {item.get('run')} stopped"
+        return {**item, "outcome": outcome, "why": self.WHY[t], "what": what,
+                "action": {"verb": self.ACTIONS[t], "type": t}}
 
     def tiles(self, project: str) -> dict:
         p = self._project_row(project)
@@ -2167,8 +2208,11 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
             comp = self.need_completeness(project, n["rid"])
             needs.append({"id": n["rid"], "text": n["text"], "status": n["status"], "complete": comp["complete"],
                           "open": comp["open"], "out_of_scope": comp["out_of_scope"]})
+        # What is left when nothing needs you (U04): how many open items and under which needs, never "all done".
+        unfinished = {"open": sum(len(n["open"]) for n in needs),
+                      "needs": [{"id": n["id"], "open": len(n["open"])} for n in needs if not n["complete"]]}
         return {"project": self.project(project), "tiles": self.tiles(project), "needs_you": self.needs_you(project),
-                "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs,
+                "unfinished": unfinished, "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs,
                 "next": nxt, "out_of_date": self.outdated_tests(project),
                 "milestones": [{"id": m["id"], "title": m["title"], "state": m["state"],
                                 "verified": sum(1 for x in m["scope"] if x["ok"]), "total": len(m["scope"]),
@@ -2339,6 +2383,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
                 "required_tools": list(needs.required_tools), "independent": needs.independent,
                 "marked_human_only": bool(data.get("human_only")),
                 "suggestions": [x.as_dict() for x in ranked], "excluded": excluded,
+                "parts_help": dict(allocation.PART_HELP), "independent_help": allocation.INDEPENDENT_HELP,
                 "pick": {"profile": pick["profile"], "picked_by": pick["picked_by"], "at": pick["at"]} if pick else None,
                 "tests": {"command": sum(1 for t in tests if _l(t["data"], {}).get("type") == "command"),
                           "manual": sum(1 for t in tests if _l(t["data"], {}).get("type") == "manual"),
@@ -2381,6 +2426,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
         self._require_develop(project, s)
         if self._q1("SELECT 1 FROM runs WHERE spec_pk=? AND status IN ('queued','running')", (s["pk"],)):
             raise RungError(f"{spec_rid} is already running", code="conflict")
+        waits = self.blocked_by(s)
+        if waits:
+            raise RungError(f"{spec_rid} cannot start: {waits}", code="blocked")
         integrating = self.integration_running(c, s["project_pk"])
         if integrating:
             # Integration is judged on one state of the folder (Round 23): no work changes it meanwhile.
@@ -2461,6 +2509,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
                 "n": a["n"], "status": a["status"], "reason": a["reason"], "files_changed": _l(a["files_changed"], []),
                 "commands": _l(a["commands"], []), "worker_output": a["worker_output"], "fed_in": a["fed_in"],
                 "fed_forward": a["fed_forward"], "started_at": a["started_at"], "ended_at": a["ended_at"],
+                "local": _l(a["local_results"], []) if "local_results" in a.keys() else [],
                 "executions": [{"test": e["trid"], "n": e["n"], "status": e["status"], "exit_code": e["exit_code"],
                                 "output": e["output"], "command": e["command"],
                                 "duration": (e["ended_at"] - e["started_at"]) if e["ended_at"] else None}
@@ -2472,7 +2521,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin)
                 "commit": r["commit_ref"], "reason": r["reason"], "created_at": r["created_at"],
                 "started_at": r["started_at"], "ended_at": r["ended_at"], "attempts": attempts,
                 "requirement": self._rid_of(spec["parent_pk"]),
-                "coverage": self._req_coverage(self._rung_by_pk(spec["parent_pk"]))}
+                "coverage": self._req_coverage(self._rung_by_pk(spec["parent_pk"])),
+                "workspace": self.workspace_changes(r["pk"]) if self._workspace(r).get("path") else None}
 
     def run(self, run_id: int) -> dict:
         r = self._q1("SELECT * FROM runs WHERE pk=?", (int(run_id),))

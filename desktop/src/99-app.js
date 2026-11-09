@@ -26,6 +26,7 @@ function App() {
   else body = h(Missing, { project, text: 'Page not found' })
   return h(Root, { className: 'relative h-full w-full' },
     h(ViewFocus, { nav }),
+    h(TruncFocus),
     h('div', { className: 'h-full w-full', 'data-rung-view': view }, body),
     project ? h(DefectModal, { project }) : null,
     h(LeaveDialog))
@@ -63,6 +64,39 @@ function ViewFocus({ nav }) {
   return null
 }
 
+// HIE-04: a truncated text with no focusable control around it becomes focusable itself, so a keyboard reaches
+// its full text. Only elements actually cut are touched, each once, after the view settles.
+const TRUNC_FOCUSABLE = 'a,button,input,textarea,select,[tabindex],[role=button],[role=link]'
+function TruncFocus() {
+  useEffect(() => {
+    let id = 0
+    const scan = () => {
+      id = 0
+      const root = document.querySelector('.rung [data-rung-view]')
+      if (!root) return
+      for (const el of root.querySelectorAll('.truncate:not([data-tf])')) {
+        if (!el.getClientRects().length) continue
+        const cut = el.scrollWidth > el.clientWidth + 1
+        el.setAttribute('data-tf', cut ? '1' : '0')
+        if (cut && !(el.parentElement && el.parentElement.closest(TRUNC_FOCUSABLE))) {
+          el.setAttribute('tabindex', '0')
+          // a focus target is a control: at least 24 by 24 pixels (NAV-15), grown evenly around the text
+          if (getComputedStyle(el).display === 'inline') el.style.display = 'inline-block'
+          const hgt = el.getBoundingClientRect().height
+          if (hgt < 24) el.style.paddingBlock = `${Math.ceil((24 - hgt) / 2)}px`
+          if (!el.getAttribute('title')) el.setAttribute('title', el.textContent || '')
+        }
+      }
+    }
+    const mo = new MutationObserver(() => { if (!id) id = setTimeout(scan, 300) })
+    const host = document.querySelector('.rung') || document.body
+    mo.observe(host, { childList: true, subtree: true })
+    id = setTimeout(scan, 300)
+    return () => { mo.disconnect(); if (id) clearTimeout(id) }
+  }, [])
+  return null
+}
+
 function StatusChip() {
   const st = useApi('/state').data
   if (!st || !st.current) return null
@@ -97,6 +131,9 @@ export default {
       '\n.rung .r-col-main{flex:999 1 420px;min-width:0}.rung .r-side{flex:1 1 260px;min-width:0;max-width:100%}' +
       // every control is at least 24 by 24 CSS pixels (WCAG 2.5.8)
       '\n.rung button,.rung [role=button],.rung [role=switch],.rung select{min-height:24px;min-width:24px}' +
+      // HIE-04: truncated text shows in full on keyboard focus, its own or its control's (U13)
+      '\n.rung .truncate[data-tf="1"][tabindex]{min-height:24px;line-height:24px}' +
+      '\n.rung .truncate:focus,.rung .truncate:focus-visible,.rung :focus-visible .truncate,.rung :focus .truncate{white-space:normal;overflow:visible;text-overflow:clip}' +
       '\n.rung .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}' +
       '\n@media (prefers-reduced-motion: reduce){.rung *,.rung *::before,.rung *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}'
     document.head.appendChild(style)

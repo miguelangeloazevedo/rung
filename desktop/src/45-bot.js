@@ -202,10 +202,6 @@ function DraftBar({ project, kind, parent, fields, apply }) {
 
 // ------------------------------------------------------------------ Suggest on a need
 
-function scoreLine(s) {
-  return `score ${s.score} · tags ${s.parts.tags} · load ${s.parts.load} · reliability ${s.parts.reliability} · cost ${s.parts.cost}`
-}
-
 function SuggestPanel({ project, need, ro }) {
   const bot = useBotJob('Suggesting')
   const box = useRef(null)
@@ -247,7 +243,7 @@ function SuggestPanel({ project, need, ro }) {
       h('div', { className: 'text-xs text-fg', 'data-focus-first': '1', tabIndex: -1 }, 'No profile can suggest')) : null,
     j && chosen ? h('div', { className: 'flex flex-wrap items-center gap-2 text-[11px]', 'data-testid': 'suggest-profile', 'data-focus-first': '1', tabIndex: -1 },
       h('span', 'font-semibold text-fg text-xs', j.profile),
-      h('span', 'mono text-muted', `ranked ${rank} of ${choice.ranked.length} · ${scoreLine(chosen)}`),
+      h('span', 'text-muted', h('span', 'mono', `ranked ${rank} of ${choice.ranked.length} · score ${chosen.score} · `), h(ScoreParts, { parts: chosen.parts, help: choice.parts_help })),
       j.changed_since ? h(Badge, { status: 'stale', label: 'Changed since', small: true }) : null) : null,
     bot.busy ? h('div', { className: 'text-xs text-needs', 'data-testid': 'bot-running', role: 'status' }, `Suggesting · ${j.profile}`) : null,
     j && j.status === 'cancelled' ? h('div', { className: 'text-xs text-muted', 'data-testid': 'bot-cancelled', role: 'status', 'data-focus-first': '1', tabIndex: -1 }, 'Cancelled') : null,

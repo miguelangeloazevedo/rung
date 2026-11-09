@@ -26,6 +26,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# What each score part measures, in plain words (decisions Round 24, R11): shown on focus and hover wherever a
+# part is shown. No part is money or a chance of success.
+PART_HELP = {
+    "tags": "Capability tags matched: the share of the specification's tags this profile carries",
+    "load": "Current load: develop runs and open claims this profile carries now; 20 when idle",
+    "reliability": "Execution history: the share of this profile's past command executions that completed with a "
+                   "pass or a fail rather than an error; not a chance of success",
+    "cost": "Configured cost preference: the band set for this profile in Settings, 10 for the cheapest band; "
+            "not money spent",
+}
+INDEPENDENT_HELP = "Independent carrier: a different profile from the one that wrote the specification or its tests"
+
 TAGS_MAX = 40
 LOAD_MAX = 20
 RELIABILITY_MAX = 20
@@ -68,9 +80,26 @@ class Suggestion:
     profile: str
     score: int
     parts: dict = field(default_factory=dict)
+    why: list = field(default_factory=list)
 
     def as_dict(self) -> dict:
-        return {"profile": self.profile, "score": self.score, "parts": dict(self.parts)}
+        return {"profile": self.profile, "score": self.score, "parts": dict(self.parts), "why": list(self.why)}
+
+
+def why(p: ProfileFacts, wanted, needs: Needs) -> list[str]:
+    """The inputs behind each part, as data: what was counted, never a judgement of skill."""
+    wanted = [t for t in dict.fromkeys(wanted or []) if t]
+    have = set(p.labels or [])
+    hit = [t for t in wanted if t in have]
+    out = [f"carries {len(hit)} of {len(wanted)} tags" + (f": {', '.join(hit)}" if hit else "") if wanted
+           else "the specification names no tags",
+           "idle now" if p.load == 0 else f"carries {p.load} run{'s' if p.load != 1 else ''} or claims now",
+           f"{p.completed} of {p.total} past command executions completed" if p.total
+           else "no past command executions",
+           f"cost preference band {int(p.cost)}"]
+    if needs.independent:
+        out.append("a different profile from the author")
+    return out
 
 
 def tags_part(labels, wanted) -> int:
@@ -135,6 +164,6 @@ def rank(profiles, wanted_tags=(), required_tags=(), needs: Needs | None = None)
             "reliability": reliability_part(p.completed, p.total),
             "cost": cost_part(p.cost),
         }
-        out.append(Suggestion(p.name, sum(parts.values()), parts))
+        out.append(Suggestion(p.name, sum(parts.values()), parts, why(p, wanted_tags, needs)))
     out.sort(key=lambda s: (-s.score, s.profile))
     return out

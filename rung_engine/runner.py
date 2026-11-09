@@ -49,6 +49,10 @@ def build_prompt(engine: Engine, project: str, spec: str, n: int, max_attempts: 
     lines.append("If you cannot continue without an answer from a person, print one line: RUNG NEEDS INPUT: <question>")
     lines.append("If the work needs a capability outside this specification, do not build it here; print one line: "
                  "RUNG MISSING CAPABILITY: <capability>")
+    answered = engine.run_answer(project, spec)
+    if answered:
+        lines.append(f"An earlier run asked: {answered['question']}")
+        lines.append(f"A person answered: {answered['answer']}")
     if fed:
         lines.append("The previous attempt failed. Test output:")
         lines.append(fed)
@@ -92,6 +96,9 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
     started = time.time()
     if not engine.start_running(run_id, started, os.getpid()):
         return engine.run(run_id)  # cancelled (or taken) before it started
+    ws = engine.prepare_workspace(run_id)  # an isolated run works in its own copy (SYS-05, B12)
+    if ws is not None:
+        folder = ws
     deadline = started + run["timeout_s"]
     fed = ""
     max_attempts = run["max_attempts"]
@@ -154,9 +161,13 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
                                reason="no file changed")
             continue
         results = []
-        for t in tests:
-            k = engine.begin_execution(project, t["id"], carried_by=run["profile"], run_pk=run_id, attempt=n)
-            results.append(engine.perform_execution(project, t["id"], k, should_cancel=cancelled))
+        if ws is not None:  # local results: kept on the attempt, never an execution of the project
+            results = [engine.run_local(project, t["id"], ws, should_cancel=cancelled) for t in tests]
+            engine.record_local(run_id, n, results)
+        else:
+            for t in tests:
+                k = engine.begin_execution(project, t["id"], carried_by=run["profile"], run_pk=run_id, attempt=n)
+                results.append(engine.perform_execution(project, t["id"], k, should_cancel=cancelled))
         tested_once = True
         for r in results:
             if r["command"] and r["command"] not in commands:
@@ -175,6 +186,9 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
             break
         if results and all(r["status"] == "pass" for r in results):
             engine.end_attempt(run_id, n, "pass", files, commands, wout)
+            if ws is not None:
+                final, reason = "passed", f"passed locally on attempt {n}; integrate to apply it to the project"
+                break
             final, reason = "passed", f"passed on attempt {n}"
             # Other specifications whose passes this work made out of date are checked again, by the engine.
             rechecked = engine.recheck(project, carried_by="engine", skip=tuple(t["id"] for t in tests))
