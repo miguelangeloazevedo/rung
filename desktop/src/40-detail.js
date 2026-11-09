@@ -381,6 +381,7 @@ function SpecView({ project, r, ret, need }) {
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }), ...tests.map(t => h(TestLine, { key: t.id, t })))),
+    r.status === 'approved' && r.verification ? h(Verification, { r, runTests }) : null,
     h(ClaimsSection, { project, r, onErr: setErr }),
     a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
@@ -399,6 +400,33 @@ function SpecView({ project, r, ret, need }) {
         h(ExcludedList, { excluded: a.excluded }))),
     h(CarrierSection, { project, r, onErr: setErr }))
   return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
+}
+
+// The engine's one verification result for a specification: its state, what holds it, and the next move.
+const NEXT_WORD = {
+  run_tests: 'Run tests', record_manual_result: 'Record manual result', approve_manual_result: 'Approve manual result',
+  review_test_files: 'Review test files', repair: 'Open failing test', repair_test_setup: 'Open test',
+  review_change: 'Review change', approve: 'Approve', add_test: 'Add test', wait: 'Open test'
+}
+function Verification({ r, runTests }) {
+  const blockers = r.blockers || []
+  const next = r.next_action
+  const go = () => {
+    if (!next) return
+    if (next.kind === 'run_tests') return runTests()
+    if (next.kind === 'add_test') return navigate('test-edit', { spec: r.id })
+    if (next.test) return navigate('rung', { rid: next.test })
+    if (next.rung) return navigate('rung', { rid: next.rung })
+  }
+  return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'verification', 'data-verification': r.verification },
+    h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Verification'),
+      h(Badge, { status: r.released ? 'verified' : r.verification })),
+    blockers.length ? h('ul', { className: 'flex flex-col gap-1.5 text-xs', 'data-testid': 'blockers' },
+      ...blockers.map((b, i) => h('li', { key: i, className: 'flex items-center gap-2 text-fg', 'data-code': (r.codes || [])[i] || '' },
+        h(Dot, { t: /failed/.test(b) ? 'fail' : (r.codes || [])[i] === 'out_of_date' ? 'stale' : 'needs' }), h('span', 'mono', b)))) : null,
+    next && NEXT_WORD[next.kind] && next.kind !== 'approve' ? h('div', 'flex items-center gap-2 pt-2 border-t border-line',
+      h(Btn, { kind: 'primary', testid: 'next-action', onClick: go }, NEXT_WORD[next.kind])) : null)
 }
 
 function dayClock(ts) {
@@ -508,7 +536,7 @@ function TestView({ project, r }) {
   const headline = (badge) => h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between', pathCrumbs(r), badge),
     h('div', 'flex items-center gap-2', h('h2', 'text-sm font-semibold text-fg mono', r.type === 'manual' ? r.text : (r.command || r.text))),
-    h('div', 'text-[11px] text-muted', h('span', null, TYPE_WORD[r.type] || 'Command test')))
+    h('div', 'text-[11px] text-muted', h('span', null, TYPE_WORD[r.type] || 'Command test'), r.type === 'manual' && r.required === false ? h('span', { 'data-testid': 'optional' }, ' · optional') : null))
   if (r.type === 'manual') {
     const pending = execs.find(x => x.status === 'pending' && !x.invalidated)
     const res = r.result || 'not_run'
@@ -560,6 +588,7 @@ function TestView({ project, r }) {
         h(Label, null, 'Pass rule'),
         h('div', { className: 'text-xs mono text-fg', 'data-testid': 'pass-rule' }, passRule(r))),
       r.type === 'ai_judged' ? h('div', { className: 'text-[11px] text-dim', 'data-testid': 'no-gate' }, 'Cannot release a gate') : null,
+      h(Protected, { project, r, act }),
       h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
         h('div', 'flex items-center justify-between', h(Label, null, 'Executions'), h(SeenFailing, { value: r.seen_failing, small: true })),
         h('div', { className: 'flex flex-col gap-2', 'data-testid': 'executions' },
@@ -578,6 +607,22 @@ function TestView({ project, r }) {
   return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
 
+// The files a command test is judged by, and any that changed since a person approved it.
+function Protected({ project, r, act }) {
+  const pr = r.protected
+  if (!pr || !(pr.files || []).length) return null
+  const changed = pr.changed || []
+  const shown = pr.files.slice(0, 6)
+  return h('div', { className: 'flex flex-col gap-1.5 pt-3 border-t border-line', 'data-testid': 'protected' },
+    h('div', 'flex items-center justify-between', h(Label, null, 'Judged by'), h('span', 'text-[11px] text-muted mono', String(pr.files.length))),
+    changed.length
+      ? frag(
+        ...changed.map(c => h('div', { key: c.path, className: 'flex items-center justify-between bg-well p-2 rounded-[6px] border border-needs/30 text-[11px] mono', 'data-changed': c.path },
+          h('span', { className: 'text-fg truncate min-w-0', title: c.path }, c.path), h('span', 'text-needs shrink-0', c.change))),
+        h('div', 'flex', h(Btn, { kind: 'small', testid: 'accept-files', onClick: () => act(`${P(project)}/tests/${r.id}/accept-files`) }, 'Accept changed files')))
+      : h('div', { className: 'text-[11px] mono text-muted truncate', title: pr.files.join(', ') }, shown.join(', ') + (pr.files.length > shown.length ? ` +${pr.files.length - shown.length}` : '')))
+}
+
 function ExecRow({ test, x }) {
   const dead = x.invalidated && x.status === 'pass'
   if (dead) {
@@ -588,7 +633,7 @@ function ExecRow({ test, x }) {
   const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : ['running', 'pending', 'error'].includes(x.status) ? 'needs' : 'dim'
   return h('div', { className: cx('flex items-center justify-between bg-well p-2.5 rounded-[6px] border font-mono text-[11px] text-fg cursor-pointer', t === 'fail' ? 'border-fail/30' : t === 'pass' ? 'border-pass/30' : 'border-line2'), 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
     h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
-    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
+    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[x.out_of_date ? 'stale' : t]) }, x.status === 'pass' ? (x.out_of_date ? 'pass · out of date' : 'pass') : x.status === 'fail' ? 'failed' : x.status === 'error' && x.reason === 'verification_changed' ? 'not run · files changed' : x.status))
 }
 
 // ------------------------------------------------------------------ test editor
@@ -622,8 +667,8 @@ function TestEdit({ project, test, spec, ret, need }) {
     if (!st) return
     const proj = (st.projects || []).find(p => p.name === project) || {}
     const blank = t
-      ? { type: t.type, command: t.command || '', folder: t.folder || '.', rule: (t.pass_rule || {}).kind || 'exit_code', value: String((t.pass_rule || {}).value ?? 0), timeout: `${t.timeout || 120}s`, limit: `${Math.round((t.output_limit || 64000) / 1000)} KB`, steps: (t.steps || []).join('\n'), text: t.type === 'ai_judged' ? t.text : '' }
-      : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder }
+      ? { type: t.type, command: t.command || '', folder: t.folder || '.', rule: (t.pass_rule || {}).kind || 'exit_code', value: String((t.pass_rule || {}).value ?? 0), timeout: `${t.timeout || 120}s`, limit: `${Math.round((t.output_limit || 64000) / 1000)} KB`, steps: (t.steps || []).join('\n'), required: t.required !== false, text: t.type === 'ai_judged' ? t.text : '' }
+      : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', required: true, text: '', _folder: proj.folder }
     // A pasted text is typed text: the blank form is what counts as unchanged.
     init.current = JSON.stringify(blank)
     setF(t ? blank : { ...blank, ...pre })
@@ -634,7 +679,7 @@ function TestEdit({ project, test, spec, ret, need }) {
   const s = sq.data
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const fields = () => {
-    if (f.type === 'manual') return { type: 'manual', steps: f.steps.split('\n').map(x => x.trim()).filter(Boolean) }
+    if (f.type === 'manual') return { type: 'manual', steps: f.steps.split('\n').map(x => x.trim()).filter(Boolean), required: f.required !== false }
     const out = { type: f.type, command: f.command, folder: f.folder || '.', pass_rule: { kind: f.rule, value: f.rule === 'exit_code' ? parseInt(f.value, 10) || 0 : f.value }, timeout: parseInt(f.timeout, 10) || 120, output_limit: (parseInt(f.limit, 10) || 64) * 1000 }
     if (f.type === 'ai_judged') out.text = f.text || f.command
     return out
@@ -674,7 +719,10 @@ function TestEdit({ project, test, spec, ret, need }) {
     f.type === 'manual'
       ? h('div', 'flex flex-col gap-1.5',
         h('span', 'text-xs font-medium text-muted', 'Steps'),
-        h('textarea', { className: 'w-full bg-well border border-line rounded-[6px] p-3 mono text-xs text-fg focus:outline-none focus:border-needs leading-relaxed', rows: 4, name: 'steps', value: f.steps, onChange: set('steps') }))
+        h('textarea', { className: 'w-full bg-well border border-line rounded-[6px] p-3 mono text-xs text-fg focus:outline-none focus:border-needs leading-relaxed', rows: 4, name: 'steps', value: f.steps, onChange: set('steps') }),
+        h('label', { className: 'flex items-center gap-2 text-xs text-fg mt-1' },
+          h('input', { type: 'checkbox', name: 'required', 'data-testid': 'manual-required', checked: f.required !== false, onChange: e => { const v = e.target.checked; setF(cur => ({ ...cur, required: v })) } }),
+          h('span', null, 'Required')))
       : frag(
         f.type === 'ai_judged' ? h('div', 'flex flex-col gap-1.5',
           h('span', 'text-xs font-medium text-muted', 'Judge question'),

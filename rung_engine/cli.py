@@ -1,8 +1,9 @@
 """`hermes rung ...`: the terminal door. Also runnable as `python -m rung_engine.cli` for scripts.
 
-`hermes rung check S-2.1` is a goal gate: exit 0 only when the specification is released
-(approved, nothing upstream stale, every gating test has a counting pass since the last
-upstream change). It is pure engine computation; no model is called.
+`hermes rung check S-2.1` is a goal gate: exit 0 only when the specification is verified now
+(approved, nothing upstream stale, every required test's newest result is a pass recorded on the
+project's code as it is now, with its approved test files unchanged). It is pure engine computation;
+no model is called. `hermes rung recheck` runs every test whose pass no longer applies.
 """
 
 from __future__ import annotations
@@ -22,6 +23,17 @@ def setup(parser: argparse.ArgumentParser) -> None:
     c.add_argument("spec", nargs="?", help="specification id, for example S-2.1")
     c.add_argument("--all", action="store_true", help="check every approved specification of the project")
     subs.add_parser("status", help="tiles and the Needs you list")
+    subs.add_parser("recheck", help="run again every command test whose pass was recorded on code that changed since")
+    v = subs.add_parser("verify", help="the full verification result of a specification: state, blockers, next action")
+    v.add_argument("spec")
+    ms = subs.add_parser("milestone", help="integration milestones: list them, or one milestone's verdict (exit 0 "
+                                          "only when verified)")
+    ms.add_argument("milestone", nargs="?", help="milestone id, for example M-1")
+    ms.add_argument("--run", action="store_true", help="run its command checks first, on the code as it is now")
+    ms.add_argument("--export", action="store_true", help="also write its report to Rung's exports folder")
+    en = subs.add_parser("enforcement", help="whether the done hook enforces claims for a chat session "
+                                             "(enforced, unbound or degraded); verification is a separate fact")
+    en.add_argument("session", nargs="?", default="", help="Hermes session id")
     pr = subs.add_parser("projects", help="list projects")
     pr.add_argument("--archived", action="store_true", help="list the archived projects instead")
     t = subs.add_parser("tree", help="print the ladder")
@@ -114,6 +126,57 @@ def main(args) -> int:
             else:
                 print(f"{args.spec}: blocked by " + "; ".join(res["blockers"]))
             return 0 if res["ok"] else 1
+        if cmd == "verify":
+            project = _project(svc, args)
+            res = e.verification(project, args.spec, fresh=True)
+            lines = [f"{res['spec']}: {res['verification']} "
+                     f"({res['required_checks']['satisfied']} of {res['required_checks']['total']} required checks)"]
+            lines += [f"  {b['code']:22} {b['text']}" for b in res["blockers"]]
+            if res["next_action"]:
+                lines.append(f"  next: {res['next_action']['kind']}"
+                             + (f" {res['next_action'].get('test') or res['next_action'].get('rung')}"
+                                if res['next_action'].get('test') or res['next_action'].get('rung') else ""))
+            _say(args, res, "\n".join(lines))
+            return 0 if res["ok"] else 1
+        if cmd == "recheck":
+            project = _project(svc, args)
+            rows = e.recheck(project)
+            _say(args, [{"test": r["test"], "n": r["n"], "status": r["status"]} for r in rows],
+                 "\n".join(f"{r['test']} #{r['n']}: {r['status']}" for r in rows) or f"{project}: nothing out of date")
+            return 0 if all(r["status"] == "pass" for r in rows) else 1
+        if cmd == "enforcement":
+            from pathlib import Path
+
+            from .hook import status
+            st = status(args.session, Path(e.path))
+            lines = [f"{st['session'] or '(no session)'}: {st['enforcement']}" + (f" ({st['reason']})" if st["reason"] else "")]
+            lines += [f"  {c['project']} {c['spec']}: " + ("verified" if c["verified"] else "blocked: " + "; ".join(c["blockers"]))
+                      for c in st["claims"]]
+            _say(args, st, "\n".join(lines))
+            return 0 if st["enforcement"] != "degraded" else 1
+        if cmd == "milestone":
+            project = _project(svc, args)
+            if not args.milestone:
+                rows = e.milestones(project)
+                _say(args, rows, "\n".join(f"{m['id']:6} {m['state']:20} {m['title']}" for m in rows)
+                     or f"{project}: no milestones")
+                return 0
+            if args.run:
+                for r in e.run_milestone(project, args.milestone):
+                    if not args.json:
+                        print(f"{r['check']} #{r['n']}: {r['status']}" + (f" ({r['reason']})" if r["reason"] else ""))
+            v = e.milestone(project, args.milestone)
+            lines = [f"{v['id']}: {v['state']} on code {v['basis']} "
+                     f"({sum(s['ok'] for s in v['scope'])} of {len(v['scope'])} included specifications verified)"]
+            lines += [f"  {b['code']:22} {b['text']}" for b in v["blockers"]]
+            if v["next_action"]:
+                na = v["next_action"]
+                lines.append(f"  next: {na['kind']}" + (f" {na.get('check') or na.get('rung')}"
+                                                       if na.get("check") or na.get("rung") else ""))
+            if args.export:
+                lines.append(f"  report: {e.export_milestone(project, args.milestone)['path']}")
+            _say(args, v, "\n".join(lines))
+            return 0 if v["ok"] else 1
         if cmd == "projects":
             archived = getattr(args, "archived", False)
             rows = e.projects(archived=archived)

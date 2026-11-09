@@ -430,7 +430,7 @@ def test_alc10_goal2_store_migrates(tmp_path):
     conn.commit()
     conn.close()
     e = Engine(path)
-    assert db.schema_version(e.conn) == 3
+    assert db.schema_version(e.conn) == db.SCHEMA_VERSION  # every step since applies in one upgrade
     assert e.profile("coder") == {"name": "coder", "labels": ["python"], "cost": 5, "max_runs": 5, "enabled": True,
                                   "tools": [], "at_once": 2}
     assert e.claims() == []

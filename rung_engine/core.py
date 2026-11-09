@@ -20,11 +20,12 @@ from dataclasses import dataclass
 from typing import Callable
 from pathlib import Path
 
-from . import allocation, db
+from . import allocation, db, evidence
 from .execute import context_line, git_commit, run_command
 from .claims import ClaimsMixin, _canon
 from .lifecycle import LifecycleMixin
 from .bot import BotMixin
+from .milestones import MilestonesMixin
 
 KINDS = ("need", "requirement", "specification", "test")
 CHILD_KIND = {"need": "requirement", "requirement": "specification", "specification": "test"}
@@ -234,7 +235,7 @@ def _letter(k: int) -> str:
     return letters[k - 1] if 1 <= k <= 26 else f"z{k}"
 
 
-class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
+class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
     # A callable profile name -> list of Hermes toolset names, or None. Set by the host so a profile's
     # tools are pre-filled from its Hermes configuration the first time Rung lists it.
     tool_source: "Callable[[str], list[str] | None] | None" = None
@@ -600,9 +601,12 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             if row["kind"] == "requirement":
                 d["coverage"] = self._req_coverage(row)
             if row["kind"] == "specification":
-                ok, blockers = self._released(row)
-                d["released"] = ok
-                d["blockers"] = blockers
+                v = self._verify(row)
+                d["released"] = v["ok"]
+                d["blockers"] = [b["text"] for b in v["blockers"]]
+                d["verification"] = v["verification"]
+                d["codes"] = [b["code"] for b in v["blockers"]]
+                d["next_action"] = v["next_action"]
                 d["carried_by"] = self._carried_by(row)
             if row["kind"] == "test":
                 d["result"] = self._test_result(row)
@@ -907,6 +911,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             data.pop("fresh_from", None)  # approved: a fresh draft, if any, is over
             c.execute("UPDATE rungs SET status='approved', approved_by=?, approved_at=?, data=?, updated_at=? WHERE pk=?",
                       (actor.name, now, _j(data), now, r["pk"]))
+            if r["kind"] == "test":
+                self._baseline(c, r["pk"], data, now)
             if r["kind"] == "specification" and r["status"] == "stale":
                 # Approved as still valid: its tests are still the right tests, but their old results
                 # keep not counting (valid_from was moved when the upstream change happened).
@@ -1186,6 +1192,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             d["steps"] = [str(s).strip() for s in fields.get("steps", d.get("steps", [])) if str(s).strip()]
             for k in ("command", "folder", "pass_rule", "timeout", "output_limit"):
                 d.pop(k, None)
+            # Required by default (Round 22): an approved manual check has to be performed and approved before
+            # its specification is verified. Optional: not needed, but a recorded failure still blocks.
+            d["required"] = fields.get("required", d.get("required", True)) is not False
         else:
             d["command"] = (fields.get("command", d.get("command", "")) or "").strip()
             d["folder"] = (fields.get("folder", d.get("folder", ".")) or ".").strip()
@@ -1198,6 +1207,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             d["timeout"] = int(fields.get("timeout", d.get("timeout", settings_timeout)))
             d["output_limit"] = int(fields.get("output_limit", d.get("output_limit", settings_limit)))
             d.pop("steps", None)
+            d.pop("required", None)  # a command test is always required
             if t == "ai_judged":
                 d["releases_gate"] = False
         if t != "ai_judged":
@@ -1220,6 +1230,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             text = data.get("command") or ("Manual: " + "; ".join(data.get("steps", []))[:120])
         with self._tx() as c:
             pk = self._insert_rung(c, spec["project_pk"], "test", spec, text, "", status, actor, data=data)
+            if status == "approved":
+                at = c.execute("SELECT approved_at FROM rungs WHERE pk=?", (pk,)).fetchone()[0]
+                self._baseline(c, pk, data, at)
         return self._rung_dict(self._rung_by_pk(pk))
 
     @writes()
@@ -1377,6 +1390,14 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         d["invalidated_by"] = _l(test_row["data"], {}).get("invalidated_by") if d["invalidated"] else None
         d["run"] = e["run_pk"]
         d["duration"] = (e["ended_at"] - e["started_at"]) if e["ended_at"] else None
+        # What the result applies to (Round 22). A pass recorded on other code no longer counts for verification.
+        b = e["basis_end"] or e["basis_start"]
+        d["basis"] = evidence.short(b)
+        d["reason"] = e["reason"]
+        d["out_of_date"] = False
+        if d["counts"] and e["status"] == "pass" and b:
+            cur = self._root_basis(test_row["project_pk"])
+            d["out_of_date"] = e["reason"] == "changed_during_check" or (evidence.UNKNOWN not in (b, cur) and b != cur)
         return d
 
     def executions(self, project: str, test_rid: str) -> list[dict]:
@@ -1410,9 +1431,10 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             n = c.execute("SELECT COALESCE(MAX(n),0)+1 FROM executions WHERE test_pk=?", (t["pk"],)).fetchone()[0]
             seq = self._next_seq(c)
             c.execute("INSERT INTO executions(test_pk, n, seq, kind, status, command, carried_by, run_pk, attempt, "
-                      "context, commit_ref, started_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                      "context, commit_ref, basis_start, started_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (t["pk"], n, seq, data.get("type", "command"), "running", data.get("command", ""), carried_by,
-                       run_pk, attempt, context_line(), git_commit(folder), self.clock()))
+                       run_pk, attempt, context_line(), git_commit(folder),
+                       evidence.basis(p["folder"], fresh=True), self.clock()))
             self._touch_project(c, t["project_pk"])
         return n
 
@@ -1436,10 +1458,19 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             return bool(should_cancel and should_cancel())
 
         root = Path(p["folder"]).expanduser()
+        reason = ""
+        moved = self._protected_change(t, data, root, folder) if folder.is_dir() else []
+        before = evidence.manifest(root)
         if not folder.is_dir():
             res_exit, res_out, status = None, f"folder not found: {folder}", "error"
         elif not folder.resolve().is_relative_to(root.resolve()):
             res_exit, res_out, status = None, f"the test folder is outside the project folder: {folder}", "error"
+        elif moved:
+            # The files this test is judged by are not the ones a person approved: running it would judge the
+            # work by a test the work may have changed. It records Could not run until a person accepts them.
+            res_exit, status, reason = None, "error", "verification_changed"
+            res_out = ("not run: the files this test is judged by changed since it was approved: "
+                       + ", ".join(f"{m['path']} ({m['change']})" for m in moved))
         else:
             res = run_command(data.get("command", ""), folder, timeout=data.get("timeout", 120),
                               output_limit=data.get("output_limit", 64000), on_output=push,
@@ -1460,11 +1491,17 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
                     status = "pass" if self._passes(rule, res.exit_code, res.output) else "fail"
             if data.get("type") == "ai_judged" and status == "pass":
                 status = "pass"  # recorded, but never releases a gate (see _released)
+        after = evidence.manifest(root)
+        end_basis = evidence.digest(after)
+        evidence.forget(root)
+        if status in ("pass", "fail") and evidence.modified(before, after):
+            reason = "changed_during_check"  # a file the check ran against changed under it: it applies to neither
         with self._tx() as c:
             # Only a running execution takes its result: a cancel that landed while the command finished
             # stands (the output is kept with it), so a cancelled execution never turns into a pass.
-            cur = c.execute("UPDATE executions SET status=?, exit_code=?, output=?, ended_at=? WHERE pk=? AND "
-                            "status='running'", (status, res_exit, res_out, self.clock(), e["pk"]))
+            cur = c.execute("UPDATE executions SET status=?, exit_code=?, output=?, ended_at=?, basis_end=?, reason=? "
+                            "WHERE pk=? AND status='running'",
+                            (status, res_exit, res_out, self.clock(), end_basis, reason, e["pk"]))
             if not cur.rowcount:
                 c.execute("UPDATE executions SET exit_code=?, output=? WHERE pk=?", (res_exit, res_out, e["pk"]))
             self._touch_project(c, t["project_pk"])
@@ -1501,13 +1538,14 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         if _l(t["data"], {}).get("type") != "manual":
             raise RungError(f"{test_rid} is not a manual test", code="bad_request", status=400)
         now = self.clock()
+        b = evidence.basis(self._project_row(t["project_pk"])["folder"], fresh=True)
         with self._tx() as c:
             n = c.execute("SELECT COALESCE(MAX(n),0)+1 FROM executions WHERE test_pk=?", (t["pk"],)).fetchone()[0]
             seq = self._next_seq(c)
             c.execute("INSERT INTO executions(test_pk, n, seq, kind, status, carried_by, context, note, recorder, "
-                      "started_at, ended_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                      "basis_start, basis_end, started_at, ended_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (t["pk"], n, seq, "manual", "fail" if result == "fail" else "pending", actor.name,
-                       "manual", (note or "").strip(), actor.name, now, now))
+                       "manual", (note or "").strip(), actor.name, b, b, now, now))
             self._touch_project(c, t["project_pk"])
         return self.execution(project, test_rid, n)
 
@@ -1531,37 +1569,166 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         return self._q("SELECT * FROM executions WHERE test_pk=? AND seq>? AND status IN ('pass','fail') ORDER BY n DESC",
                        (test_row["pk"], test_row["valid_from"]))
 
+    # ------------------------------------------------------------------ evidence (Round 22)
+
+    def _baseline(self, c, test_pk: int, data: dict, approved_at) -> None:
+        """Record the content of the files a command test is judged by, as the person approved it."""
+        if data.get("type", "command") == "manual":
+            return
+        row = c.execute("SELECT r.*, p.folder AS pfolder FROM rungs r JOIN projects p ON p.pk = r.project_pk "
+                        "WHERE r.pk=?", (test_pk,)).fetchone()
+        root = Path(row["pfolder"]).expanduser()
+        files = evidence.protected_files(data.get("command", ""), root / data.get("folder", "."), root)
+        c.execute("UPDATE rungs SET assets=? WHERE pk=?",
+                  (_j({"at": approved_at, "files": evidence.digest_files(root, files)}), test_pk))
+
+    def _protected_change(self, t, data: dict, root: Path, folder: Path) -> list[dict]:
+        """Protected files that changed since the person approved this test; [] when nothing changed."""
+        if t["status"] not in ("approved", "stale") or t["approved_at"] is None:
+            return []
+        base = _l(t["assets"], None) if "assets" in t.keys() else None
+        if not base or base.get("at") != t["approved_at"]:
+            # Approved before protected files were recorded (an older store): this approval's files are recorded
+            # now, and the first result after it is judged against them.
+            with self._tx() as c:
+                self._baseline(c, t["pk"], data, t["approved_at"])
+            return []
+        files = sorted(set(base.get("files", {})) | set(evidence.protected_files(data.get("command", ""), folder, root)))
+        return evidence.changed(base.get("files", {}), evidence.digest_files(root, files))
+
+    def protected(self, project: str, test_rid: str) -> dict:
+        """The files a command test is judged by, and which of them changed since it was approved."""
+        t = self._rung_row(project, test_rid)
+        data = _l(t["data"], {})
+        if t["kind"] != "test" or data.get("type", "command") == "manual":
+            return {"test": t["rid"], "files": [], "changed": []}
+        root = Path(self._project_row(t["project_pk"])["folder"]).expanduser()
+        base = _l(t["assets"], None) or {}
+        recorded = base.get("files", {}) if base.get("at") == t["approved_at"] else {}
+        files = sorted(set(recorded) | set(evidence.protected_files(data.get("command", ""),
+                                                                      root / data.get("folder", "."), root)))
+        moved = evidence.changed(recorded, evidence.digest_files(root, files)) if recorded else []
+        return {"test": t["rid"], "files": files, "changed": moved, "recorded": bool(recorded)}
+
+    @writes()
+    def accept_test_files(self, project: str, test_rid: str, actor: Actor = HUMAN) -> dict:
+        """A person looked at the changed files a test is judged by and accepts them as the approved test."""
+        if not actor.is_human:
+            raise RungError("only a human accepts changes to a test's files", code="forbidden", status=403)
+        t = self._rung_row(project, test_rid)
+        data = _l(t["data"], {})
+        if t["kind"] != "test" or data.get("type", "command") == "manual":
+            raise RungError(f"{test_rid} is not a command test", code="bad_request", status=400)
+        if t["status"] not in ("approved", "stale"):
+            raise RungError(f"{test_rid} is {t['status']}; approve it first")
+        with self._tx() as c:
+            self._baseline(c, t["pk"], data, t["approved_at"])
+            self._log(c, t["project_pk"], "test_files_accepted", {"test": t["rid"]}, actor.name)
+            self._touch_project(c, t["project_pk"])
+        return self.protected(project, test_rid)
+
+    @staticmethod
+    def _required(data: dict) -> bool:
+        ttype = data.get("type", "command")
+        if ttype == "command":
+            return True
+        if ttype == "manual":
+            return data.get("required", True) is not False
+        return False  # AI judged: advisory, never verifies (TST-04)
+
+    def _root_basis(self, project_pk: int, fresh: bool = False) -> str:
+        return evidence.basis(self._project_row(project_pk)["folder"], fresh=fresh)
+
+    def _test_state(self, t, cur: str) -> dict:
+        """One test's contribution to verification, from its latest result that applies to this test version.
+
+        state: satisfied | failed | missing | checking | could_not_verify | manual_pending | out_of_date | stale.
+        A cancelled execution leaves no evidence; the result before it still has to match the current code."""
+        data = _l(t["data"], {})
+        ttype = data.get("type", "command")
+        d = {"test": t["rid"], "type": ttype, "required": self._required(data), "execution": None,
+             "flags": [], "historical_pass": None}
+        if t["status"] == "stale":
+            d["state"] = "stale"
+            return d
+        rows = self._q("SELECT * FROM executions WHERE test_pk=? AND seq>? AND status!='cancelled' ORDER BY seq DESC",
+                       (t["pk"], t["valid_from"]))
+        last_pass = next((e for e in rows if e["status"] == "pass"), None)
+        if last_pass is not None:
+            d["historical_pass"] = {"execution": last_pass["n"], "basis": last_pass["basis_end"] or last_pass["basis_start"]}
+        if not rows:
+            d["state"] = "missing"
+            return d
+        e = rows[0]
+        d["execution"] = e["n"]
+        if ttype == "manual" and not d["required"]:
+            # Optional: only a decided result matters, and only a failure blocks.
+            decided = next((x for x in rows if x["status"] in ("pass", "fail")), None)
+            if decided is None:
+                d["state"] = "missing" if e["status"] != "pending" else "manual_pending"
+                return d
+            d["execution"] = decided["n"]
+            e = decided
+        if e["status"] == "running":
+            d["state"] = "checking"
+        elif e["status"] == "error":
+            d["state"] = "could_not_verify"
+            d["reason"] = e["reason"] or "error"
+        elif e["status"] == "pending":
+            d["state"] = "manual_pending"
+        elif e["status"] == "fail":
+            d["state"] = "failed"  # a failure blocks whatever code it ran on; a recheck runs it again on this code
+            b = e["basis_end"] or e["basis_start"]
+            d["recheck"] = bool(b) and evidence.UNKNOWN not in (b, cur) and (b != cur or e["reason"] == "changed_during_check")
+        else:
+            b = e["basis_end"] or e["basis_start"]
+            d["basis"] = b
+            if e["reason"] == "changed_during_check":
+                d["state"] = "out_of_date"
+                d["reason"] = "changed_during_check"
+            elif not b:
+                d["state"] = "satisfied"
+                d["flags"].append("legacy")  # recorded before results carried a basis
+            elif cur == evidence.UNKNOWN:
+                d["state"] = "could_not_verify"  # the code as it is now cannot be read: no positive result
+                d["reason"] = "basis_unknown"
+            elif b == evidence.UNKNOWN:
+                d["state"] = "out_of_date"  # recorded when the code could not be read: it proves nothing now
+                d["reason"] = "code_changed"
+            elif b != cur:
+                d["state"] = "out_of_date"
+                d["reason"] = "code_changed"
+            else:
+                d["state"] = "satisfied"
+        return d
+
     def _test_result(self, t) -> str:
-        """pass | fail | pending | running | stale | not_run (for display)."""
+        """pass | fail | pending | running | error | out_of_date | stale | not_run (for display): the newest
+        result of this test version, read by the same evaluator as the gate."""
         if t["status"] == "stale":
             return "stale"
-        running = self._q1("SELECT 1 FROM executions WHERE test_pk=? AND status='running'", (t["pk"],))
-        if running:
+        if self._q1("SELECT 1 FROM executions WHERE test_pk=? AND status='running'", (t["pk"],)):
             return "running"
-        pend = self._q1("SELECT seq FROM executions WHERE test_pk=? AND seq>? AND status='pending' ORDER BY seq DESC LIMIT 1",
-                        (t["pk"], t["valid_from"]))
-        rows = self._counting(t)
-        # A recorded result waiting for approval is shown as pending; it never counts as a pass until approved.
-        if pend and (not rows or pend["seq"] > rows[0]["seq"]):
+        st = self._test_state(t, self._root_basis(t["project_pk"]))
+        newest = self._q1("SELECT status FROM executions WHERE test_pk=? AND seq>? AND status!='cancelled' "
+                          "ORDER BY seq DESC LIMIT 1", (t["pk"], t["valid_from"]))
+        if newest and newest["status"] == "pending":
             return "pending"
-        err = self._q1("SELECT seq FROM executions WHERE test_pk=? AND seq>? AND status='error' ORDER BY seq DESC LIMIT 1",
-                       (t["pk"], t["valid_from"]))
-        if err and (not rows or err["seq"] > rows[0]["seq"]):
-            return "error"
-        if rows:
-            return rows[0]["status"]
-        return "not_run"
+        return {"satisfied": "pass", "failed": "fail", "missing": "not_run", "checking": "running",
+                "could_not_verify": "error", "manual_pending": "pending", "out_of_date": "out_of_date",
+                "stale": "stale"}[st["state"]]
 
     def _seen_failing(self, t) -> bool | None:
-        """For a command test: True if it failed before its first pass, False if its first result was a pass,
-        None while it has never passed. Over its whole history; it never changes whether anything is released."""
+        """For a command test: True if this version of it failed before its first pass, False if its first result
+        was a pass, None while it has never passed. A Could not run is not a failure; it never changes verification."""
         if _l(t["data"], {}).get("type", "command") != "command":
             return None
-        first_pass = self._q1("SELECT n FROM executions WHERE test_pk=? AND status='pass' ORDER BY n LIMIT 1", (t["pk"],))
+        first_pass = self._q1("SELECT n FROM executions WHERE test_pk=? AND seq>? AND status='pass' ORDER BY n LIMIT 1",
+                              (t["pk"], t["valid_from"]))
         if not first_pass:
             return None
-        return bool(self._q1("SELECT 1 FROM executions WHERE test_pk=? AND status='fail' AND n<?",
-                             (t["pk"], first_pass["n"])))
+        return bool(self._q1("SELECT 1 FROM executions WHERE test_pk=? AND seq>? AND status='fail' AND n<?",
+                             (t["pk"], t["valid_from"], first_pass["n"])))
 
     def _retired_pks(self, project_pk: int) -> set[int]:
         """Every rung under a retired need, the need included."""
@@ -1569,49 +1736,140 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             "WITH RECURSIVE sub(pk) AS (SELECT pk FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NOT NULL "
             "UNION ALL SELECT r.pk FROM rungs r JOIN sub ON r.parent_pk = sub.pk) SELECT pk FROM sub", (project_pk,))}
 
-    def _released(self, spec) -> tuple[bool, list[str]]:
-        blockers = []
-        if spec["status"] == "stale":
-            blockers.append(f"{spec['rid']} is stale")
-        elif spec["status"] != "approved":
-            blockers.append(f"{spec['rid']} is not approved")
-        cur = self._rung_by_pk(spec["parent_pk"]) if spec["parent_pk"] else None
-        while cur is not None:
-            if cur["status"] == "stale":
-                blockers.append(f"{cur['rid']} is stale")
-            cur = self._rung_by_pk(cur["parent_pk"]) if cur["parent_pk"] else None
-        tests = [t for t in self._children_rows(spec["pk"]) if t["status"] in ("approved", "stale")]
-        passing = 0
-        if not tests:
-            blockers.append(f"{spec['rid']} has no accepted tests")
-        for t in tests:
-            ttype = _l(t["data"], {}).get("type", "command")
-            if t["status"] == "stale":
-                blockers.append(f"{t['rid']} is stale")
+    def outdated_tests(self, project: str) -> list[str]:
+        """Approved command tests whose newest result was recorded on code that has changed since (a pass that no
+        longer applies, or a failure that may no longer hold): running them again is how they apply to this code."""
+        p = self._project_row(project)
+        gone = self._retired_pks(p["pk"])
+        cur = evidence.basis(p["folder"], fresh=True)
+        out = []
+        for t in self._q("SELECT t.* FROM rungs t JOIN rungs s ON s.pk = t.parent_pk WHERE t.project_pk=? AND "
+                         "t.kind='test' AND t.status='approved' AND s.status='approved' ORDER BY s.num, t.rid", (p["pk"],)):
+            if t["pk"] in gone or _l(t["data"], {}).get("type", "command") != "command":
                 continue
-            rows = self._counting(t)
-            latest = rows[0]["status"] if rows else None
-            if ttype == "command":
-                if latest == "pass":
-                    passing += 1
-                elif latest == "fail":
-                    blockers.append(f"{t['rid']} failed (#{rows[0]['n']})")
+            st = self._test_state(t, cur)
+            if st["state"] == "out_of_date" or st.get("recheck"):
+                out.append(t["rid"])
+        return out
+
+    def recheck(self, project: str, carried_by: str = "engine", skip: tuple = ()) -> list[dict]:
+        """Run every out-of-date command test again (no model involved). Returns the new executions."""
+        return [self.run_test(project, rid, carried_by=carried_by) for rid in self.outdated_tests(project)
+                if rid not in skip]
+
+    def verification(self, project: str, rid: str, fresh: bool = False) -> dict:
+        """The one verification result every surface reads (Round 22): state, typed blockers, basis, next action."""
+        r = self._rung_row(project, rid)
+        if r["kind"] != "specification":
+            raise RungError(f"{rid} is not a specification", code="bad_request", status=400)
+        return self._verify(r, self._root_basis(r["project_pk"], fresh=fresh))
+
+    def _verify(self, spec, cur: str | None = None) -> dict:
+        cur = cur if cur is not None else self._root_basis(spec["project_pk"])
+        blockers = []
+
+        def block(code, text, **kw):
+            blockers.append({"code": code, "text": text, **kw})
+
+        if spec["status"] == "stale":
+            block("stale", f"{spec['rid']} is stale", rung=spec["rid"])
+        elif spec["status"] != "approved":
+            block("not_approved", f"{spec['rid']} is not approved", rung=spec["rid"])
+        node = self._rung_by_pk(spec["parent_pk"]) if spec["parent_pk"] else None
+        while node is not None:
+            if node["status"] == "stale":
+                block("stale", f"{node['rid']} is stale", rung=node["rid"])
+            node = self._rung_by_pk(node["parent_pk"]) if node["parent_pk"] else None
+        tests = [t for t in self._children_rows(spec["pk"]) if t["status"] in ("approved", "stale")]
+        states, passing, flags = [], 0, set()
+        if not tests:
+            block("no_tests", f"{spec['rid']} has no accepted tests")
+        for t in tests:
+            st = self._test_state(t, cur)
+            states.append(st)
+            rid, n, state = t["rid"], st["execution"], st["state"]
+            flags.update(st["flags"])
+            if state == "satisfied" and st["type"] != "ai_judged":
+                passing += 1
+                continue
+            if state == "stale":
+                block("stale", f"{rid} is stale", test=rid)
+            elif state == "failed":
+                if st["type"] == "ai_judged":
+                    block("failed", f"{rid} failed (#{n}), AI judged", test=rid, execution=n)
                 else:
-                    blockers.append(f"{t['rid']} has not passed since the last upstream change")
-            elif ttype == "manual":
-                if latest == "pass":
-                    passing += 1
-                elif latest == "fail":
-                    blockers.append(f"{t['rid']} failed (#{rows[0]['n']})")
-            elif ttype == "ai_judged":
-                if latest == "fail":
-                    blockers.append(f"{t['rid']} failed (#{rows[0]['n']}), AI judged")
-        if tests and passing == 0 and not any("has not passed" in b or "failed" in b for b in blockers):
-            blockers.append(f"{spec['rid']} has no passing test that can release it")
-        return (not blockers), blockers
+                    block("failed", f"{rid} failed (#{n})", test=rid, execution=n)
+            elif not st["required"]:
+                continue  # optional or AI judged: not needed, and nothing failed
+            elif state == "missing":
+                if st["type"] == "manual":
+                    block("manual_missing", f"{rid} is a required manual check with no result yet", test=rid)
+                else:
+                    block("not_run", f"{rid} has not passed since the last upstream change", test=rid)
+            elif state == "checking":
+                block("checking", f"{rid} is running (#{n})", test=rid, execution=n)
+            elif state == "could_not_verify":
+                if st.get("reason") == "verification_changed":
+                    block("verification_changed", f"{rid} could not run (#{n}): its files changed since it was approved",
+                          test=rid, execution=n)
+                elif st.get("reason") != "basis_unknown":  # named once for the whole project below
+                    block("could_not_verify", f"{rid} could not run (#{n})", test=rid, execution=n)
+            elif state == "manual_pending":
+                block("manual_pending", f"{rid} #{n} is waiting for a person to approve it", test=rid, execution=n)
+            elif state == "out_of_date":
+                if st.get("reason") == "changed_during_check":
+                    block("out_of_date", f"{rid} passed (#{n}) while files changed under it", test=rid, execution=n)
+                else:
+                    block("out_of_date", f"{rid} passed (#{n}) on code that has changed since", test=rid, execution=n)
+        if cur == evidence.UNKNOWN and tests:
+            block("basis_unknown", "the project's files cannot be read whole (the folder is missing, or it holds "
+                  f"more than {evidence.MAX_FILES} files after .gitignore and .rungignore)")
+        if tests and passing == 0 and not blockers:
+            block("no_passing", f"{spec['rid']} has no passing test that can release it")
+        required = [s for s in states if s["required"]]
+        ok = not blockers
+        if ok:
+            state = "verified"
+        elif any(b["code"] in ("stale", "not_approved", "no_tests") for b in blockers):
+            state = "contract"
+        elif any(b["code"] == "failed" for b in blockers):
+            state = "failed"
+        elif any(b["code"] == "checking" for b in blockers):
+            state = "checking"
+        elif any(b["code"] in ("manual_pending", "manual_missing") for b in blockers) and \
+                all(b["code"] in ("manual_pending", "manual_missing") for b in blockers):
+            state = "awaiting_manual"
+        elif any(b["code"] == "out_of_date" for b in blockers):
+            state = "out_of_date"
+        elif any(b["code"] in ("could_not_verify", "verification_changed", "basis_unknown") for b in blockers):
+            state = "could_not_verify"
+        else:
+            state = "unverified"
+        return {"spec": spec["rid"], "ok": ok, "verification": state, "basis": cur,
+                "required_checks": {"total": len(required), "satisfied": sum(1 for s in required if s["state"] == "satisfied")},
+                "tests": states, "blockers": blockers, "flags": sorted(flags), "next_action": self._next_action(blockers)}
+
+    @staticmethod
+    def _next_action(blockers: list[dict]) -> dict | None:
+        order = ["stale", "not_approved", "no_tests", "basis_unknown", "verification_changed", "manual_pending", "failed",
+                 "could_not_verify", "out_of_date", "not_run", "manual_missing", "checking", "no_passing"]
+        kinds = {"stale": "review_change", "not_approved": "approve", "no_tests": "add_test",
+                 "verification_changed": "review_test_files", "manual_pending": "approve_manual_result",
+                 "failed": "repair", "could_not_verify": "repair_test_setup", "out_of_date": "run_tests",
+                 "not_run": "run_tests", "manual_missing": "record_manual_result", "checking": "wait",
+                 "no_passing": "run_tests", "basis_unknown": "repair_project_folder"}
+        for code in order:
+            b = next((x for x in blockers if x["code"] == code), None)
+            if b:
+                return {"kind": kinds[code], **{k: v for k, v in b.items() if k in ("test", "rung", "execution")}}
+        return None
+
+    def _released(self, spec, cur: str | None = None) -> tuple[bool, list[str]]:
+        v = self._verify(spec, cur)
+        return v["ok"], [b["text"] for b in v["blockers"]]
 
     def check(self, project: str, rid: str) -> dict:
-        """The goal gate. Pure engine computation; never calls a model."""
+        """The goal gate. Pure engine computation; never calls a model. Judged against the code as it is now."""
         rid = _canon(rid)  # one id form at every door, echoed back as stored
         r = self._rung_row(project, rid)
         if r["kind"] != "specification":
@@ -1619,8 +1877,10 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         if r["pk"] in self._retired_pks(r["project_pk"]):
             # A retired need leaves every active view and count, the gate included (NED-03).
             return {"id": rid, "ok": False, "blockers": [f"{rid} is under a retired need"]}
-        ok, blockers = self._released(r)
-        return {"id": rid, "ok": ok, "blockers": blockers}
+        v = self._verify(r, self._root_basis(r["project_pk"], fresh=True))
+        return {"id": rid, "ok": v["ok"], "blockers": [b["text"] for b in v["blockers"]], "verification": v["verification"],
+                "codes": [b["code"] for b in v["blockers"]], "basis": evidence.short(v["basis"]),
+                "next_action": v["next_action"]}
 
     def check_all(self, project: str) -> dict:
         p = self._project_row(project)
@@ -1628,10 +1888,11 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
                         "ORDER BY rid", (p["pk"],))
         results = []
         gone = self._retired_pks(p["pk"])
+        cur = evidence.basis(p["folder"], fresh=True)
         for s in specs:
             if s["pk"] in gone:
                 continue
-            ok, blockers = self._released(s)
+            ok, blockers = self._released(s, cur)
             results.append({"id": s["rid"], "ok": ok, "blockers": blockers})
         return {"ok": bool(results) and all(x["ok"] for x in results), "results": results,
                 "blockers": [b for x in results for b in x["blockers"]] or ([] if results else ["no approved specifications"])}
@@ -1774,16 +2035,25 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         for e in self._q("SELECT e.*, r.rid AS trid FROM executions e JOIN rungs r ON r.pk=e.test_pk WHERE r.project_pk=? "
                          "AND e.status='running' AND e.run_pk IS NULL ORDER BY e.pk", (p["pk"],)):
             live_execs.append({"test": e["trid"], "n": e["n"], "started_at": e["started_at"]})
-        done, draft = [], []
+        done, draft, nxt = [], [], []
         gone = self._retired_pks(p["pk"])
+        busy = {r["spec_pk"] for r in self._q("SELECT spec_pk FROM runs WHERE project_pk=? AND status IN "
+                                              "('queued','running')", (p["pk"],))}
+        busy |= {r["spec_pk"] for r in self._q("SELECT c.spec_pk FROM claims c JOIN rungs s ON s.pk=c.spec_pk WHERE "
+                                               "s.project_pk=? AND c.status='open'", (p["pk"],))}
+        cur = evidence.basis(p["folder"])
         for s in self._q("SELECT * FROM rungs WHERE project_pk=? AND kind='specification' ORDER BY num, rid", (p["pk"],)):
             if s["pk"] in gone:
                 continue
             if s["status"] == "approved":
-                ok, _ = self._released(s)
-                if ok:
+                v = self._verify(s, cur)
+                if v["ok"]:
                     tests = [{"id": t["rid"], "result": self._test_result(t)} for t in self._children_rows(s["pk"])]
                     done.append({"id": s["rid"], "text": s["text"], "tests": tests})
+                elif s["pk"] not in busy and v["verification"] != "checking":
+                    # Approved, not verified, nobody on it: the next move, from the same evaluator (U05).
+                    nxt.append({"id": s["rid"], "text": s["text"], "verification": v["verification"],
+                                "next_action": v["next_action"], "blocker": v["blockers"][0]["text"] if v["blockers"] else ""})
             elif s["status"] == "draft":
                 draft.append({"id": s["rid"], "text": s["text"], "kind": "specification",
                               "parent": self._rid_of(s["parent_pk"])})
@@ -1797,6 +2067,11 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
             "SELECT * FROM rungs WHERE project_pk=? AND kind='need' AND retired_at IS NULL ORDER BY num", (p["pk"],))]
         return {"project": self.project(project), "tiles": self.tiles(project), "needs_you": self.needs_you(project),
                 "running": running, "running_tests": live_execs, "done": done, "draft": draft, "needs": needs,
+                "next": nxt, "out_of_date": self.outdated_tests(project),
+                "milestones": [{"id": m["id"], "title": m["title"], "state": m["state"],
+                                "verified": sum(1 for x in m["scope"] if x["ok"]), "total": len(m["scope"]),
+                                "blocker": m["blockers"][0]["text"] if m["blockers"] else ""}
+                               for m in self.milestones(project)],
                 "claims": [{**c, "check": self.check(project, c["spec"])} for c in self.claims(project)]}
 
     # ------------------------------------------------------------------ allocation and picks
@@ -2004,6 +2279,10 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin):
         self._require_develop(project, s)
         if self._q1("SELECT 1 FROM runs WHERE spec_pk=? AND status IN ('queued','running')", (s["pk"],)):
             raise RungError(f"{spec_rid} is already running", code="conflict")
+        integrating = self.integration_running(c, s["project_pk"])
+        if integrating:
+            # Integration is judged on one state of the folder (Round 23): no work changes it meanwhile.
+            raise RungError(f"milestone check {integrating} is running; start {spec_rid} when it ends", code="busy")
         held = self._q1("SELECT chat, profile FROM claims WHERE spec_pk=? AND status='open' LIMIT 1", (s["pk"],))
         if held is not None:
             raise RungError(f"{spec_rid} is held by {held['chat'] or 'a chat'} ({held['profile']}); release the claim "

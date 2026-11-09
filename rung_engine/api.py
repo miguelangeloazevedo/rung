@@ -330,7 +330,7 @@ def _rung(svc, human, body, project, rid):
     node = tree_index.get(rid)
     r["children"] = node["children"] if node else []
     for k in ("coverage", "released", "blockers", "carried_by", "result", "seen_failing", "retired",
-              "retired_reason", "retired_at"):
+              "retired_reason", "retired_at", "verification", "codes", "next_action"):
         if node and k in node:
             r[k] = node[k]
     r["history"] = e.history(project, rid)
@@ -361,6 +361,7 @@ def _rung(svc, human, body, project, rid):
         r["develop"] = {"available": ok, "blocked_by": why or None}
     if r["kind"] == "test":
         r["executions"] = e.executions(project, rid)
+        r["protected"] = e.protected(project, rid)
         r["defects"] = [d for d in e.defects(project) if d["test"] == rid]
     return r
 
@@ -554,6 +555,93 @@ def _cancel_exec(svc, human, body, project, rid, n):
         raise RungError(f"{rid} #{x['n']} is not running ({x['status']})", code="not_running")
     svc.engine.cancel_execution(project, rid, x["n"])
     return svc.engine.execution(project, rid, x["n"])
+
+
+@route("POST", "/projects/{project}/tests/{rid}/accept-files")
+def _accept_files(svc, human, body, project, rid):
+    return svc.engine.accept_test_files(project, rid, human)
+
+
+@route("POST", "/projects/{project}/recheck")
+def _recheck(svc, human, body, project):
+    tests = svc.engine.outdated_tests(project)
+    if tests:
+        svc._bg(svc.engine.recheck, project)  # one after another: they share the project folder
+    return {"tests": tests}
+
+
+# ------------------------------------------------------------------ integration milestones (Round 23)
+
+
+@route("GET", "/projects/{project}/milestones")
+def _milestones(svc, human, body, project):
+    return svc.engine.milestones(project)
+
+
+@route("POST", "/projects/{project}/milestones")
+def _create_milestone(svc, human, body, project):
+    return svc.engine.create_milestone(project, body.get("title", ""), body.get("journey", ""),
+                                       list(body.get("scope") or []), body.get("architecture", ""), human)
+
+
+@route("GET", "/projects/{project}/milestones/{mid}")
+def _milestone(svc, human, body, project, mid):
+    out = svc.engine.milestone(project, mid)
+    for ch in out["checks"]:
+        ch["runs"] = svc.engine.milestone_runs(project, mid, ch["check"])[:10]
+    return out
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/edit")
+def _edit_milestone(svc, human, body, project, mid):
+    return svc.engine.edit_milestone(project, mid, {k: body[k] for k in ("title", "journey", "architecture", "scope")
+                                                    if k in body}, human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/checks")
+def _add_milestone_check(svc, human, body, project, mid):
+    return svc.engine.add_milestone_check(project, mid, dict(body), human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/checks/{cid}/remove")
+def _remove_milestone_check(svc, human, body, project, mid, cid):
+    return svc.engine.remove_milestone_check(project, mid, cid, human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/checks/{cid}/accept-files")
+def _accept_check_files(svc, human, body, project, mid, cid):
+    return svc.engine.accept_check_files(project, mid, cid, human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/checks/{cid}/record")
+def _record_milestone_manual(svc, human, body, project, mid, cid):
+    return svc.engine.record_milestone_manual(project, mid, cid, body.get("result", ""), body.get("note", ""), human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/approve")
+def _approve_milestone(svc, human, body, project, mid):
+    return svc.engine.approve_milestone(project, mid, human)
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/run")
+def _run_milestone(svc, human, body, project, mid):
+    m = svc.engine.milestone(project, mid)
+    svc.engine.milestone_runnable(project, mid)  # refuses here, not in the background, when it cannot run
+    if svc.inline_runs:
+        svc.engine.run_milestone(project, mid)
+    else:
+        svc._bg(svc.engine.run_milestone, project, mid)
+    return {"milestone": m["id"], "started": True}
+
+
+@route("POST", "/projects/{project}/milestones/{mid}/export")
+def _export_milestone(svc, human, body, project, mid):
+    return svc.engine.export_milestone(project, mid)
+
+
+@route("GET", "/projects/{project}/verification/{rid}")
+def _verification(svc, human, body, project, rid):
+    return svc.engine.verification(project, rid, fresh=True)
 
 
 @route("POST", "/projects/{project}/tests/{rid}/record")

@@ -31,7 +31,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className, labe
 }
 
 const BADGE = {
-  approved: ['Approved', 'bg-pass/10 text-pass border border-pass/30'],
+  // Approval is a contract fact, not evidence: neutral. Green is kept for current evidence (decisions Round 22).
+  approved: ['Approved', 'bg-btn text-fg border border-line'],
   stale: ['Stale', 'bg-stale/15 text-stale border border-stale/30'],
   draft: ['Draft', 'bg-dim/15 text-dim border border-dim/30'],
   proposed: ['Proposed', 'text-needs border border-needs'],
@@ -42,7 +43,7 @@ const BADGE = {
   not_run: ['Not run', 'bg-btn text-dim border border-line'],
   running: ['Running', 'text-needs border border-needs'],
   drafting: ['Drafting', 'bg-needs/10 text-needs border border-needs/30'],
-  drafted: ['Drafted', 'bg-pass/10 text-pass border border-pass/30'],
+  drafted: ['Drafted', 'bg-btn text-fg border border-line'],
   covered: ['Covered', 'bg-pass/10 text-pass border border-pass/30'],
   failing: ['Failing', 'bg-fail/10 text-fail border border-fail/30'],
   open: ['Open', 'bg-btn text-muted border border-line'],
@@ -61,6 +62,13 @@ const BADGE = {
   not_seen_failing: ['Not seen failing', 'bg-btn text-muted border border-line'],
   archived: ['Archived', 'bg-btn text-muted border border-line'],
   retired: ['Retired', 'bg-btn text-muted border border-line'],
+  verified: ['Verified', 'bg-pass/10 text-pass border border-pass/30'],
+  out_of_date: ['Out of date', 'bg-stale/15 text-stale border border-stale/30'],
+  could_not_verify: ['Could not verify', 'bg-needs/10 text-needs border border-needs/30'],
+  awaiting_manual: ['Waiting for you', 'bg-needs/10 text-needs border border-needs/30'],
+  checking: ['Checking', 'text-needs border border-needs'],
+  unverified: ['Not checked', 'bg-btn text-dim border border-line'],
+  contract: ['Needs review', 'bg-btn text-fg border border-line'],
   read_only: ['Read only', 'bg-btn text-muted border border-line'],
   proven: ['Proven', 'bg-pass/10 text-pass border border-pass/30'],
   not_proven: ['Not proven', 'bg-btn text-muted border border-line']

@@ -198,6 +198,24 @@ def decide(tool_name: str, args, session_id: str = "", store: Path | None = None
     return block
 
 
+def status(session_id: str, store: Path | None = None) -> dict:
+    """Whether the done hook is enforcing anything for this session, kept apart from verification:
+    `enforced` (the session holds claims and the store reads), `unbound` (no session id, or no open claim:
+    nothing to enforce) or `degraded` (the store cannot be read: tools pass, nothing is verified)."""
+    if not session_id:
+        return {"session": "", "enforcement": "unbound", "reason": "no session id", "claims": []}
+    try:
+        claims, _ = _session_claims(session_id, store)
+    except Exception as exc:  # the same read the hook makes; the hook would let every call through
+        return {"session": session_id, "enforcement": "degraded",
+                "reason": f"the store cannot be read: {type(exc).__name__}", "claims": []}
+    if not claims:
+        return {"session": session_id, "enforcement": "unbound", "reason": "no open claim", "claims": []}
+    return {"session": session_id, "enforcement": "enforced", "reason": "",
+            "claims": [{"project": c["project"], "spec": c["spec"], "verified": bool(c["check"].get("ok")),
+                        "blockers": c["check"].get("blockers") or []} for c in claims]}
+
+
 def pre_tool_call(tool_name: str = "", args=None, session_id: str = "", **kwargs):
     """Hermes `pre_tool_call` hook. Fails open: an error here never blocks a tool."""
     try:

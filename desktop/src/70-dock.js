@@ -33,6 +33,7 @@ function rungLabel(n) {
   if (n.kind === 'specification') {
     if (n.released) return 'released'
     if ((n.blockers || []).some(b => /failed/.test(b))) return 'failing'
+    if (n.verification === 'out_of_date') return 'out of date'
     return 'open'
   }
   if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'open'

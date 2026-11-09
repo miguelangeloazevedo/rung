@@ -73,6 +73,7 @@ function StatusChip() {
       className: cx('px-1.5 text-[11px] mono font-medium', n ? 'text-needs' : 'text-muted'),
       'data-testid': 'rung-status-chip',
       'aria-live': 'polite',
+      title: `${st.current}: ${n} needs you`,  // the chip counts the open project; the overview counts all (U06)
       onClick: () => openRung('home')
     }, `Rung: ${n} needs you`))
 }

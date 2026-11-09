@@ -313,6 +313,16 @@ function errInfo(e) {
 // The result line of every action (NAV-11), named once here: a view never adds its own line after post().
 // An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/\/milestones\/([^/]+)\/checks\/([^/]+)\/accept-files$/, m => `Accepted the changed files of ${m[2]}`],
+  [/\/milestones\/[^/]+\/checks\/([^/]+)\/record$/, (m, b) => `Recorded ${b && b.result === 'fail' ? 'Fail' : 'Pass'} for ${m[1]}`],
+  [/\/milestones\/[^/]+\/checks\/([^/]+)\/remove$/, m => `Removed ${m[1]}`],
+  [/\/milestones\/([^/]+)\/checks$/, (m, b, d) => `Added a check to ${m[1]}`],
+  [/\/milestones\/([^/]+)\/approve$/, m => `Approved ${m[1]}`],
+  [/\/milestones\/([^/]+)\/run$/, m => `Started the checks of ${m[1]}`],
+  [/\/milestones\/([^/]+)\/edit$/, m => `Saved ${m[1]}`],
+  [/\/projects\/[^/]+\/milestones$/, (m, b, d) => `Created ${(d && d.id) || 'the milestone'}`],
+  [/^\/projects\/[^/]+\/tests\/([^/]+)\/accept-files$/, m => `Accepted the changed files of ${m[1]}`],
+  [/^\/projects\/[^/]+\/recheck$/, (m, b, d) => d && d.tests && d.tests.length ? `Checking ${d.tests.join(', ')} again` : 'Nothing out of date'],
   [/^\/projects$/, (m, b, d) => `Created ${(d && d.name) || (b && b.name) || 'the project'}`],
   [/^\/projects\/([^/]+)\/update$/, (m, b, d) => `Saved the settings of ${(d && d.name) || m[1]}`],
   [/^\/projects\/([^/]+)\/archive$/, m => `Archived ${m[1]}`],
@@ -558,11 +568,12 @@ function tone(node) {
   if (st === 'stale') return 'stale'
   if (st === 'draft' || st === 'proposed' || st === 'dismissed') return 'dim'
   if (node.kind === 'test') {
-    return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'needs', running: 'needs', error: 'needs' }[node.result] || 'dim'
+    return { pass: 'pass', fail: 'fail', stale: 'stale', out_of_date: 'stale', pending: 'needs', running: 'needs', error: 'needs' }[node.result] || 'dim'
   }
   if (node.kind === 'specification') {
     if (node.released) return 'pass'
     if ((node.blockers || []).some(b => /failed/.test(b))) return 'fail'
+    if (node.verification === 'out_of_date') return 'stale'
     return 'muted'
   }
   if (node.kind === 'requirement') {
@@ -581,5 +592,5 @@ function capital(s) {
 }
 
 function resultWord(r) {
-  return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running', error: 'error' }[r] || 'not run'
+  return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running', error: 'error', out_of_date: 'out of date' }[r] || 'not run'
 }

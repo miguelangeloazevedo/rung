@@ -557,6 +557,16 @@ function errInfo(e) {
 // The result line of every action (NAV-11), named once here: a view never adds its own line after post().
 // An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/\/milestones\/([^/]+)\/checks\/([^/]+)\/accept-files$/, m => `Accepted the changed files of ${m[2]}`],
+  [/\/milestones\/[^/]+\/checks\/([^/]+)\/record$/, (m, b) => `Recorded ${b && b.result === 'fail' ? 'Fail' : 'Pass'} for ${m[1]}`],
+  [/\/milestones\/[^/]+\/checks\/([^/]+)\/remove$/, m => `Removed ${m[1]}`],
+  [/\/milestones\/([^/]+)\/checks$/, (m, b, d) => `Added a check to ${m[1]}`],
+  [/\/milestones\/([^/]+)\/approve$/, m => `Approved ${m[1]}`],
+  [/\/milestones\/([^/]+)\/run$/, m => `Started the checks of ${m[1]}`],
+  [/\/milestones\/([^/]+)\/edit$/, m => `Saved ${m[1]}`],
+  [/\/projects\/[^/]+\/milestones$/, (m, b, d) => `Created ${(d && d.id) || 'the milestone'}`],
+  [/^\/projects\/[^/]+\/tests\/([^/]+)\/accept-files$/, m => `Accepted the changed files of ${m[1]}`],
+  [/^\/projects\/[^/]+\/recheck$/, (m, b, d) => d && d.tests && d.tests.length ? `Checking ${d.tests.join(', ')} again` : 'Nothing out of date'],
   [/^\/projects$/, (m, b, d) => `Created ${(d && d.name) || (b && b.name) || 'the project'}`],
   [/^\/projects\/([^/]+)\/update$/, (m, b, d) => `Saved the settings of ${(d && d.name) || m[1]}`],
   [/^\/projects\/([^/]+)\/archive$/, m => `Archived ${m[1]}`],
@@ -802,11 +812,12 @@ function tone(node) {
   if (st === 'stale') return 'stale'
   if (st === 'draft' || st === 'proposed' || st === 'dismissed') return 'dim'
   if (node.kind === 'test') {
-    return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'needs', running: 'needs', error: 'needs' }[node.result] || 'dim'
+    return { pass: 'pass', fail: 'fail', stale: 'stale', out_of_date: 'stale', pending: 'needs', running: 'needs', error: 'needs' }[node.result] || 'dim'
   }
   if (node.kind === 'specification') {
     if (node.released) return 'pass'
     if ((node.blockers || []).some(b => /failed/.test(b))) return 'fail'
+    if (node.verification === 'out_of_date') return 'stale'
     return 'muted'
   }
   if (node.kind === 'requirement') {
@@ -825,7 +836,7 @@ function capital(s) {
 }
 
 function resultWord(r) {
-  return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running', error: 'error' }[r] || 'not run'
+  return { pass: 'pass', fail: 'fail', stale: 'stale', pending: 'pending', not_run: 'not run', running: 'running', error: 'error', out_of_date: 'out of date' }[r] || 'not run'
 }
 
 // Rung desktop pane: layout shell, header, tiles, build strip, traceability rail.
@@ -861,7 +872,8 @@ function Btn({ kind, onClick, disabled, children, title, testid, className, labe
 }
 
 const BADGE = {
-  approved: ['Approved', 'bg-pass/10 text-pass border border-pass/30'],
+  // Approval is a contract fact, not evidence: neutral. Green is kept for current evidence (decisions Round 22).
+  approved: ['Approved', 'bg-btn text-fg border border-line'],
   stale: ['Stale', 'bg-stale/15 text-stale border border-stale/30'],
   draft: ['Draft', 'bg-dim/15 text-dim border border-dim/30'],
   proposed: ['Proposed', 'text-needs border border-needs'],
@@ -872,7 +884,7 @@ const BADGE = {
   not_run: ['Not run', 'bg-btn text-dim border border-line'],
   running: ['Running', 'text-needs border border-needs'],
   drafting: ['Drafting', 'bg-needs/10 text-needs border border-needs/30'],
-  drafted: ['Drafted', 'bg-pass/10 text-pass border border-pass/30'],
+  drafted: ['Drafted', 'bg-btn text-fg border border-line'],
   covered: ['Covered', 'bg-pass/10 text-pass border border-pass/30'],
   failing: ['Failing', 'bg-fail/10 text-fail border border-fail/30'],
   open: ['Open', 'bg-btn text-muted border border-line'],
@@ -891,6 +903,13 @@ const BADGE = {
   not_seen_failing: ['Not seen failing', 'bg-btn text-muted border border-line'],
   archived: ['Archived', 'bg-btn text-muted border border-line'],
   retired: ['Retired', 'bg-btn text-muted border border-line'],
+  verified: ['Verified', 'bg-pass/10 text-pass border border-pass/30'],
+  out_of_date: ['Out of date', 'bg-stale/15 text-stale border border-stale/30'],
+  could_not_verify: ['Could not verify', 'bg-needs/10 text-needs border border-needs/30'],
+  awaiting_manual: ['Waiting for you', 'bg-needs/10 text-needs border border-needs/30'],
+  checking: ['Checking', 'text-needs border border-needs'],
+  unverified: ['Not checked', 'bg-btn text-dim border border-line'],
+  contract: ['Needs review', 'bg-btn text-fg border border-line'],
   read_only: ['Read only', 'bg-btn text-muted border border-line'],
   proven: ['Proven', 'bg-pass/10 text-pass border border-pass/30'],
   not_proven: ['Not proven', 'bg-btn text-muted border border-line']
@@ -1447,6 +1466,24 @@ function Home({ project }) {
             h('span', 'text-fg mono', `${x.test} · execution #${x.n} · running ${dur(Date.now() / 1000 - x.started_at)}`),
             h('span', 'text-[11px] text-needs font-medium', 'in progress'))))
         : h('div', 'bg-card border border-line rounded-[6px] p-3 text-xs text-dim', 'Nothing running')),
+    (d.next || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'next' },
+      h(SectionTitle, { dot: 'muted', right: String(d.next.length) }, 'Next'),
+      ...d.next.slice(0, 6).map(s => h(Card, { key: s.id, className: 'p-3 flex items-center justify-between gap-3', onClick: () => navigate('rung', { rid: s.id }) },
+        h('div', 'flex items-center gap-2.5 min-w-0', h(Dot, { t: s.verification === 'failed' ? 'fail' : s.verification === 'out_of_date' ? 'stale' : 'muted' }),
+          h('span', 'whitespace-nowrap text-xs font-medium text-fg', s.id), h('span', { className: 'text-xs text-muted truncate min-w-0', title: s.blocker }, s.blocker)),
+        h(Badge, { status: s.verification, small: true }))),
+      d.next.length > 6 ? h('div', 'text-[11px] text-muted', `+${d.next.length - 6}`) : null,
+      (d.out_of_date || []).length && !ro ? h('div', 'flex', h(Btn, { kind: 'small', testid: 'recheck', onClick: () => post(`${P(project)}/recheck`) }, `Check again (${d.out_of_date.length})`)) : null) : null,
+    (d.milestones || []).length || (d.done || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'home-milestones' },
+      h(SectionTitle, { dot: (d.milestones || []).some(m => m.state !== 'verified') ? 'needs' : (d.milestones || []).length ? 'pass' : 'dim', right: (d.milestones || []).length ? h(Btn, { kind: 'small', testid: 'all-milestones', onClick: () => navigate('milestones') }, 'All') : null }, 'Milestones'),
+      (d.milestones || []).length
+        ? frag(...d.milestones.slice(0, 4).map(m => h(Card, { key: m.id, className: 'p-3 flex items-center justify-between gap-3', onClick: () => navigate('milestone', { mid: m.id }) },
+          h('div', 'flex items-center gap-2.5 min-w-0', h(Dot, { t: M_TONE[m.state] || 'muted' }),
+            h('span', 'whitespace-nowrap text-xs font-medium text-fg mono', m.id),
+            h('span', { className: 'text-xs text-fg truncate min-w-0', title: m.title }, m.title),
+            h('span', { className: 'text-[11px] text-muted truncate min-w-0', title: m.blocker }, m.blocker || `${m.verified} of ${m.total}`)),
+          h(Badge, { status: m.state, small: true }))))
+        : h(Empty, { text: 'No milestones', action: ro ? null : 'New milestone', onClick: () => navigate('milestone-new'), actionTestid: 'milestone-new' })) : null,
     (d.done || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'done' },
       h(SectionTitle, { dot: 'pass' }, 'Done'),
       ...d.done.map(s => h(Card, { key: s.id, className: 'p-3 flex items-center justify-between opacity-80 hover:opacity-100', onClick: () => navigate('rung', { rid: s.id }) },
@@ -2685,6 +2722,7 @@ function SpecView({ project, r, ret, need }) {
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }), ...tests.map(t => h(TestLine, { key: t.id, t })))),
+    r.status === 'approved' && r.verification ? h(Verification, { r, runTests }) : null,
     h(ClaimsSection, { project, r, onErr: setErr }),
     a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
@@ -2703,6 +2741,33 @@ function SpecView({ project, r, ret, need }) {
         h(ExcludedList, { excluded: a.excluded }))),
     h(CarrierSection, { project, r, onErr: setErr }))
   return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
+}
+
+// The engine's one verification result for a specification: its state, what holds it, and the next move.
+const NEXT_WORD = {
+  run_tests: 'Run tests', record_manual_result: 'Record manual result', approve_manual_result: 'Approve manual result',
+  review_test_files: 'Review test files', repair: 'Open failing test', repair_test_setup: 'Open test',
+  review_change: 'Review change', approve: 'Approve', add_test: 'Add test', wait: 'Open test'
+}
+function Verification({ r, runTests }) {
+  const blockers = r.blockers || []
+  const next = r.next_action
+  const go = () => {
+    if (!next) return
+    if (next.kind === 'run_tests') return runTests()
+    if (next.kind === 'add_test') return navigate('test-edit', { spec: r.id })
+    if (next.test) return navigate('rung', { rid: next.test })
+    if (next.rung) return navigate('rung', { rid: next.rung })
+  }
+  return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'verification', 'data-verification': r.verification },
+    h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
+      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Verification'),
+      h(Badge, { status: r.released ? 'verified' : r.verification })),
+    blockers.length ? h('ul', { className: 'flex flex-col gap-1.5 text-xs', 'data-testid': 'blockers' },
+      ...blockers.map((b, i) => h('li', { key: i, className: 'flex items-center gap-2 text-fg', 'data-code': (r.codes || [])[i] || '' },
+        h(Dot, { t: /failed/.test(b) ? 'fail' : (r.codes || [])[i] === 'out_of_date' ? 'stale' : 'needs' }), h('span', 'mono', b)))) : null,
+    next && NEXT_WORD[next.kind] && next.kind !== 'approve' ? h('div', 'flex items-center gap-2 pt-2 border-t border-line',
+      h(Btn, { kind: 'primary', testid: 'next-action', onClick: go }, NEXT_WORD[next.kind])) : null)
 }
 
 function dayClock(ts) {
@@ -2812,7 +2877,7 @@ function TestView({ project, r }) {
   const headline = (badge) => h('div', 'flex flex-col gap-1.5',
     h('div', 'flex items-center justify-between', pathCrumbs(r), badge),
     h('div', 'flex items-center gap-2', h('h2', 'text-sm font-semibold text-fg mono', r.type === 'manual' ? r.text : (r.command || r.text))),
-    h('div', 'text-[11px] text-muted', h('span', null, TYPE_WORD[r.type] || 'Command test')))
+    h('div', 'text-[11px] text-muted', h('span', null, TYPE_WORD[r.type] || 'Command test'), r.type === 'manual' && r.required === false ? h('span', { 'data-testid': 'optional' }, ' · optional') : null))
   if (r.type === 'manual') {
     const pending = execs.find(x => x.status === 'pending' && !x.invalidated)
     const res = r.result || 'not_run'
@@ -2864,6 +2929,7 @@ function TestView({ project, r }) {
         h(Label, null, 'Pass rule'),
         h('div', { className: 'text-xs mono text-fg', 'data-testid': 'pass-rule' }, passRule(r))),
       r.type === 'ai_judged' ? h('div', { className: 'text-[11px] text-dim', 'data-testid': 'no-gate' }, 'Cannot release a gate') : null,
+      h(Protected, { project, r, act }),
       h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
         h('div', 'flex items-center justify-between', h(Label, null, 'Executions'), h(SeenFailing, { value: r.seen_failing, small: true })),
         h('div', { className: 'flex flex-col gap-2', 'data-testid': 'executions' },
@@ -2882,6 +2948,22 @@ function TestView({ project, r }) {
   return h(Page, { project, sel: r.id, back: () => goBack('rung', { rid: r.parent }) }, body)
 }
 
+// The files a command test is judged by, and any that changed since a person approved it.
+function Protected({ project, r, act }) {
+  const pr = r.protected
+  if (!pr || !(pr.files || []).length) return null
+  const changed = pr.changed || []
+  const shown = pr.files.slice(0, 6)
+  return h('div', { className: 'flex flex-col gap-1.5 pt-3 border-t border-line', 'data-testid': 'protected' },
+    h('div', 'flex items-center justify-between', h(Label, null, 'Judged by'), h('span', 'text-[11px] text-muted mono', String(pr.files.length))),
+    changed.length
+      ? frag(
+        ...changed.map(c => h('div', { key: c.path, className: 'flex items-center justify-between bg-well p-2 rounded-[6px] border border-needs/30 text-[11px] mono', 'data-changed': c.path },
+          h('span', { className: 'text-fg truncate min-w-0', title: c.path }, c.path), h('span', 'text-needs shrink-0', c.change))),
+        h('div', 'flex', h(Btn, { kind: 'small', testid: 'accept-files', onClick: () => act(`${P(project)}/tests/${r.id}/accept-files`) }, 'Accept changed files')))
+      : h('div', { className: 'text-[11px] mono text-muted truncate', title: pr.files.join(', ') }, shown.join(', ') + (pr.files.length > shown.length ? ` +${pr.files.length - shown.length}` : '')))
+}
+
 function ExecRow({ test, x }) {
   const dead = x.invalidated && x.status === 'pass'
   if (dead) {
@@ -2892,7 +2974,7 @@ function ExecRow({ test, x }) {
   const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : ['running', 'pending', 'error'].includes(x.status) ? 'needs' : 'dim'
   return h('div', { className: cx('flex items-center justify-between bg-well p-2.5 rounded-[6px] border font-mono text-[11px] text-fg cursor-pointer', t === 'fail' ? 'border-fail/30' : t === 'pass' ? 'border-pass/30' : 'border-line2'), 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
     h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
-    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[t]) }, x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'failed' : x.status))
+    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[x.out_of_date ? 'stale' : t]) }, x.status === 'pass' ? (x.out_of_date ? 'pass · out of date' : 'pass') : x.status === 'fail' ? 'failed' : x.status === 'error' && x.reason === 'verification_changed' ? 'not run · files changed' : x.status))
 }
 
 // ------------------------------------------------------------------ test editor
@@ -2926,8 +3008,8 @@ function TestEdit({ project, test, spec, ret, need }) {
     if (!st) return
     const proj = (st.projects || []).find(p => p.name === project) || {}
     const blank = t
-      ? { type: t.type, command: t.command || '', folder: t.folder || '.', rule: (t.pass_rule || {}).kind || 'exit_code', value: String((t.pass_rule || {}).value ?? 0), timeout: `${t.timeout || 120}s`, limit: `${Math.round((t.output_limit || 64000) / 1000)} KB`, steps: (t.steps || []).join('\n'), text: t.type === 'ai_judged' ? t.text : '' }
-      : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', text: '', _folder: proj.folder }
+      ? { type: t.type, command: t.command || '', folder: t.folder || '.', rule: (t.pass_rule || {}).kind || 'exit_code', value: String((t.pass_rule || {}).value ?? 0), timeout: `${t.timeout || 120}s`, limit: `${Math.round((t.output_limit || 64000) / 1000)} KB`, steps: (t.steps || []).join('\n'), required: t.required !== false, text: t.type === 'ai_judged' ? t.text : '' }
+      : { type: 'command', command: '', folder: '.', rule: 'exit_code', value: '0', timeout: `${st.settings.test_timeout || 120}s`, limit: `${Math.round((st.settings.output_limit || 64000) / 1000)} KB`, steps: '', required: true, text: '', _folder: proj.folder }
     // A pasted text is typed text: the blank form is what counts as unchanged.
     init.current = JSON.stringify(blank)
     setF(t ? blank : { ...blank, ...pre })
@@ -2938,7 +3020,7 @@ function TestEdit({ project, test, spec, ret, need }) {
   const s = sq.data
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const fields = () => {
-    if (f.type === 'manual') return { type: 'manual', steps: f.steps.split('\n').map(x => x.trim()).filter(Boolean) }
+    if (f.type === 'manual') return { type: 'manual', steps: f.steps.split('\n').map(x => x.trim()).filter(Boolean), required: f.required !== false }
     const out = { type: f.type, command: f.command, folder: f.folder || '.', pass_rule: { kind: f.rule, value: f.rule === 'exit_code' ? parseInt(f.value, 10) || 0 : f.value }, timeout: parseInt(f.timeout, 10) || 120, output_limit: (parseInt(f.limit, 10) || 64) * 1000 }
     if (f.type === 'ai_judged') out.text = f.text || f.command
     return out
@@ -2978,7 +3060,10 @@ function TestEdit({ project, test, spec, ret, need }) {
     f.type === 'manual'
       ? h('div', 'flex flex-col gap-1.5',
         h('span', 'text-xs font-medium text-muted', 'Steps'),
-        h('textarea', { className: 'w-full bg-well border border-line rounded-[6px] p-3 mono text-xs text-fg focus:outline-none focus:border-needs leading-relaxed', rows: 4, name: 'steps', value: f.steps, onChange: set('steps') }))
+        h('textarea', { className: 'w-full bg-well border border-line rounded-[6px] p-3 mono text-xs text-fg focus:outline-none focus:border-needs leading-relaxed', rows: 4, name: 'steps', value: f.steps, onChange: set('steps') }),
+        h('label', { className: 'flex items-center gap-2 text-xs text-fg mt-1' },
+          h('input', { type: 'checkbox', name: 'required', 'data-testid': 'manual-required', checked: f.required !== false, onChange: e => { const v = e.target.checked; setF(cur => ({ ...cur, required: v })) } }),
+          h('span', null, 'Required')))
       : frag(
         f.type === 'ai_judged' ? h('div', 'flex flex-col gap-1.5',
           h('span', 'text-xs font-medium text-muted', 'Judge question'),
@@ -4302,6 +4387,182 @@ Object.assign(VIEWS, {
   'project-settings': ProjectSettings
 })
 
+// ------------------------------------------------------------------ integration milestones (decisions Round 23)
+// A milestone is a declared journey over approved specifications with its own cross-component checks. Its state
+// comes from the engine (one verdict for pane, CLI and report); the pane only shows it and offers the next step.
+
+Object.assign(BADGE, {
+  not_ready: ['Not ready for integration', 'bg-btn text-fg border border-line'],
+  ready: ['Ready for integration', 'bg-btn text-fg border border-line'],
+  verifying: ['Verifying', 'text-needs border border-needs'],
+  integration_failed: ['Integration failed', 'bg-fail/10 text-fail border border-fail/30'],
+  satisfied: ['Passed', 'bg-pass/10 text-pass border border-pass/30'],
+  missing: ['Not run', 'bg-btn text-dim border border-line']
+})
+
+const M_TONE = { verified: 'pass', integration_failed: 'fail', out_of_date: 'stale', verifying: 'needs', awaiting_manual: 'needs', could_not_verify: 'needs' }
+
+function specsOf(tree) {
+  const out = []
+  const walk = ns => (ns || []).forEach(n => { if (n.kind === 'specification' && n.status === 'approved') out.push(n); walk(n.children) })
+  walk(tree)
+  return out
+}
+
+function MilestoneRow({ m }) {
+  const ok = m.scope.filter(s => s.ok).length
+  return h(Card, { key: m.id, className: 'p-3 flex items-center justify-between gap-3', testid: 'milestone-row', onClick: () => navigate('milestone', { mid: m.id }) },
+    h('div', 'flex items-center gap-2.5 min-w-0', h(Dot, { t: M_TONE[m.state] || 'muted' }),
+      h('span', 'whitespace-nowrap text-xs font-medium text-fg mono', m.id),
+      h('span', { className: 'text-xs text-fg truncate min-w-0', title: m.title }, m.title),
+      h('span', 'whitespace-nowrap text-[11px] text-muted mono', `${ok} of ${m.scope.length}`)),
+    h(Badge, { status: m.state, small: true }))
+}
+
+function Milestones({ project }) {
+  const q = useApi(`${P(project)}/milestones`, { live: true })
+  const stQ = useHome(project)
+  const ro = !!(stQ.data && stQ.data.tiles && stQ.data.tiles.archived)
+  useExit(() => goBack('home'))
+  if (q.error) return h(Missing, { project, text: errText(q.error) })
+  const rows = q.data
+  return h(Page, { project, title: 'Milestones', back: () => goBack('home') },
+    h('section', { className: 'flex flex-col gap-2', 'data-testid': 'milestones' },
+      h(SectionTitle, { right: ro ? null : h(Btn, { kind: 'small', testid: 'milestone-new', onClick: () => navigate('milestone-new') }, 'New milestone') }, 'Integration milestones'),
+      !rows ? h(Loading) : rows.length ? frag(...rows.map(m => h(MilestoneRow, { key: m.id, m })))
+        : h(Empty, { text: 'No milestones', action: ro ? null : 'New milestone', onClick: () => navigate('milestone-new'), testid: 'no-milestones' })))
+}
+
+function MilestoneNew({ project }) {
+  const tq = useApi(`${P(project)}/tree`)
+  const [f, setF] = useState({ title: '', journey: '', architecture: '', command: '' })
+  const [scope, setScope] = useState([])
+  const [err, setErr] = useState('')
+  const [fieldErr, setFieldErr] = useState({})
+  const set = k => e => { const v = e.target.value; setF(cur => ({ ...cur, [k]: v })) }
+  const dirty = !!(f.title.trim() || f.journey.trim() || f.architecture.trim() || f.command.trim() || scope.length)
+  useDirty(dirty)
+  const cancel = () => goBack('milestones', {}, { force: true })
+  useExit(cancel, true)
+  if (tq.error) return h(Missing, { project, text: errText(tq.error) })
+  const specs = specsOf(tq.data)
+  const toggle = id => setScope(cur => cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id])
+  const save = async () => {
+    if (!f.command.trim()) return setFieldErr({ command: 'A milestone needs a command check' })
+    const res = await post(`${P(project)}/milestones`, { title: f.title, journey: f.journey, architecture: f.architecture, scope })
+    if (!res.ok) { setFieldErr(res.field ? { [res.field]: res.error } : {}); return setErr(res.field ? '' : res.error) }
+    const mid = res.data.id
+    // Created either way; a check the engine refused leaves the draft without it, where Add check offers it again.
+    await post(`${P(project)}/milestones/${mid}/checks`, { type: 'command', command: f.command, text: f.journey }, { quiet: true })
+    finish('milestone', { mid })
+  }
+  return h(Page, { project, title: 'New milestone' },
+    h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'milestone-form' },
+      h(Field, { label: 'Outcome', error: fieldErr.title, name: 'title' }, h('input', { className: INPUT, name: 'title', value: f.title, onChange: set('title') })),
+      h(Field, { label: 'User journey', error: fieldErr.journey, name: 'journey' }, h('textarea', { className: INPUT, rows: 3, name: 'journey', value: f.journey, onChange: set('journey') })),
+      h(Field, { label: 'Architecture and constraints', optional: true, name: 'architecture' }, h('textarea', { className: INPUT, rows: 2, name: 'architecture', value: f.architecture, onChange: set('architecture') })),
+      h(Field, { label: 'Included specifications', error: fieldErr.scope, name: 'scope' },
+        !tq.data ? h(Loading) : specs.length
+          ? h('div', { className: 'flex flex-col gap-1', role: 'group', 'aria-label': 'Included specifications' },
+            ...specs.map(s => h('label', { key: s.id, className: 'flex items-center gap-2 text-xs text-fg min-h-[24px]' },
+              h('input', { type: 'checkbox', name: 'scope', value: s.id, checked: scope.includes(s.id), onChange: () => toggle(s.id) }),
+              h('span', 'mono whitespace-nowrap', s.id), h('span', { className: 'text-muted truncate min-w-0', title: s.text }, s.text),
+              h(Badge, { status: s.verification || 'unverified', small: true }))))
+          : h(Empty, { text: 'No approved specifications' })),
+      h(Field, { label: 'Integration check command', error: fieldErr.command, name: 'command' },
+        h('input', { className: INPUT + ' mono', name: 'command', value: f.command, onChange: set('command') })),
+      h(ErrorLine, { text: err }),
+      h('div', 'flex items-center justify-end gap-2',
+        h(ExitBtn, { testid: 'cancel', onClick: cancel }, 'Cancel'),
+        h(Btn, { kind: 'primary', testid: 'save', onClick: save }, 'Create'))))
+}
+
+function NextStep({ project, m, ro }) {
+  const na = m.next_action
+  if (!na || ro) return null
+  const base = `${P(project)}/milestones/${m.id}`
+  if (na.kind === 'approve_milestone') return h(Btn, { kind: 'primary', testid: 'next-action', onClick: () => post(`${base}/approve`) }, 'Approve')
+  if (na.kind === 'run_checks' || na.kind === 'repair_check_setup') return h(Btn, { kind: 'primary', testid: 'next-action', onClick: () => post(`${base}/run`) }, 'Run checks')
+  if (na.kind === 'repair') return h(Btn, { testid: 'next-action', onClick: () => post(`${base}/run`) }, 'Run checks again')
+  if (na.kind === 'verify_scope' && na.rung) return h(Btn, { kind: 'primary', testid: 'next-action', onClick: () => navigate('rung', { rid: na.rung }) }, `Open ${na.rung}`)
+  if (na.kind === 'review_check_files' && na.check) return h(Btn, { kind: 'primary', testid: 'next-action', onClick: () => post(`${base}/checks/${na.check}/accept-files`) }, 'Accept changed files')
+  return null
+}
+
+function MilestoneView({ project, mid }) {
+  const q = useApi(`${P(project)}/milestones/${encodeURIComponent(mid)}`, { live: true })
+  const stQ = useHome(project)
+  const ro = !!(stQ.data && stQ.data.tiles && stQ.data.tiles.archived)
+  const [exported, setExported] = useState(null)
+  const [err, setErr] = useState('')
+  const [cmd, setCmd] = useState('')
+  useDirty(!!cmd.trim())
+  useExit(() => goBack('milestones'))
+  if (q.error) return h(Missing, { project, text: errText(q.error) })
+  const m = q.data
+  if (!m) return h(Page, { project, title: mid }, h(Loading))
+  const base = `${P(project)}/milestones/${m.id}`
+  const exp = async () => {
+    const x = await post(`${base}/export`)
+    if (!x.ok) return setErr(x.error)
+    setErr(''); setExported(x.data.path)
+  }
+  const addCheck = async () => {
+    const x = await post(`${base}/checks`, { type: 'command', command: cmd })
+    if (!x.ok) return setErr(x.error)
+    setErr(''); setCmd('')
+  }
+  const record = (cid, result) => post(`${base}/checks/${cid}/record`, { result })
+  return h(Page, { project, title: m.id, back: () => goBack('milestones') },
+    h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'milestone' },
+      h('div', 'flex flex-wrap items-start justify-between gap-3',
+        h('div', 'flex flex-col gap-1 min-w-0',
+          h('h2', { className: 'text-sm font-semibold text-fg', 'data-testid': 'milestone-title' }, m.title),
+          h('span', 'text-[11px] mono text-muted', [`version ${m.version}`, m.approved_by && `approved by ${m.approved_by}`, `code ${m.basis}`].filter(Boolean).join(' · '))),
+        h('div', 'flex items-center gap-2',
+          h('span', { 'data-testid': 'milestone-state', 'data-state': m.state }, h(Badge, { status: m.state })),
+          h(NextStep, { project, m, ro }),
+          h(Btn, { testid: 'export', onClick: exp }, 'Export'))),
+      exported ? h(Well, { className: 'flex items-center justify-between text-xs', testid: 'export-path' },
+        h('span', 'text-muted', 'Exported'), h('span', 'mono text-fg', shortPath(exported))) : null,
+      h(ErrorLine, { text: err }),
+      m.blockers.length ? h('div', { className: 'flex flex-col gap-1', 'data-testid': 'milestone-blockers' },
+        ...m.blockers.map((b, i) => h('div', { key: i, className: 'flex items-center gap-2 text-xs', 'data-code': b.code },
+          h(Dot, { t: b.code === 'failed' ? 'fail' : b.code === 'out_of_date' ? 'stale' : 'needs' }), h('span', 'text-fg', b.text)))) : null,
+      h(Section, { title: 'Journey', testid: 'milestone-journey' }, h(Well, { className: 'text-xs text-fg' }, m.journey)),
+      m.architecture ? h(Section, { title: 'Architecture and constraints', testid: 'milestone-architecture' }, h(Well, { className: 'text-xs text-muted' }, m.architecture)) : null,
+      h(Section, { title: 'Included work', testid: 'milestone-scope', right: h('span', 'text-[11px] mono text-muted', `${m.scope.filter(s => s.ok).length} of ${m.scope.length} verified`) },
+        h('div', 'flex flex-col gap-1.5',
+          ...m.scope.map(s => h(Card, { key: s.id, nested: true, className: 'p-2.5 flex items-center justify-between gap-3', onClick: () => navigate('rung', { rid: s.id }) },
+            h('span', 'flex items-center gap-2 min-w-0', h('span', 'mono text-xs text-fg whitespace-nowrap', s.id), h('span', { className: 'text-xs text-muted truncate min-w-0', title: s.text || '' }, s.text || '')),
+            h(Badge, { status: s.verification, small: true }))))),
+      h(Section, { title: 'Checks', testid: 'milestone-checks' },
+        h('div', 'flex flex-col gap-1.5',
+          ...m.checks.map(c => h(Well, { key: c.check, className: 'flex flex-col gap-1.5', testid: 'check-' + c.check },
+            h('div', 'flex items-center justify-between gap-3 text-xs',
+              h('span', 'flex items-center gap-2 min-w-0',
+                h('span', 'mono text-fg whitespace-nowrap', c.check),
+                h('span', { className: 'mono text-muted truncate min-w-0', title: c.command || c.steps.join('; ') }, c.command || c.steps.join('; ')),
+                c.required ? null : h('span', 'text-[11px] text-dim', 'optional')),
+              h('span', 'flex items-center gap-1.5 shrink-0',
+                c.type === 'manual' && m.status === 'approved' && !ro ? frag(
+                  h(Btn, { kind: 'small', testid: 'record-pass', onClick: () => record(c.check, 'pass') }, 'Pass'),
+                  h(Btn, { kind: 'small', testid: 'record-fail', onClick: () => record(c.check, 'fail') }, 'Fail')) : null,
+                h(Badge, { status: c.state, small: true }))),
+            ...(c.runs || []).slice(0, 3).map(r => h('div', { key: r.n, className: 'flex items-center justify-between text-[11px] mono text-muted pl-3 border-l border-line', 'data-run': r.n },
+              h('span', null, [`#${r.n}`, r.carried_by, `code ${r.basis}`, r.current_scope ? null : 'earlier version', r.reason].filter(Boolean).join(' · ')),
+              h(Badge, { status: r.status, small: true })))))),
+        m.status === 'draft' && !ro ? h('div', 'flex items-center gap-2 pt-1',
+          h('input', { className: INPUT + ' mono', name: 'check-command', 'aria-label': 'Check command', value: cmd, onChange: e => setCmd(e.target.value) }),
+          h(Btn, { kind: 'small', testid: 'add-check', onClick: addCheck, disabled: !cmd.trim() }, 'Add check')) : null)))
+}
+
+Object.assign(VIEWS, {
+  milestones: Milestones,
+  milestone: MilestoneView,
+  'milestone-new': MilestoneNew
+})
+
 // Rung desktop pane: the dock, a compact companion beside the chat (PANES_AREA, right, collapsible).
 // Shows Needs you, Running, the current need's
 // ladder with a need picker, and Open Rung. Same data, status colours and labels as the full page.
@@ -4337,6 +4598,7 @@ function rungLabel(n) {
   if (n.kind === 'specification') {
     if (n.released) return 'released'
     if ((n.blockers || []).some(b => /failed/.test(b))) return 'failing'
+    if (n.verification === 'out_of_date') return 'out of date'
     return 'open'
   }
   if (n.kind === 'requirement') return { covered: 'covered', failing: 'failing', stale: 'stale', draft: 'draft' }[n.coverage] || 'open'
@@ -4685,6 +4947,7 @@ function StatusChip() {
       className: cx('px-1.5 text-[11px] mono font-medium', n ? 'text-needs' : 'text-muted'),
       'data-testid': 'rung-status-chip',
       'aria-live': 'polite',
+      title: `${st.current}: ${n} needs you`,  // the chip counts the open project; the overview counts all (U06)
       onClick: () => openRung('home')
     }, `Rung: ${n} needs you`))
 }

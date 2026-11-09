@@ -61,7 +61,9 @@ def seed_csvtidy(engine: Engine, folder: Path, with_history: bool = True, r2: st
     engine.add_test("csvtidy", "S-1.1", {"type": "command", "command": "pytest tests/test_sniff.py"}, HUMAN, status="approved")
     engine.add_test("csvtidy", "S-2.1", {"type": "command", "command": "pytest tests/test_dates.py::test_ambiguous_locale"},
                     HUMAN, status="approved")
-    engine.add_test("csvtidy", "S-2.1", {"type": "manual", "text": "Manual: open output in a spreadsheet, dates sort correctly",
+    # Optional (Round 22): verification does not wait for it, but a recorded failure blocks S-2.1.
+    engine.add_test("csvtidy", "S-2.1", {"type": "manual", "required": False,
+                                          "text": "Manual: open output in a spreadsheet, dates sort correctly",
                                           "steps": ["Run csvtidy on samples/dates.csv", "Open the output in a spreadsheet",
                                                     "Sort by the date column"]}, HUMAN, status="approved")
     engine.approve_tests("csvtidy", "N-1", HUMAN)
@@ -196,3 +198,111 @@ def seed_large(engine: Engine, folder: Path, name: str = "bigladder", needs: int
         t = tests[i % len(tests)]
         engine.record_manual(name, t, "fail" if i % 7 == 3 else "pass", f"round {i // len(tests) + 1}")
     return {"rungs": needs * (1 + 3 * reqs), "executions": executions, "tests": tests}
+
+
+# Two pieces that each pass their own tests but disagree on the interface between them (decisions Round 23):
+# the API answers {"short_url": ...}, the page reads "url". Only a check across the HTTP boundary sees it.
+LINKPAIR = {
+    "shortly/__init__.py": "",
+    "shortly/api.py": """import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+LINKS = {}
+
+
+def create(url):
+    code = format(len(LINKS) + 1, "x").rjust(4, "0")
+    LINKS[code] = url
+    return {"code": code, "short_url": "/r/" + code}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        out = json.dumps(create(body["url"])).encode()
+        self.send_response(201)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(out)
+
+    def log_message(self, *a):
+        pass
+
+
+def serve():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+""",
+    "shortly/page.py": """import json
+import urllib.request
+
+
+def render(link):
+    return '<p>Your link: <a href="{0}">{0}</a></p>'.format(link["url"])
+
+
+def shorten(base, url):
+    req = urllib.request.Request(base + "/links", data=json.dumps({"url": url}).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return render(json.loads(r.read()))
+""",
+    "tests/__init__.py": "",
+    "tests/test_api.py": """from shortly import api
+
+
+def test_create_returns_a_short_url():
+    out = api.create("https://bakery.example/rye")
+    assert out["short_url"].startswith("/r/")
+""",
+    "tests/test_page.py": """from shortly import page
+
+
+def test_render_shows_the_link():
+    assert '<a href="/r/0001">' in page.render({"url": "/r/0001"})
+""",
+    "journey/__init__.py": "",
+    "journey/test_journey.py": """from shortly import api, page
+
+
+def test_create_a_link_and_see_it():
+    srv = api.serve()
+    try:
+        html = page.shorten("http://127.0.0.1:%d" % srv.server_address[1], "https://bakery.example/rye")
+    finally:
+        srv.shutdown()
+    assert '<a href="/r/' in html
+""",
+}
+
+
+def seed_linkpair(engine: Engine, folder: Path) -> None:
+    folder = Path(folder)
+    for rel, text in LINKPAIR.items():
+        (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+        (folder / rel).write_text(text)
+    (folder / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n")
+    seed_profiles(engine)
+    engine.create_project("linkpair", str(folder), "pytest", [p["name"] for p in PROFILES])
+    engine.create_need("linkpair", "Share shorter links", HUMAN)
+    engine.add_requirement("linkpair", "N-1", "The API creates a short link for a long one", HUMAN)
+    engine.add_requirement("linkpair", "N-1", "The page shows the short link it got", HUMAN)
+    engine.approve_requirements("linkpair", "N-1", HUMAN)
+    engine.write_spec("linkpair", "R-1", "POST /links answers 201 with the short link", tags=["python"])
+    engine.write_spec("linkpair", "R-2", "The page renders the short link as a link", tags=["python"])
+    engine.approve_drafted("linkpair", "N-1", HUMAN)
+    engine.add_test("linkpair", "S-1.1", {"type": "command", "command": "pytest -q tests/test_api.py"}, HUMAN,
+                    status="approved")
+    engine.add_test("linkpair", "S-2.1", {"type": "command", "command": "pytest -q tests/test_page.py"}, HUMAN,
+                    status="approved")
+    engine.approve_tests("linkpair", "N-1", HUMAN)
+
+
+def fix_linkpair(folder: Path) -> None:
+    """The repair: the page reads the field the API sends."""
+    page = Path(folder) / "shortly" / "page.py"
+    page.write_text(page.read_text().replace('link["url"]', 'link["short_url"]'))
+    test = Path(folder) / "tests" / "test_page.py"
+    test.write_text(test.read_text().replace('{"url": "/r/0001"}', '{"short_url": "/r/0001"}'))

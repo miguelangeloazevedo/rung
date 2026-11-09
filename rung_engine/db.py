@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Columns added after schema 1, applied to older stores by `migrate`. New stores get them from SCHEMA.
 MIGRATIONS = {
@@ -20,6 +20,21 @@ MIGRATIONS = {
         ("profiles", "tools", "TEXT NOT NULL DEFAULT '[]'"),
         ("profiles", "at_once", "INTEGER NOT NULL DEFAULT 2"),
     ],
+    # Evidence identity (Round 22): what each result applies to, and the files a test was approved with.
+    4: [
+        ("executions", "basis_start", "TEXT NOT NULL DEFAULT ''"),
+        ("executions", "basis_end", "TEXT NOT NULL DEFAULT ''"),
+        ("executions", "reason", "TEXT NOT NULL DEFAULT ''"),
+        ("rungs", "assets", "TEXT"),
+    ],
+}
+
+# Data steps run in the same transaction as a version's columns. Version 4: a manual test written before
+# required checks existed keeps the meaning it had (not needed to verify, a recorded failure still blocks), so
+# no stored green or red changes when the store is opened; tests written from now on are required by default.
+DATA_STEPS = {
+    4: ["UPDATE rungs SET data = json_set(data, '$.required', json('false')) WHERE kind = 'test' "
+        "AND json_extract(data, '$.type') = 'manual' AND json_extract(data, '$.required') IS NULL"],
 }
 
 
@@ -74,6 +89,7 @@ CREATE TABLE IF NOT EXISTS rungs (
     source_chat  TEXT,
     data         TEXT NOT NULL DEFAULT '{}',
     valid_from   INTEGER NOT NULL DEFAULT 0,
+    assets       TEXT,
     created_at   REAL NOT NULL,
     updated_at   REAL NOT NULL,
     UNIQUE (project_pk, rid)
@@ -168,6 +184,9 @@ CREATE TABLE IF NOT EXISTS executions (
     attempt     INTEGER,
     context     TEXT NOT NULL DEFAULT '',
     commit_ref  TEXT NOT NULL DEFAULT '',
+    basis_start TEXT NOT NULL DEFAULT '',
+    basis_end   TEXT NOT NULL DEFAULT '',
+    reason      TEXT NOT NULL DEFAULT '',
     note        TEXT NOT NULL DEFAULT '',
     recorder    TEXT,
     approved_by TEXT,
@@ -238,6 +257,57 @@ CREATE TABLE IF NOT EXISTS bot_jobs (
     basis       TEXT NOT NULL DEFAULT '[]',
     created_at  REAL NOT NULL,
     finished_at REAL
+);
+
+-- Integration milestones (decisions Round 23): a declared journey over approved specifications, with its own
+-- approved cross-component checks and their runs. Every change to scope or checks is a new version.
+CREATE TABLE IF NOT EXISTS milestones (
+    pk           INTEGER PRIMARY KEY,
+    project_pk   INTEGER NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
+    mid          TEXT NOT NULL,
+    num          INTEGER NOT NULL,
+    title        TEXT NOT NULL,
+    journey      TEXT NOT NULL DEFAULT '',
+    architecture TEXT NOT NULL DEFAULT '',
+    scope        TEXT NOT NULL DEFAULT '[]',
+    status       TEXT NOT NULL DEFAULT 'draft',
+    version      INTEGER NOT NULL DEFAULT 1,
+    approved_by  TEXT,
+    approved_at  REAL,
+    created_at   REAL NOT NULL,
+    updated_at   REAL NOT NULL,
+    UNIQUE(project_pk, mid)
+);
+
+CREATE TABLE IF NOT EXISTS milestone_checks (
+    pk           INTEGER PRIMARY KEY,
+    milestone_pk INTEGER NOT NULL REFERENCES milestones(pk) ON DELETE CASCADE,
+    cid          TEXT NOT NULL,
+    text         TEXT NOT NULL DEFAULT '',
+    data         TEXT NOT NULL DEFAULT '{}',
+    assets       TEXT,
+    status       TEXT NOT NULL DEFAULT 'active',
+    created_at   REAL NOT NULL,
+    UNIQUE(milestone_pk, cid)
+);
+
+CREATE TABLE IF NOT EXISTS milestone_runs (
+    pk          INTEGER PRIMARY KEY,
+    check_pk    INTEGER NOT NULL REFERENCES milestone_checks(pk) ON DELETE CASCADE,
+    n           INTEGER NOT NULL,
+    version     INTEGER NOT NULL,
+    status      TEXT NOT NULL,
+    command     TEXT NOT NULL DEFAULT '',
+    exit_code   INTEGER,
+    output      TEXT NOT NULL DEFAULT '',
+    reason      TEXT NOT NULL DEFAULT '',
+    note        TEXT NOT NULL DEFAULT '',
+    carried_by  TEXT NOT NULL DEFAULT '',
+    basis_start TEXT NOT NULL DEFAULT '',
+    basis_end   TEXT NOT NULL DEFAULT '',
+    started_at  REAL NOT NULL,
+    ended_at    REAL,
+    UNIQUE(check_pk, n)
 );
 
 CREATE INDEX IF NOT EXISTS bot_jobs_profile ON bot_jobs(profile, kind, status);
@@ -312,6 +382,8 @@ def migrate(conn: sqlite3.Connection) -> int:
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
                 if column not in cols:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+            for stmt in DATA_STEPS.get(version, []):
+                conn.execute(stmt)
             conn.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(version),))
         except BaseException:
             conn.execute("ROLLBACK")

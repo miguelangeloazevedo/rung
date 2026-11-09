@@ -11,6 +11,8 @@ import json
 import shutil
 from pathlib import Path
 
+from . import evidence
+
 SAMPLE_NAME = "sample"
 SAMPLE_SRC = Path(__file__).resolve().parent / "sample" / "wordcount"
 SAMPLE_NEED = "Count the words in a text file"
@@ -346,11 +348,12 @@ class LifecycleMixin:
                     if counting and counting[0]["status"] == "pass" and t["status"] == "approved" and ttype != "ai_judged":
                         e = counting[0]
                         cand = {"test": t["rid"], "n": e["n"], "status": "pass", "at": e["ended_at"] or e["started_at"],
-                                "carried_by": e["carried_by"], "seen_failing": seen, "kind": e["kind"]}
+                                "carried_by": e["carried_by"], "seen_failing": seen, "kind": e["kind"],
+                                "basis": evidence.short(e["basis_end"] or e["basis_start"])}
                         if proof is None or cand["at"] > proof["at"]:
                             proof = cand
                     reasons.append({"stale": "stale", "fail": "failing", "error": "error", "pending": "manual pending",
-                                    "not_run": "not run", "running": "running"}.get(result, ""))
+                                    "not_run": "not run", "running": "running", "out_of_date": "out of date"}.get(result, ""))
                 specs.append({"id": s["rid"], "text": s["text"], "status": s["status"], "tests": tests})
             plan.append({"id": req["rid"], "text": req["text"], "status": req["status"], "specifications": specs})
             coverage = self._req_coverage(req)
@@ -359,7 +362,7 @@ class LifecycleMixin:
                 row.update({"proven": True, "proof": proof, "reason": ""})
             else:
                 why = "stale" if coverage == "stale" else "not approved" if coverage == "draft" else next(
-                    (r for r in ("failing", "error", "manual pending", "running", "not run") if r in reasons),
+                    (r for r in ("failing", "error", "manual pending", "out of date", "running", "not run") if r in reasons),
                     "no specification" if not specs else "not run")
                 row.update({"proven": False, "proof": None, "reason": why})
             delivered.append(row)
@@ -398,7 +401,8 @@ class LifecycleMixin:
             if d["proven"]:
                 p = d["proof"]
                 out.append(f"- {d['id']} {d['text']}: proven by {p['test']} #{p['n']} pass, carried by "
-                           f"{p['carried_by']}, at {_stamp(p['at'])}{seen(p['seen_failing'])}")
+                           f"{p['carried_by']}, at {_stamp(p['at'])}" + (f", on code {p['basis']}" if p.get("basis") else "")
+                           + seen(p['seen_failing']))
             else:
                 out.append(f"- {d['id']} {d['text']}: not proven, {d['reason']}")
         return "\n".join(out).replace("\u2014", "-") + "\n"

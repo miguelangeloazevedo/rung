@@ -41,6 +41,11 @@ def build_prompt(engine: Engine, project: str, spec: str, n: int, max_attempts: 
         lines.append(f"  {t['id']}: {t['command']}")
         lines.append(f"    passes when {pass_condition(t.get('pass_rule'))}")
     lines.append(f"This is attempt {n} of {max_attempts}. Change the code in the current folder. Do not edit the tests.")
+    guarded = sorted({f for t in tests for f in engine.protected(project, t["id"])["files"]})
+    if guarded:
+        lines.append("These files are what the tests are judged by; changing, creating or deleting any of them stops "
+                     "the run until a person reviews it: " + ", ".join(guarded[:40])
+                     + (f" and {len(guarded) - 40} more" if len(guarded) > 40 else ""))
     lines.append("If you cannot continue without an answer from a person, print one line: RUNG NEEDS INPUT: <question>")
     lines.append("If the work needs a capability outside this specification, do not build it here; print one line: "
                  "RUNG MISSING CAPABILITY: <capability>")
@@ -160,9 +165,32 @@ def run_loop(engine: Engine, run_id: int, worker=None, hermes_bin: str = "hermes
             engine.end_attempt(run_id, n, "cancelled", files, commands, wout)
             final, reason = "cancelled", "cancelled"
             break
+        moved = [r for r in results if r.get("reason") == "verification_changed"]
+        if moved:
+            # The work changed the files its own tests are judged by: no result of this run can count until a
+            # person has looked at that change (Round 22).
+            reason = f"{moved[0]['test']} was not run: {(moved[0].get('output') or '').replace('not run: ', '')}"
+            engine.end_attempt(run_id, n, "error", files, commands, wout, reason=reason)
+            final = "needs_input"
+            break
         if results and all(r["status"] == "pass" for r in results):
             engine.end_attempt(run_id, n, "pass", files, commands, wout)
             final, reason = "passed", f"passed on attempt {n}"
+            # Other specifications whose passes this work made out of date are checked again, by the engine.
+            rechecked = engine.recheck(project, carried_by="engine", skip=tuple(t["id"] for t in tests))
+            bad = [r for r in rechecked if r["status"] != "pass"]
+            if rechecked:
+                reason += f"; {len(rechecked)} other test{'s' if len(rechecked) != 1 else ''} checked again"
+                if bad:
+                    reason += ": " + ", ".join(f"{r['test']} {r['status']}" for r in bad)
+            # The run's result is read by the same evaluator as the gate: a pass that no longer applies, or a
+            # contract that changed while it ran, does not finish as passed.
+            v = engine.verification(project, spec, fresh=True)
+            other = [b for b in v["blockers"] if b["code"] not in ("manual_missing", "manual_pending")]
+            if other:
+                final, reason = "failed", "tests passed but " + "; ".join(b["text"] for b in other)
+            elif v["blockers"]:
+                reason += "; a manual check remains"
             break
         errors = [r for r in results if r["status"] == "error"]
         if errors and not any(r["status"] == "fail" for r in results):

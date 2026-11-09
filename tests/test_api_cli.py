@@ -6,6 +6,7 @@ from pathlib import Path
 
 from rung_engine import api
 from rung_engine.service import Service
+from support import seed
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -83,6 +84,24 @@ def test_cli_check_is_a_gate(seeded):
     assert _cli(store, "check", "--all").returncode == 0
     r = _cli(store, "--json", "status")
     assert json.loads(r.stdout)["tiles"]["needs_you"] == 0
+
+
+def test_cli_verify_and_recheck(seeded):
+    store = seeded.path
+    folder = Path(seeded.project("csvtidy")["folder"])
+    assert _cli(store, "check", "S-2.1").returncode == 0
+    restore = seed.break_dates(folder)
+    r = _cli(store, "verify", "S-2.1")
+    assert r.returncode == 1 and "out_of_date" in r.stdout and "next: run_tests T-2.1a" in r.stdout, r.stdout
+    r = _cli(store, "--json", "verify", "S-2.1")
+    assert json.loads(r.stdout)["verification"] == "out_of_date"
+    r = _cli(store, "recheck")
+    assert r.returncode == 1 and "T-2.1a" in r.stdout and "fail" in r.stdout, r.stdout
+    restore()
+    r = _cli(store, "recheck")
+    assert r.returncode == 0 and "T-2.1a" in r.stdout and "pass" in r.stdout, r.stdout
+    assert _cli(store, "verify", "S-2.1").returncode == 0
+    assert "nothing out of date" in _cli(store, "recheck").stdout
 
 
 def test_tools_propose_and_refuse_approval(seeded, monkeypatch):

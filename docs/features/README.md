@@ -31,6 +31,12 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 | Read-out and export | readout | tests/e2e/test_uc17_readout.py | tested |
 | Retire and restore a need | rung, retired | tests/e2e/test_uc19_retire_restore.py | tested |
 | Goal gate | hermes rung check | tests/e2e/test_uc12_goal_gate.py | tested |
+| Current evidence (code basis, protected test files, required manual checks) | rung, home, exec | tests/test_evidence.py | tested |
+| Verification section, next action, Next on Home | rung, home | tests/e2e/smoke/test_verification_pane.py | tested |
+| Verify and recheck | hermes rung verify, recheck | tests/test_evidence.py | tested |
+| Integration milestones (engine, REST, CLI, export) | hermes rung milestone | tests/test_milestones.py | tested |
+| Milestones in the pane (Home, list, form, milestone view) | home, milestones, milestone, milestone-new | tests/e2e/smoke/test_milestone_pane.py | tested |
+| Enforcement health per chat | hermes rung enforcement | tests/test_evidence.py | tested |
 | Command line | hermes rung | tests/test_use_case_ids.py | tested |
 | Agent tools | rung_status, rung_check, rung_run_tests, rung_propose | tests/test_use_case_ids.py | tested |
 | Keyboard and screen reader | every view | tests/e2e/test_uc20_accessibility.py | tested |
