@@ -28,11 +28,7 @@ def _check(page, want):
 
     def state():
         return sec.get_attribute("data-verification", timeout=2000) if sec.count() else None
-    try:
-        H.wait_until(lambda: state() == want, timeout=60, msg=lambda: f"{want} (now {state()})")
-    except AssertionError:
-        page.screenshot(path="/tmp/uc40-fail.png")
-        raise
+    H.wait_until(lambda: state() == want, timeout=60, msg=lambda: f"{want} (now {state()})")
 
 
 def test_str01_str02_str03_first_page_and_sample(rung, csvtidy, page):

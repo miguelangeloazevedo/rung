@@ -32,11 +32,7 @@ def test_out01_out02_out03_out04_results_and_evidence(rung, page, tmp_path):
     page.evaluate("window.__rungNavigate('project-settings', {})")
     H.wait_view(page, "project-settings")
     box = page.locator(".rung [data-testid=try-settings]")
-    try:
-        H.wait_until(lambda: box.count() == 1, msg=lambda: page.locator(".rung [data-rung-view]").first.inner_text()[:600])
-    except AssertionError:
-        page.screenshot(path="/tmp/uc42-fail.png")
-        raise
+    H.wait_until(lambda: box.count() == 1, msg=lambda: page.locator(".rung [data-rung-view]").first.inner_text()[:600])
     box.locator("input[name=try_instruction]").fill("Count the words in any text file")
     box.locator("input[name=try_command]").fill(f"touch {marker}")
     box.locator("[data-testid=save-try]").click()
@@ -48,11 +44,7 @@ def test_out01_out02_out03_out04_results_and_evidence(rung, page, tmp_path):
     res = page.locator(".rung [data-testid=readout-result]")
     errs = []
     page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
-    try:
-        H.wait_until(lambda: res.count() == 1, msg=lambda: str(errs)[:900])
-    except AssertionError:
-        page.screenshot(path="/tmp/uc42-fail.png")
-        raise
+    H.wait_until(lambda: res.count() == 1, msg=lambda: str(errs)[:900])
     ro = page.locator(".rung [data-testid=readout]")
     order = ro.evaluate("""el => [...el.querySelectorAll('[data-testid^=readout-]')].map(x => x.dataset.testid)""")
     assert order[0] == "readout-result", order
