@@ -353,5 +353,5 @@ The same assessment asked for a system-level check over specifications that are 
 
 | Topic | Decision |
 | --- | --- |
-| Plan entry | Recording the demo with real profiles found that the Plan (and its budget) could only be opened from the milestones list, which Home shows once something is verified or a milestone exists: on a new project there was no way to it. The Develop step now has a Plan button beside Send all; Back returns to the Develop step (`tests/e2e/smoke/test_develop_plan_link.py`). |
+| Plan entry | Recording the demo with real profiles found that the Plan (and its budget) could only be opened from the milestones list, which Home shows once something is verified or a milestone exists: on a new project there was no way to it. The Develop step now has a Plan button beside Send all, and Home's Milestones section offers Plan, Architecture and System report whether or not a milestone exists (the next take found Architecture had the same gap). Back returns where the person was (`tests/e2e/smoke/test_develop_plan_link.py`). |
 | Demo journey check | The milestone's journey check in the demo (`journey/check_clicks.py`) is written by the person, starts Shortly for real and follows a short link three times over HTTP. It lives in `journey/`, listed in the demo project's `.rungignore`, so adding it does not put the specifications' evidence out of date. |

@@ -1560,7 +1560,12 @@ function Home({ project }) {
         h(Badge, { status: n.complete ? 'complete' : 'not_complete', small: true }))),
       d.needs.length > 6 ? h('div', 'text-[11px] text-muted', `+${d.needs.length - 6}`) : null),
     (d.milestones || []).length || (d.done || []).length ? h('section', { className: 'flex flex-col gap-2', 'data-testid': 'home-milestones' },
-      h(SectionTitle, { dot: (d.milestones || []).some(m => m.state !== 'verified') ? 'needs' : (d.milestones || []).length ? 'pass' : 'dim', right: (d.milestones || []).length ? h(Btn, { kind: 'small', testid: 'all-milestones', onClick: () => navigate('milestones') }, 'All') : null }, 'Milestones'),
+      h(SectionTitle, { dot: (d.milestones || []).some(m => m.state !== 'verified') ? 'needs' : (d.milestones || []).length ? 'pass' : 'dim', right: h('span', 'flex items-center gap-2',
+        // The system views are reachable before the first milestone exists (decisions Round 27).
+        h(Btn, { kind: 'small', testid: 'open-plan', onClick: () => navigate('plan') }, 'Plan'),
+        h(Btn, { kind: 'small', testid: 'open-architecture', onClick: () => navigate('architecture') }, 'Architecture'),
+        h(Btn, { kind: 'small', testid: 'open-report', onClick: () => navigate('system-report') }, 'System report'),
+        (d.milestones || []).length ? h(Btn, { kind: 'small', testid: 'all-milestones', onClick: () => navigate('milestones') }, 'All') : null) }, 'Milestones'),
       (d.milestones || []).length
         ? frag(...d.milestones.slice(0, 4).map(m => h(Card, { key: m.id, className: 'p-3 flex items-center justify-between gap-3', onClick: () => navigate('milestone', { mid: m.id }) },
           h('div', 'flex items-center gap-2.5 min-w-0', h(Dot, { t: M_TONE[m.state] || 'muted' }),
