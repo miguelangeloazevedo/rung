@@ -34,14 +34,16 @@ def test_out_of_date_next_action_and_protected_files(rung, csvtidy, page):
     H.wait_until(lambda: e.executions("csvtidy", "T-2.1a")[0]["status"] == "fail", msg="rerun fails on the new code")
     assert e.check("csvtidy", "S-2.1")["codes"] == ["failed"]
 
-    # A change to the test file a person approved: not run, the file named, a person accepts it.
+    # A change to the test file a person approved: it runs, its pass counts for nothing, the file is named, a
+    # person accepts it.
     (csvtidy / "tests" / "test_dates.py").write_text("def test_ambiguous_locale():\n    assert True\n")
-    assert e.run_test("csvtidy", "T-2.1a")["status"] == "error"
+    assert e.run_test("csvtidy", "T-2.1a")["status"] == "pass"
+    assert e.check("csvtidy", "S-2.1")["codes"] == ["verification_changed"]
     page.evaluate("window.__rungNavigate('rung', { rid: 'T-2.1a' })")
     prot = page.locator(".rung [data-testid=protected]")
     H.wait_until(lambda: prot.count() == 1 and prot.locator("[data-changed='tests/test_dates.py']").count() == 1,
                  msg=f"changed test file shown: {prot.inner_text()[:300] if prot.count() else 'none'}")
-    assert "not run · files changed" in page.locator(".rung [data-testid=executions]").inner_text()
+    assert "pass · files changed" in page.locator(".rung [data-testid=executions]").inner_text()
     prot.locator("[data-testid=accept-files]").click()
     H.wait_until(lambda: e.protected("csvtidy", "T-2.1a")["changed"] == [], msg="change accepted")
     H.wait_until(lambda: prot.locator("[data-testid=accept-files]").count() == 0, msg="accept button gone")

@@ -2971,10 +2971,11 @@ function ExecRow({ test, x }) {
       h('div', 'flex items-center gap-2', h('span', 'w-1.5 h-1.5 rounded-full bg-dim'), h('span', null, execLine(x))),
       h('span', 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] no-underline font-medium bg-stale/15 text-stale border border-stale/30', 'Stale'))
   }
-  const t = x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : ['running', 'pending', 'error'].includes(x.status) ? 'needs' : 'dim'
+  const moved = x.reason === 'verification_changed'  // judged by files no person approved: counts for nothing
+  const t = moved ? 'needs' : x.status === 'pass' ? 'pass' : x.status === 'fail' ? 'fail' : ['running', 'pending', 'error'].includes(x.status) ? 'needs' : 'dim'
   return h('div', { className: cx('flex items-center justify-between bg-well p-2.5 rounded-[6px] border font-mono text-[11px] text-fg cursor-pointer', t === 'fail' ? 'border-fail/30' : t === 'pass' ? 'border-pass/30' : 'border-line2'), 'data-exec': `${test}#${x.n}`, onClick: () => navigate('exec', { test, n: x.n }) },
     h('div', 'flex items-center gap-2', h(Dot, { t }), h('span', null, execLine(x))),
-    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[x.out_of_date ? 'stale' : t]) }, x.status === 'pass' ? (x.out_of_date ? 'pass · out of date' : 'pass') : x.status === 'fail' ? 'failed' : x.status === 'error' && x.reason === 'verification_changed' ? 'not run · files changed' : x.status))
+    h('span', { className: cx('text-[10px] font-medium', TONE_TEXT[x.out_of_date ? 'stale' : t]) }, moved ? `${x.status === 'fail' ? 'failed' : x.status} · files changed` : x.status === 'pass' ? (x.out_of_date ? 'pass · out of date' : 'pass') : x.status === 'fail' ? 'failed' : x.status))
 }
 
 // ------------------------------------------------------------------ test editor
