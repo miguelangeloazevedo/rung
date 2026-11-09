@@ -87,3 +87,14 @@ def test_the_doctor_checks_profiles_modes_and_each_test_command(seeded, tmp_path
     seeded.update_project("csvtidy", test_command="python3 -m pytest")
     checks = {c["name"]: c for c in run_checks(Path(seeded.path), sys.executable)}
     assert checks["project csvtidy test command"]["ok"]
+
+
+def test_the_doctor_names_the_running_hermes_over_stale_metadata(monkeypatch):
+    """A source install keeps an older release's dist-info; the version shown is the package actually loaded."""
+    import sys, types
+    from rung_engine import doctor
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.SimpleNamespace(__version__="0.23.0"))
+    monkeypatch.setattr("importlib.metadata.version", lambda name: "0.21.5")
+    assert doctor._hermes_version() == "0.23.0"
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.SimpleNamespace(__version__="0.0.0"))
+    assert doctor._hermes_version() == "0.21.5"  # no usable package version: the metadata

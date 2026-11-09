@@ -137,6 +137,13 @@ def _test_command(command: str, folder: Path) -> tuple[bool, str]:
 def _hermes_version() -> str:
     """The installed Hermes package's version, from its distribution metadata; never starts hermes, which
     can take a minute to answer. Empty when the install does not record one."""
+    try:  # the running package first: a source install's distribution metadata can be an older release's
+        import hermes_cli
+        v = str(getattr(hermes_cli, "__version__", "") or "")
+        if v and v != "0.0.0":
+            return v
+    except Exception:
+        pass
     try:
         from importlib.metadata import version
         v = version("hermes-agent")
