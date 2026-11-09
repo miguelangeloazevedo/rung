@@ -14,7 +14,6 @@ items below that cover them are built.
 
 | ID | Open item | Depends on | Done when |
 | --- | --- | --- | --- |
-| B18, U10 | Dock for decisions and chat binding | enforcement health (built), next actions (built) | the dock says what the focused chat works on; binding is a reviewable action; a blocked completion opens its evidence |
 | U02 | A first page that shows why to care | sample project (built) | the start screen previews the three states; the sample can be broken and repaired with no bot |
 | U04 | Needs you as a decision surface | Needs you across projects (built) | each item names why it needs you and one recommended action; a retrying run is not in the inbox |
 | U12 | Results you can try | read-out (built) | the read-out leads with the outcome, what changed and how to try it; nothing runs by itself |

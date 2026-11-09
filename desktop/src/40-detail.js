@@ -329,7 +329,7 @@ function TestLine({ t }) {
     h(Badge, { status: res === 'not_run' ? 'not_run' : res }))
 }
 
-function SpecView({ project, r, ret, need }) {
+function SpecView({ project, r, ret, need, focus }) {
   const [err, setErr] = useState('')
   const [picking, setPicking] = useState(false)
   const tests = (r.children || []).filter(t => t.status !== 'dismissed' && t.status !== 'proposed')
@@ -424,7 +424,7 @@ function SpecView({ project, r, ret, need }) {
     h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'spec-tests' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line', h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests')),
       h('div', 'flex flex-col gap-2', tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }), ...tests.map(t => h(TestLine, { key: t.id, t })))),
-    r.status === 'approved' && r.verification ? h(Verification, { r, runTests }) : null,
+    r.status === 'approved' && r.verification ? h(Verification, { r, runTests, focus: focus === 'verification' }) : null,
     h(ClaimsSection, { project, r, onErr: setErr }),
     a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
@@ -451,8 +451,11 @@ const NEXT_WORD = {
   review_test_files: 'Review test files', repair: 'Open failing test', repair_test_setup: 'Open test',
   review_change: 'Review change', approve: 'Approve', add_test: 'Add test', wait: 'Open test'
 }
-function Verification({ r, runTests }) {
+function Verification({ r, runTests, focus }) {
   const blockers = r.blockers || []
+  const ref = useRef(null)
+  // Opened for its verification (the dock's blocker or next action): bring the section into view.
+  useEffect(() => { if (focus && ref.current) ref.current.scrollIntoView({ block: 'start' }) }, [focus, r.id])
   const next = r.next_action
   const go = () => {
     if (!next) return
@@ -461,7 +464,7 @@ function Verification({ r, runTests }) {
     if (next.test) return navigate('rung', { rid: next.test })
     if (next.rung) return navigate('rung', { rid: next.rung })
   }
-  return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'verification', 'data-verification': r.verification },
+  return h('section', { ref, className: cx('bg-card border rounded-[6px] p-4 flex flex-col gap-3', focus ? 'border-needs' : 'border-line'), 'data-testid': 'verification', 'data-verification': r.verification, 'data-focus': focus ? 'true' : undefined },
     h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
       h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Verification'),
       h(Badge, { status: r.released ? 'verified' : r.verification })),

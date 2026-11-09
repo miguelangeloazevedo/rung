@@ -313,6 +313,7 @@ function errInfo(e) {
 // The result line of every action (NAV-11), named once here: a view never adds its own line after post().
 // An action made of several posts (Send all) posts them with { quiet: true } and names the whole once.
 const RESULTS = [
+  [/\/rungs\/([^/]+)\/bind$/, (m, b, d) => `Bound ${(d && d.chat) || 'this chat'} to ${m[1]} as ${(d && d.profile) || ''}`.trim()],
   [/\/requirements\/([^/]+)\/retire$/, m => `${m[1]} out of scope`],
   [/\/requirements\/([^/]+)\/restore$/, m => `${m[1]} back in scope`],
   [/\/quick\/([^/]+)\/approve$/, (m, b) => 'Approved ' + Object.keys((b && b.versions) || {}).map(k => `${k} v${b.versions[k]}`).join(', ')],

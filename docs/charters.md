@@ -48,6 +48,10 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   a specification whose code drifted and a need with no requirements, to discover a need called complete while
   something it asks for is unverified, or a requirement that disappears instead of being listed.
 
+- **This chat**: explore the dock with no chat focused, a chat holding two tasks, a binding refused because the
+  specification is held elsewhere and a task whose code drifted, to discover a dock that binds without a
+  confirmation, names the wrong chat or leads with anything but the focused chat's task.
+
 ## Running work
 
 - **Agent allocation**: explore profiles with equal scores, all disabled and missing tags, to discover a

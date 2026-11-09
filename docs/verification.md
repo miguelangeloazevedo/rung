@@ -165,3 +165,13 @@ specification and its state. A person can take a requirement out of scope with a
 scope, never silently dropped, and can be put back. The need view, Home's Needs list and `hermes rung verify N-1`
 (exit 0 only when complete) read the one method, `Engine.need_completeness`.
 
+## The dock leads with this chat
+
+The dock's first section is the focused chat (the Desktop's public `host.state.focusedStoredSessionId` and
+`focusedSessionProfile`). A chat that holds a claim shows each task with its outcome, the one verification result,
+its first blocker and its next action; the blocker opens that specification's Verification section; the ladder
+starts collapsed while the chat holds a task. A chat with no claim reads `Not bound`, shows the project's next
+task and offers `Bind to task`: the confirmation names the chat, the profile and that done is refused until the
+specification is verified. Only `Bind` opens a claim, through the same rules as the agent's `rung_claim`
+(REST `POST /projects/<p>/rungs/<S>/bind`), so the done hook enforces it for that chat.
+

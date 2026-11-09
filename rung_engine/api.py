@@ -640,6 +640,26 @@ def _export_milestone(svc, human, body, project, mid):
     return svc.engine.export_milestone(project, mid)
 
 
+# ------------------------------------------------------------------ chat binding (Round 24, B18)
+
+
+@route("GET", "/sessions/{session}/binding")
+def _binding(svc, human, body, session):
+    return svc.engine.chat_binding(session)
+
+
+@route("POST", "/projects/{project}/rungs/{rid}/bind")
+def _bind(svc, human, body, project, rid):
+    """A person binds a chat to a specification from the dock: the same claim the agent's rung_claim opens,
+    for that chat and its profile, with the same refusals."""
+    session = (body.get("session") or "").strip()
+    if not session:
+        raise RungError("no chat is focused", code="bad_request", status=400, field="session")
+    if not (body.get("agent") or "").strip():
+        raise RungError("the chat has no profile", code="bad_request", status=400, field="agent")
+    return svc.engine.claim(project, rid, session, body.get("chat") or f"chat {session[:8]}", body.get("agent") or "")
+
+
 # ------------------------------------------------------------------ need completeness (Round 24, B14)
 
 

@@ -165,6 +165,82 @@ function DockTree({ nodes, depth, cur }) {
     }))
 }
 
+// ------------------------------------------------------------------ this chat (decisions Round 24, B18)
+// The dock leads with the focused chat's task: what it holds and the one verification result, or that it is not
+// bound and the project's next task. Binding is a person's confirmed act, never a side effect.
+
+function useFocusedChat() {
+  const stored = useValue(host.state.focusedStoredSessionId)
+  const runtime = useValue(host.state.focusedSessionId)
+  const profile = useValue(host.state.focusedSessionProfile)
+  return { session: stored || runtime || '', profile: profile || '' }
+}
+
+const nextWord = k => (typeof NEXT_WORD !== 'undefined' && NEXT_WORD[k]) || 'Open'
+
+function DockTask({ t }) {
+  const open = () => openRung('rung', { rid: t.spec, focus: 'verification' }, { force: true })
+  return h('div', { className: 'dk-task', 'data-testid': 'dock-task', 'data-spec': t.spec },
+    h('div', 'dk-row-top',
+      h('span', 'mono dk-id text-fg', t.spec),
+      h(Badge, { status: t.verified ? 'verified' : t.verification, small: true, testid: 'dock-task-state' }),
+      h('span', { className: 'dk-path mono truncate', title: t.project }, t.project)),
+    h('span', { className: 'dk-text', 'data-testid': 'dock-task-outcome' }, t.outcome),
+    t.blocker ? h('button', { type: 'button', className: 'dk-blocker mono', 'data-testid': 'dock-task-blocker', title: t.blocker.text, onClick: open },
+      h(Dot, { t: t.verification === 'failed' ? 'fail' : t.verification === 'out_of_date' ? 'stale' : 'needs' }), h('span', 'truncate', t.blocker.text)) : null,
+    t.next_action ? h('div', 'dk-row-top',
+      h('button', { type: 'button', className: 'dk-btn', 'data-testid': 'dock-task-next', onClick: open }, nextWord(t.next_action.kind))) : null,
+    h('span', { className: 'dk-meta mono truncate', title: `${t.profile} · ${t.chat}` }, `${t.profile} · ${t.chat}`))
+}
+
+function DockBind({ project, chat, specs, first, onClose }) {
+  const [spec, setSpec] = useState(first || (specs[0] && specs[0].id) || '')
+  const [err, setErr] = useState('')
+  const bind = async () => {
+    const x = await post(`${P(project)}/rungs/${spec}/bind`, { session: chat.session, agent: chat.profile })
+    if (!x.ok) return setErr(x.error)
+    onClose()
+  }
+  return h('div', { className: 'dk-bind', 'data-testid': 'dock-bind', 'data-layer': '1' },
+    h('label', { className: 'dk-meta', htmlFor: 'rung-dock-bind' }, 'Specification'),
+    h('select', { id: 'rung-dock-bind', className: 'dk-select', value: spec, 'data-testid': 'dock-bind-spec', onChange: e => setSpec(e.target.value) },
+      ...specs.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
+    h('dl', { className: 'dk-facts', 'data-testid': 'dock-bind-facts' },
+      h('dt', null, 'Chat'), h('dd', { className: 'mono truncate', title: chat.session }, chat.session),
+      h('dt', null, 'Profile'), h('dd', 'mono', chat.profile || 'none'),
+      h('dt', null, 'Done'), h('dd', null, spec ? `refused until ${spec} is verified` : '')),
+    err ? h('div', { className: 'dk-err', role: 'alert' }, err) : null,
+    h('div', 'dk-row-top',
+      h('button', { type: 'button', className: 'dk-btn', 'data-testid': 'dock-bind-cancel', onClick: onClose }, 'Cancel'),
+      h('button', { type: 'button', className: 'dk-btn dk-btn-primary', 'data-testid': 'dock-bind-confirm', disabled: !spec || !chat.profile, onClick: bind }, 'Bind')))
+}
+
+function DockChat({ project, d, tree }) {
+  const chat = useFocusedChat()
+  const q = useApi(`/sessions/${encodeURIComponent(chat.session || '-')}/binding`, { live: true, enabled: !!chat.session })
+  const [binding, setBinding] = useState(false)
+  const b = chat.session ? q.data : { bound: false, tasks: [] }
+  const specs = []
+  const walk = ns => ns.forEach(n => { if (n.kind === 'specification' && n.status === 'approved' && !n.released) specs.push(n); walk(n.children || []) })
+  walk(tree)
+  const nxt = (d.next || [])[0] || (d.allocation && d.allocation.spec ? { id: d.allocation.spec } : null)
+  const tasks = (b && b.tasks) || []
+  return h(DockSection, { id: 'dk-chat', title: 'This chat', tone: tasks.some(t => !t.verified) ? 'needs' : tasks.length ? 'pass' : 'dim' },
+    h('div', { className: 'dk-chat', 'data-testid': 'dock-chat-body', 'data-bound': tasks.length ? 'true' : 'false', 'data-session': chat.session },
+      !chat.session ? h(DockEmpty, { label: 'No chat' })
+        : !b ? h(DockEmpty, { label: 'Loading' })
+          : tasks.length ? frag(...tasks.map(t => h(DockTask, { key: t.claim, t })))
+            : binding ? h(DockBind, { project, chat, specs, first: nxt && nxt.id, onClose: () => setBinding(false) })
+              : frag(
+                h('div', { className: 'dk-empty', 'data-testid': 'dock-unbound' },
+                  h('span', null, 'Not bound'),
+                  specs.length ? h('button', { type: 'button', className: 'dk-btn', 'data-testid': 'dock-bind-open', onClick: () => setBinding(true) }, 'Bind to task') : null),
+                nxt ? h('button', { type: 'button', className: 'dk-row', 'data-testid': 'dock-next', title: `Next: ${nxt.id}`, onClick: () => openRung('rung', { rid: nxt.id, focus: 'verification' }) },
+                  h('span', 'dk-row-top', h('span', 'mono dk-id text-fg', nxt.id), h('span', 'dk-chip', 'next'),
+                    nxt.verification ? h(Badge, { status: nxt.verification, small: true }) : null),
+                  nxt.blocker ? h('span', { className: 'dk-meta truncate', title: nxt.blocker }, nxt.blocker) : null) : null)))
+}
+
 // The dock is a glance: the first few items, then how many more (the full page lists them all).
 const DOCK_ITEMS = 8
 
@@ -192,6 +268,7 @@ function DockProject({ project }) {
   }
   const n = d.tiles ? d.tiles.needs_you : items.length
   return h('div', 'dk-body',
+    h(DockChat, { project, d, tree }),
     h(DockSection, { id: 'dk-needs', title: 'Needs you', count: n, tone: n ? 'needs' : 'dim' },
       items.length ? frag(...items.slice(0, DOCK_ITEMS).map(i => h(DockNeedRow, { key: i.type + i.id + (i.n || '') + (i.run || ''), i, path: pathOf(i).short, fullPath: pathOf(i).full })),
         items.length > DOCK_ITEMS ? h('button', { type: 'button', className: 'dk-more mono', 'data-testid': 'dock-more', 'aria-label': `${items.length - DOCK_ITEMS} more in Needs you, open Rung`, onClick: () => openRung('home') },
@@ -202,7 +279,7 @@ function DockProject({ project }) {
         ? frag(...runs.map(r => h(DockRunRow, { key: 'r' + r.id, run: r })), ...claims.map(c => h(DockClaimRow, { key: 'c' + c.id, c })),
           ...tests.map(x => h(DockTestRow, { key: 't' + x.test + x.n, x })))
         : h(DockEmpty, { label: 'Nothing running' })),
-    h(DockSection, { id: 'dk-ladder', title: 'Ladder', tone: 'dim' },
+    h(DockLadder, { tree },
       tree.length
         ? frag(
           h('label', { className: 'sr-only', htmlFor: 'rung-dock-need' }, 'Need'),
@@ -210,6 +287,20 @@ function DockProject({ project }) {
             ...tree.map(x => h('option', { key: x.id, value: x.id }, `${x.id}  ${x.text}`))),
           node ? h(DockTree, { nodes: liveKids(node), depth: 0, cur: hl }) : null)
         : h(DockEmpty, { label: 'No needs yet', action: 'Write the first need', onAction: () => openRung('need-new') })))
+}
+
+// The ladder follows the chat's task: collapsed while the focused chat holds one (it leads), open otherwise.
+function DockLadder({ children }) {
+  const chat = useFocusedChat()
+  const q = useApi(`/sessions/${encodeURIComponent(chat.session || '-')}/binding`, { live: true, enabled: !!chat.session })
+  const bound = !!(chat.session && q.data && q.data.bound)
+  const [open, setOpen] = useState(null)
+  const shown = open == null ? !bound : open
+  return h('section', { className: 'dk-sec', 'aria-labelledby': 'dk-ladder', 'data-testid': 'dock-ladder', 'data-open': shown ? 'true' : 'false' },
+    h('h3', { id: 'dk-ladder', className: 'dk-h' },
+      h('button', { type: 'button', className: 'dk-fold', 'aria-expanded': shown ? 'true' : 'false', 'data-testid': 'dock-ladder-toggle', onClick: () => setOpen(!shown) },
+        h(Dot, { t: 'dim' }), h('span', null, 'Ladder'))),
+    shown ? children : null)
 }
 
 function Dock() {
@@ -276,6 +367,19 @@ const DOCK_CSS = `
 .rung .r-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
 .rung .rs-strip{padding-left:12px;padding-right:12px}
 }
+.rung .dk-task{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--r-line2);border-radius:6px;background:var(--r-btn);min-width:0}
+.rung .dk-blocker{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--r-fg);text-align:left;min-width:0;padding:2px 0}
+.rung .dk-blocker:hover{text-decoration:underline}
+.rung .dk-bind{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--r-line2);border-radius:6px;min-width:0}
+.rung .dk-facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;margin:0;font-size:11px}
+.rung .dk-facts dt{color:var(--r-muted)}
+.rung .dk-facts dd{margin:0;color:var(--r-fg);min-width:0}
+.rung .dk-btn-primary{background:var(--r-needs);color:var(--r-on-needs);border-color:var(--r-needs)!important}
+.rung .dk-btn:disabled{opacity:.5;cursor:default}
+.rung .dk-err{font-size:11px;color:var(--r-fail)}
+.rung .dk-chat{display:flex;flex-direction:column;gap:8px;min-width:0}
+.rung .dk-fold{display:inline-flex;align-items:center;gap:6px;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit}
+.rung .dk-fold:focus-visible,.rung .dk-blocker:focus-visible{outline-offset:1px!important}
 `
 
 function setDock(open) {

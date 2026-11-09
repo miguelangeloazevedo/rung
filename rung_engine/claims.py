@@ -107,6 +107,23 @@ class ClaimsMixin:
             out.append(d)
         return out
 
+    def chat_binding(self, session_id: str) -> dict:
+        """What the dock leads with for one chat (decisions Round 24, B18): the specifications this chat holds,
+        each with the one verification result (outcome, state, first blocker, next action), or not bound."""
+        rows = []
+        found = self._q("SELECT * FROM claims WHERE session_id=? AND status='open' ORDER BY pk", (session_id,)) \
+            if session_id else []
+        for c in map(self._claim_dict, found):
+            try:
+                v = self.verification(c["project"], c["spec"])
+            except Exception:  # a vanished specification: listed, never verified
+                v = {"verification": "could_not_verify", "blockers": [], "next_action": None, "ok": False}
+            rows.append({"claim": c["id"], "project": c["project"], "spec": c["spec"], "outcome": c["spec_text"],
+                         "profile": c["profile"], "chat": c["chat"], "verification": v["verification"],
+                         "verified": bool(v.get("ok")), "blocker": v["blockers"][0] if v["blockers"] else None,
+                         "next_action": v.get("next_action")})
+        return {"session": session_id, "bound": bool(rows), "tasks": rows}
+
     def claim(self, project: str, spec_rid: str, session_id: str, chat: str, profile: str) -> dict:
         spec_rid = _canon(spec_rid)  # one id form at every door, echoed back as stored
         from .core import RungError
