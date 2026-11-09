@@ -78,8 +78,9 @@ When a person approves a command test, Rung records the content of the files it 
 - runner configuration (`pytest.ini`, `tox.ini`, `conftest.py`, `jest.config.*`, `vitest.config.*`, `.mocharc.*`,
   `phpunit.xml`).
 
-If any of them changed, appeared or disappeared since, the test is not run: it records Could not run naming the
-files, and the specification shows Review test files. A develop run that changed them stops as Needs input. A
+If any of them changed, appeared or disappeared since, the test still runs, so a person can see what the changed
+test says, but its result counts for nothing either way: the output starts by naming the files, the
+specification is Could not verify and shows Review test files. A develop run that changed them stops as Needs input. A
 person can look at the change and accept it (`Accept changed files`), after which results are judged against the
 new files.
 

@@ -305,11 +305,7 @@ class MilestonesMixin:
         before = evidence.manifest(root)
         if not folder.is_dir() or not folder.resolve().is_relative_to(root.resolve()):
             status, code, output = "error", None, f"folder not found inside the project: {folder}"
-        elif moved:
-            status, code, reason = "error", None, "verification_changed"
-            output = ("not run: the files this check is judged by changed since it was approved: "
-                      + ", ".join(f"{x['path']} ({x['change']})" for x in moved))
-        else:
+        else:  # run even when its files changed, so the person sees what they say; that result never counts
             res = run_command(d["command"], folder, timeout=d.get("timeout", 300), output_limit=64000, env=env)
             code, output = res.exit_code, res.output
             if res.timed_out or res.launch_error or res.exit_code in (126, 127):
@@ -320,6 +316,10 @@ class MilestonesMixin:
         evidence.forget(root)
         if status in ("pass", "fail") and evidence.modified(before, after):
             reason = "changed_during_check"
+        if moved:
+            reason = "verification_changed"
+            output = ("judged by files changed since the check was approved: "
+                      + ", ".join(f"{x['path']} ({x['change']})" for x in moved) + "\n\n" + (output or ""))
         with self._tx() as c:
             c.execute("UPDATE milestone_runs SET status=?, exit_code=?, output=?, reason=?, basis_end=?, ended_at=? "
                       "WHERE pk=?", (status, code, output, reason, evidence.digest(after), self.clock(), pk))
@@ -388,10 +388,13 @@ class MilestonesMixin:
         b = r["basis_end"] or r["basis_start"]
         if r["status"] == "running":
             out["state"] = "checking"
-        elif r["status"] == "error":
-            out["state"] = "could_not_verify"
+        elif r["status"] == "error" or r["reason"] == "verification_changed":
+            out["state"] = "could_not_verify"  # could not run, or judged by files no person approved
             out["reason"] = r["reason"] or "error"
-        elif r["reason"] == "changed_during_check" or (evidence.UNKNOWN not in (b, cur) and b != cur):
+        elif cur == evidence.UNKNOWN or b == evidence.UNKNOWN:
+            out["state"] = "could_not_verify"  # the code cannot be read: no positive result
+            out["reason"] = "basis_unknown"
+        elif r["reason"] == "changed_during_check" or b != cur:
             # A pass or a failure on other code says nothing about this code: run it again (still blocking).
             out["state"] = "out_of_date"
             out["was"] = r["status"]

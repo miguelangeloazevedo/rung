@@ -128,7 +128,9 @@ def test_a_worker_that_weakens_its_test_does_not_get_a_pass(engine, csv_folder):
     assert not chk["ok"] and "verification_changed" in chk["codes"]
     assert chk["next_action"]["kind"] == "review_test_files"
     newest = engine.executions("csvtidy", "T-2.1a")[0]
-    assert newest["status"] == "error" and newest["reason"] == "verification_changed"
+    # It ran (the person sees what the changed test says) and passed; that pass counts for nothing.
+    assert newest["status"] == "pass" and newest["reason"] == "verification_changed"
+    assert newest["output"].startswith("judged by files changed since the test was approved: tests/test_dates.py")
     assert engine.protected("csvtidy", "T-2.1a")["changed"] == [{"path": "tests/test_dates.py", "change": "changed"}]
     # A person can still accept the change deliberately; the next result is then judged by the new test.
     engine.accept_test_files("csvtidy", "T-2.1a")
@@ -139,8 +141,10 @@ def test_a_worker_that_weakens_its_test_does_not_get_a_pass(engine, csv_folder):
 def test_runner_configuration_is_protected_too(engine, csv_folder):
     _fresh(engine, csv_folder)
     (csv_folder / "conftest.py").write_text("collect_ignore = ['tests']\n")
-    assert engine.run_test("csvtidy", "T-2.1a")["status"] == "error"
-    assert "conftest.py (created)" in engine.executions("csvtidy", "T-2.1a")[0]["output"]
+    engine.run_test("csvtidy", "T-2.1a")
+    newest = engine.executions("csvtidy", "T-2.1a")[0]
+    assert newest["reason"] == "verification_changed" and "conftest.py (created)" in newest["output"]
+    assert "verification_changed" in engine.check("csvtidy", "S-2.1")["codes"]
 
 
 def test_a_file_changed_while_the_check_ran_does_not_count(engine, csv_folder):
@@ -218,10 +222,15 @@ def test_a_store_from_before_round_22_keeps_its_meaning(tmp_path, csv_folder):
     con.execute("UPDATE executions SET basis_start = '', basis_end = ''")
     con.execute("UPDATE meta SET value = '3' WHERE key = 'schema_version'")
     con.commit()
+    before = con.execute("SELECT pk, data FROM rungs ORDER BY pk").fetchall()
     con.close()
     e = Engine(path)
     try:
+        # RES-04: the upgrade rewrites no stored value; the old manual test reads as optional without a key.
+        assert [(r["pk"], r["data"]) for r in e._q("SELECT pk, data FROM rungs ORDER BY pk")] == before
         assert e.rung("csvtidy", "T-2.1b")["required"] is False
+        e.edit_test("csvtidy", "T-2.1b", {"steps": ["Open the output", "Sort by date"]})
+        assert e.rung("csvtidy", "T-2.1b")["required"] is False  # an edit keeps the old meaning unless asked
         v = e.verification("csvtidy", "S-2.1")
         assert v["ok"] and "legacy" in v["flags"]
     finally:
@@ -329,3 +338,18 @@ def test_enforcement_is_reported_apart_from_verification(engine, csv_folder, tmp
     assert hook.status("s-1", garbage)["enforcement"] == "degraded"
     # the hook itself lets an unrelated tool through whatever the store says
     assert hook.decide("terminal", {}, "s-1", garbage) is None
+
+
+def test_the_verdict_memo_sees_a_commit_from_another_process(engine, csv_folder):
+    """The runner writes from its own connection; the pane's engine must not keep an old verdict."""
+    _fresh(engine, csv_folder)
+    assert engine.check("csvtidy", "S-2.1")["ok"]
+    other = Engine(engine.path)
+    try:
+        other.record_manual("csvtidy", "T-2.1b", "fail", "broken on en_GB")
+    finally:
+        other.close()
+    assert not engine.check("csvtidy", "S-2.1")["ok"]
+    assert engine.tree("csvtidy")  # and the cached path agrees with the fresh one
+    assert [s for n in engine.tree("csvtidy") for r in n["children"] for s in r["children"]
+            if s["id"] == "S-2.1"][0]["released"] is False

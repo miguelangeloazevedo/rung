@@ -69,6 +69,18 @@ charter says otherwise. Record findings as described in `TESTING.md`.
 - **Retire and restore a need**: explore retiring a need with a running run and restoring it later, to
   discover rungs that stay in counts or come back with the wrong status.
 
+- **Current evidence (code basis, protected test files, required manual checks)**: explore editing code, test
+  files, `.gitignore` and runner configuration after a pass, to discover a specification that stays Verified on
+  work it never checked.
+- **Verification section, next action, Next on Home**: explore every blocker a specification can have, to
+  discover a next action that does not resolve it or a Next list that disagrees with the specification.
+- **Integration milestones (engine, REST, CLI, export)**: explore editing scope and checks of an approved
+  milestone and changing code between its runs, to discover a milestone that stays Verified on another version
+  or other code.
+- **Milestones in the pane (Home, list, form, milestone view)**: explore creating, approving and running a
+  milestone, leaving its form half typed and opening a missing id, to discover a state the pane names
+  differently from the CLI or a way out that loses text.
+
 ## Outside the pane
 
 - **Goal gate**: explore `hermes rung check` inside a `/goal` loop while the ladder changes under it, to
@@ -77,6 +89,10 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   discover output that disagrees with the pane or an unclear error.
 - **Agent tools**: explore an agent session that proposes, runs tests and checks, to discover any tool that
   approves, creates or edits what only a person may.
+- **Verify and recheck**: explore `hermes rung verify` and `recheck` after code changes, with a running test
+  and with no project, to discover output that disagrees with the pane.
+- **Enforcement health per chat**: explore `hermes rung enforcement` with no session, a session without a
+  claim, a moved store and a garbage store, to discover a case reported as enforced when nothing is watched.
 - **Doctor and demo reset**: explore a store with a moved project folder, a read-only store folder and a
   newer schema, to discover a check that passes when it should fail or a fix that does not work.
 - **Install**: explore `INSTALL.md` on a clean Hermes home and then uninstalling, to discover missing steps

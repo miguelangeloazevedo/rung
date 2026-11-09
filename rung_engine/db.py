@@ -32,10 +32,10 @@ MIGRATIONS = {
 # Data steps run in the same transaction as a version's columns. Version 4: a manual test written before
 # required checks existed keeps the meaning it had (not needed to verify, a recorded failure still blocks), so
 # no stored green or red changes when the store is opened; tests written from now on are required by default.
-DATA_STEPS = {
-    4: ["UPDATE rungs SET data = json_set(data, '$.required', json('false')) WHERE kind = 'test' "
-        "AND json_extract(data, '$.type') = 'manual' AND json_extract(data, '$.required') IS NULL"],
-}
+# Data steps rewrite stored values; a release adds none unless it must (RES-04: an upgraded store keeps every
+# existing value). Schema 4 adds columns only: a manual test written before it has no `required` key, which
+# the engine reads as optional, the meaning it had.
+DATA_STEPS: dict[int, list[str]] = {}
 
 
 class StoreTooNew(RuntimeError):

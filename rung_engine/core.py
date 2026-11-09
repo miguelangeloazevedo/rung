@@ -588,6 +588,8 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
             "created_at": r["created_at"], "updated_at": r["updated_at"],
         }
         d.update(data)
+        if r["kind"] == "test" and data.get("type") == "manual":
+            d["required"] = self._required(data)  # what the evaluator reads, also for a test stored without the key
         return d
 
     def tree(self, project: str, retired: bool = False) -> list[dict]:
@@ -1194,7 +1196,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
                 d.pop(k, None)
             # Required by default (Round 22): an approved manual check has to be performed and approved before
             # its specification is verified. Optional: not needed, but a recorded failure still blocks.
-            d["required"] = fields.get("required", d.get("required", True)) is not False
+            # A manual test stored before Round 22 has no key: optional, and an edit keeps that unless asked.
+            legacy = base is not None and base.get("type") == "manual" and "required" not in base
+            d["required"] = fields.get("required", d.get("required", not legacy)) is not False
         else:
             d["command"] = (fields.get("command", d.get("command", "")) or "").strip()
             d["folder"] = (fields.get("folder", d.get("folder", ".")) or ".").strip()
@@ -1465,13 +1469,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
             res_exit, res_out, status = None, f"folder not found: {folder}", "error"
         elif not folder.resolve().is_relative_to(root.resolve()):
             res_exit, res_out, status = None, f"the test folder is outside the project folder: {folder}", "error"
-        elif moved:
-            # The files this test is judged by are not the ones a person approved: running it would judge the
-            # work by a test the work may have changed. It records Could not run until a person accepts them.
-            res_exit, status, reason = None, "error", "verification_changed"
-            res_out = ("not run: the files this test is judged by changed since it was approved: "
-                       + ", ".join(f"{m['path']} ({m['change']})" for m in moved))
         else:
+            # Files this test is judged by that are not the ones a person approved do not stop it running: the
+            # person sees what the changed test says. Its result proves nothing until they accept the files.
             res = run_command(data.get("command", ""), folder, timeout=data.get("timeout", 120),
                               output_limit=data.get("output_limit", 64000), on_output=push,
                               should_cancel=cancelled, env=env)
@@ -1496,6 +1496,10 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
         evidence.forget(root)
         if status in ("pass", "fail") and evidence.modified(before, after):
             reason = "changed_during_check"  # a file the check ran against changed under it: it applies to neither
+        if moved and status in ("pass", "fail", "error"):
+            reason = "verification_changed"  # judged by files no person approved: never counts, either way
+            res_out = ("judged by files changed since the test was approved: "
+                       + ", ".join(f"{m['path']} ({m['change']})" for m in moved) + "\n\n" + (res_out or ""))
         with self._tx() as c:
             # Only a running execution takes its result: a cancel that landed while the command finished
             # stands (the output is kept with it), so a cancelled execution never turns into a pass.
@@ -1633,7 +1637,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
         if ttype == "command":
             return True
         if ttype == "manual":
-            return data.get("required", True) is not False
+            # Every manual test written since Round 22 stores the key; one without it predates the rule and
+            # keeps its old meaning, optional. Stored values are never rewritten on upgrade (RES-04).
+            return data.get("required", False) is not False
         return False  # AI judged: advisory, never verifies (TST-04)
 
     def _root_basis(self, project_pk: int, fresh: bool = False) -> str:
@@ -1671,6 +1677,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
             e = decided
         if e["status"] == "running":
             d["state"] = "checking"
+        elif e["reason"] == "verification_changed":
+            d["state"] = "could_not_verify"  # pass or fail, it was judged by files no person approved
+            d["reason"] = "verification_changed"
         elif e["status"] == "error":
             d["state"] = "could_not_verify"
             d["reason"] = e["reason"] or "error"
@@ -1765,7 +1774,25 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
         return self._verify(r, self._root_basis(r["project_pk"], fresh=fresh))
 
     def _verify(self, spec, cur: str | None = None) -> dict:
+        """The verdict, memoised per specification for one state of the store and one code basis: a page asks
+        for the same specification from its tiles, coverage, tree and lists. Any commit, by this connection
+        (`total_changes`) or another (`PRAGMA data_version`), and any change to the files, gives a new key.
+        Callers read the result; none changes it."""
         cur = cur if cur is not None else self._root_basis(spec["project_pk"])
+        try:
+            state = (self.conn.execute("PRAGMA data_version").fetchone()[0], self.conn.total_changes)
+        except Exception:
+            return self._verify_now(spec, cur)
+        cache = getattr(self, "_vcache", None)
+        if cache is None or cache[0] != state:
+            cache = self._vcache = (state, {})
+        key = (spec["pk"], cur)
+        hit = cache[1].get(key)
+        if hit is None:
+            hit = cache[1][key] = self._verify_now(spec, cur)
+        return hit
+
+    def _verify_now(self, spec, cur: str) -> dict:
         blockers = []
 
         def block(code, text, **kw):
@@ -1810,7 +1837,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin):
                 block("checking", f"{rid} is running (#{n})", test=rid, execution=n)
             elif state == "could_not_verify":
                 if st.get("reason") == "verification_changed":
-                    block("verification_changed", f"{rid} could not run (#{n}): its files changed since it was approved",
+                    block("verification_changed", f"{rid} #{n} was judged by files changed since it was approved",
                           test=rid, execution=n)
                 elif st.get("reason") != "basis_unknown":  # named once for the whole project below
                     block("could_not_verify", f"{rid} could not run (#{n})", test=rid, execution=n)

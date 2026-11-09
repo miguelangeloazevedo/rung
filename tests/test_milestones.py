@@ -54,7 +54,8 @@ def test_local_green_system_red_then_repaired_then_out_of_date(pair):
     seed.fix_linkpair(folder)
     v = e.milestone("linkpair", mid)
     assert v["state"] == "not_ready" and {b["rung"] for b in v["blockers"]} == {"S-1.1", "S-2.1"}
-    assert e.run_test("linkpair", "T-2.1a")["status"] == "error"  # its approved test file changed
+    e.run_test("linkpair", "T-2.1a")
+    assert "verification_changed" in e.check("linkpair", "S-2.1")["codes"]  # its approved test file changed
     e.accept_test_files("linkpair", "T-2.1a")
     assert e.run_test("linkpair", "T-2.1a")["status"] == "pass"
     assert e.run_test("linkpair", "T-1.1a")["status"] == "pass"
@@ -144,7 +145,7 @@ def test_a_check_whose_files_changed_does_not_run(pair):
     e.run_test("linkpair", "T-1.1a")
     e.run_test("linkpair", "T-2.1a")
     [r] = e.run_milestone("linkpair", mid)
-    assert r["status"] == "error" and r["reason"] == "verification_changed"
+    assert r["status"] == "pass" and r["reason"] == "verification_changed"  # ran, counts for nothing
     v = e.milestone("linkpair", mid)
     assert v["state"] == "could_not_verify" and v["next_action"]["kind"] == "review_check_files"
     e.accept_check_files("linkpair", mid, f"{mid}.a")
