@@ -65,7 +65,7 @@ charter says otherwise. Record findings as described in `TESTING.md`.
   the try command or presents stale evidence as current.
 
 - **Allocation labels**: explore a profile with no execution history, a specification with no tags and an
-  independent carrier where every profile is an author, to discover a score part that reads as money or a chance
+  different profile from the author where every profile is an author, to discover a score part that reads as money or a chance
   of success, or an exclusion with no reason.
 - **View hierarchy**: explore every view at the dock's width and at 200 percent zoom, with long names, to discover
   two primary actions, a view without a heading or text cut off with no way to read it.

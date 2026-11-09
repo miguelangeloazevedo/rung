@@ -269,7 +269,7 @@ const FIELD_NAMES = {
   'req-text': 'Requirement', 'req-detail': 'Acceptance', 'spec-text': 'Specification', 'spec-detail': 'Approach',
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
-  cost: 'Cost', max_runs: 'Max runs', test_timeout: 'Default timeout', output_limit: 'Output limit',
+  cost: 'Cost preference', max_runs: 'Attempts per task', at_once: 'Concurrent tasks', test_timeout: 'Default timeout', output_limit: 'Output limit',
   reason: 'Reason', confirm: 'Project name', search: 'Search projects', paste: 'Text'
 }
 const NATIVE = { button: 1, a: 1, input: 1, select: 1, textarea: 1, label: 1, option: 1 }
@@ -617,8 +617,8 @@ const RESULTS = [
   [/\/specs\/([^/]+)\/allocation$/, m => `Saved the allocation of ${m[1]}`],
   [/\/specs\/([^/]+)\/claims\/release$/, m => `Released ${m[1]}`],
   [/\/tests\/([^/]+)\/run$/, (m, b, d) => `Started ${m[1]}${d && d.n ? ' #' + d.n : ''}`],
-  [/\/tests\/([^/]+)\/executions\/(\d+)\/cancel$/, m => `Cancelled ${m[1]} #${m[2]}`],
-  [/\/runs\/([^/]+)\/cancel$/, m => `Cancelled run ${m[1]}`],
+  [/\/tests\/([^/]+)\/executions\/(\d+)\/cancel$/, m => `Stopped ${m[1]} #${m[2]}`],
+  [/\/runs\/([^/]+)\/cancel$/, m => `Stopped run ${m[1]}`],
 ]
 function resultLine(path, body, data) {
   const p = decodeURIComponent(String(path).split('?')[0])
@@ -906,10 +906,10 @@ const BADGE = {
   running: ['Running', 'text-needs border border-needs'],
   drafting: ['Drafting', 'bg-needs/10 text-needs border border-needs/30'],
   drafted: ['Drafted', 'bg-btn text-fg border border-line'],
-  covered: ['Covered', 'bg-pass/10 text-pass border border-pass/30'],
+  covered: ['Checks satisfied', 'bg-pass/10 text-pass border border-pass/30'],
   failing: ['Failing', 'bg-fail/10 text-fail border border-fail/30'],
   open: ['Open', 'bg-btn text-muted border border-line'],
-  released: ['Released', 'bg-pass/10 text-pass border border-pass/30'],
+  released: ['Verified', 'bg-pass/10 text-pass border border-pass/30'],
   cancelled: ['Cancelled', 'bg-btn text-muted border border-line'],
   failed: ['Failed', 'bg-fail/10 text-fail border border-fail/30'],
   passed: ['Passed', 'bg-pass/10 text-pass border border-pass/30'],
@@ -993,7 +993,7 @@ function usePageTitle(project) {
   if (v === 'spec-edit') return nav.spec ? `Edit ${nav.spec}` : 'New specification'
   if (v === 'test-edit') return nav.test ? `Edit ${nav.test}` : 'New test'
   if (v === 'build') return `${STEPS[{ need: 0, reqs: 1, specs: 2, tests: 3, develop: 4 }[nav.step] ?? 1]} · ${nav.need}`
-  if (v === 'readout') return `Read-out · ${nav.need}`
+  if (v === 'readout') return `Results and evidence · ${nav.need}`
   if (v === 'change') return `Change · ${nav.rid}`
   if (v === 'run') return `Run ${nav.run}`
   if (v === 'attempt') return `Run ${nav.run} · attempt ${nav.n}`
@@ -1063,11 +1063,11 @@ function Tiles({ tiles }) {
   return h('div', 'r-tiles grid grid-cols-4 gap-3',
     all
       ? h('div', { className: 'bg-card border-2 border-pass rounded-[6px] p-3 flex flex-col justify-between', 'data-testid': 'tile-covered' },
-        h('span', 'text-[11px] font-semibold text-pass', 'Covered'),
+        h('span', 'text-[11px] font-semibold text-pass', 'Checks satisfied'),
         h('div', 'flex items-baseline gap-1.5 mt-1',
           h('span', { className: 'text-2xl font-bold text-pass', 'data-testid': 'tile-covered-value' }, String(t.covered)),
           h('span', 'text-xs text-muted', `of ${t.requirements}`)))
-      : h(Tile, { label: 'Requirements covered', value: t.covered, of: t.requirements, testid: 'tile-covered' }),
+      : h(Tile, { label: 'Checks satisfied', value: t.covered, of: t.requirements, testid: 'tile-covered' }),
     h(Tile, { label: 'Stale', value: t.stale, t: t.stale ? 'stale' : null, testid: 'tile-stale' }),
     h(Tile, { label: 'Failing', value: t.failing, t: t.failing ? 'fail' : null, testid: 'tile-failing' }),
     h(Tile, { label: 'Needs you', value: t.needs_you, t: t.needs_you ? 'needs' : null, hot: t.needs_you > 0, testid: 'tile-needs-you' }))
@@ -1167,7 +1167,7 @@ function TreeNeed({ n, sel, hl }) {
 const PART_HELP_FALLBACK = {}
 function ScoreParts({ parts, help, short, className }) {
   const hp = help || PART_HELP_FALLBACK
-  const names = [['tags', 'tags'], ['load', 'load'], ['reliability', short ? 'rel' : 'reliability'], ['cost', 'cost']]
+  const names = [['tags', 'tags'], ['load', 'load'], ['reliability', 'history'], ['cost', short ? 'cost pref' : 'cost preference']]
   return h('span', { className: cx('mono', className), 'data-testid': 'score-parts' },
     ...names.flatMap(([k, label], i) => [
       i ? h('span', { key: k + '-sep', 'aria-hidden': 'true' }, ' · ') : null,
@@ -1649,7 +1649,7 @@ function Projects({ tab }) {
     h('div', 'flex flex-wrap items-center gap-3 text-xs',
       h('span', 'font-semibold text-fg', g.name),
       h('span', { className: 'text-muted', 'data-stat': 'Stale' }, `${g.stats.stale} stale`),
-      h('span', { className: 'text-muted', 'data-stat': 'Covered' }, `${g.stats.covered} of ${g.stats.requirements} covered`)),
+      h('span', { className: 'text-muted', 'data-stat': 'Checks satisfied' }, `${g.stats.covered} of ${g.stats.requirements} checks satisfied`)),
     openBtn(g.name))
   const front = ovQ.error
     ? h('div', 'flex flex-col gap-2', h(ErrorLine, { text: errText(ovQ.error) }), h('div', null, h(Btn, { testid: 'retry', onClick: () => ovQ.refetch() }, 'Retry')))
@@ -1684,7 +1684,7 @@ function Projects({ tab }) {
         h(StatChip, { label: 'Needs you', n: p.stats.needs_you, t: 'needs' }),
         h(StatChip, { label: 'Running', n: p.stats.running, t: 'running' }),
         h(StatChip, { label: 'Stale', n: p.stats.stale, t: 'stale' }),
-        h(StatChip, { label: 'Covered', n: p.stats.covered, of: p.stats.requirements }),
+        h(StatChip, { label: 'Checks satisfied', n: p.stats.covered, of: p.stats.requirements }),
         h('span', { className: 'text-xs text-muted', 'data-stat': 'Last activity' }, ago(p.stats.last_activity)))))))
   const main = frag(
     h('header', 'flex flex-wrap items-center justify-between gap-3',
@@ -1874,10 +1874,10 @@ function Settings({ project }) {
             h('tr', null,
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Profile'),
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Tags'),
-              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Cost'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Cost preference'),
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap min-w-40', 'Tools'),
-              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Max runs'),
-              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'At once'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Attempts per task'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Concurrent tasks'),
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24 text-right', 'Enabled'))),
           h('tbody', 'text-xs divide-y divide-line',
             ...draft.profiles.map((p, i) => h('tr', { key: p.name, 'data-profile': p.name },
@@ -1901,14 +1901,14 @@ function Settings({ project }) {
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'cost'), type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'cost'), type: 'number', name: 'cost', 'aria-label': `${p.name} cost preference`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
               h('td', 'px-3 py-2.5', h(ChipList, {
                 items: p.tools || [], testid: 'tools', attr: 'data-tool', addLabel: `Add a tool to ${p.name}`,
                 onRemove: t => setProf(i, { tools: (p.tools || []).filter(x => x !== t) }),
                 onAdd: t => setProf(i, { tools: [...(p.tools || []), t] })
               })),
-              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'max_runs'), type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'at_once'), type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'max_runs'), type: 'number', name: 'max_runs', 'aria-label': `${p.name} attempts per task`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'at_once'), type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} concurrent tasks`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
               h('td', 'px-3 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
     project ? h(SettingsExclusions, { project }) : null,
     h('section', 'flex flex-col gap-3',
@@ -2408,7 +2408,7 @@ function StepDevelop({ project, need, flow }) {
     h('div', { className: 'bg-card border border-line rounded-[6px] overflow-x-auto', role: 'region', 'aria-label': 'Specifications to develop', tabIndex: 0 },
     h('div', { className: 'flex flex-col min-w-[560px]', 'data-testid': 'develop-table' },
       h('div', 'grid grid-cols-[2.2fr_1fr_1.8fr_1.4fr_1fr] items-center px-4 py-2.5 bg-well border-b border-line2 text-[11px] font-semibold tracking-wider text-muted uppercase',
-        h('div', null, 'Specification'), h('div', null, 'Tests'), h('div', null, 'Carried by'), h('div', null, 'Budget'), h('div', 'text-right', 'Action')),
+        h('div', null, 'Specification'), h('div', null, 'Tests'), h('div', null, 'Assigned profile'), h('div', null, 'Budget'), h('div', 'text-right', 'Action')),
       h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',
@@ -2499,7 +2499,7 @@ function NeedView({ project, r, flow }) {
     h(Conflict, { res: conflict, path: `${P(project)}/rungs/${r.id}` }),
     !editing ? h('div', 'flex items-center gap-2 pt-1',
       r.status === 'draft' && !ro ? h(Btn, { kind: 'primary', testid: 'approve', onClick: async () => { const x = await post(`${P(project)}/rungs/${r.id}/approve`); setErr(x.ok ? '' : x.error) } }, 'Approve') : null,
-      h(Btn, { kind: 'small', testid: 'open-readout', onClick: () => navigate('readout', { need: r.id }) }, 'Read-out'),
+      h(Btn, { kind: 'small', testid: 'open-readout', onClick: () => navigate('readout', { need: r.id }) }, 'Results and evidence'),
       ro ? null : h(Btn, { kind: 'quiet', testid: 'retire', onClick: () => setRetiring(true) }, 'Retire')) : null)
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'need' },
     r.retired ? h(RetiredBar, { project, r }) : null,
@@ -2807,7 +2807,7 @@ function SpecView({ project, r, ret, need, focus }) {
         h('div', 'flex flex-col gap-1.5', headline,
           h('div', 'text-sm font-semibold text-fg', r.text),
           h('div', 'text-[12px] text-muted flex items-center gap-3 mt-1',
-            h('span', null, `Carried by ${r.carried_by || 'you'}`), h('span', null, '·'), h('span', null, `Approved ${dayClock(r.approved_at)}`))),
+            h('span', null, `Assigned profile ${r.carried_by || 'you'}`), h('span', null, '·'), h('span', null, `Approved ${dayClock(r.approved_at)}`))),
         h('div', 'flex flex-col gap-2 pt-3 border-t border-line',
           h('div', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Tests'),
           tests.length ? null : h(Empty, { text: 'No tests', action: 'Add test', onClick: () => navigate('test-edit', { spec: r.id }) }),
@@ -2852,11 +2852,11 @@ function SpecView({ project, r, ret, need, focus }) {
     h(ClaimsSection, { project, r, onErr: setErr }),
     a.human_only ? h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
-        h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
+        h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Assigned profile'),
         h('span', 'text-[11px] text-fg font-medium', 'You')),
       h(ExcludedList, { excluded: a.excluded })) : h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carried-by' },
       h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
-        h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carried by'),
+        h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Assigned profile'),
         h('button', { type: 'button', className: 'text-[11px] text-needs font-medium inline-flex items-center min-h-[24px] min-w-[24px] hover:underline', 'data-testid': 'change-pick', onClick: () => setPicking(!picking) }, 'Change')),
       h('div', 'flex flex-col gap-3',
         ...(picking
@@ -3541,13 +3541,13 @@ function CarrierSection({ project, r, onErr }) {
     help ? h('span', { className: 'text-fg font-medium', tabIndex: 0, title: help, 'data-help': help, 'aria-label': `${label}: ${help}` }, label) : h('span', 'text-fg font-medium', label), ctl)
   return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carrier' },
     h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
-      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carrier')),
+      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Assigned profile')),
     row('Required tools', h(ChipList, {
       items: tools, testid: 'required-tools', attr: 'data-required-tool', addLabel: `Add a required tool to ${r.id}`,
       onRemove: t => set({ required_tools: tools.filter(x => x !== t) }),
       onAdd: t => set({ required_tools: [...tools, t] })
     })),
-    row('Independent carrier', h(Toggle, { on: !!a.independent, testid: 'independent', label: `${r.id} independent carrier`, onChange: v => set({ independent: v }) }), a.independent_help),
+    row('Different profile from the author', h(Toggle, { on: !!a.independent, testid: 'independent', label: `${r.id} different profile from the author`, onChange: v => set({ independent: v }) }), a.independent_help),
     row('Human only', h('div', 'flex items-center gap-2',
       a.human_only_reason === 'all tests manual' ? h('span', 'text-[11px] text-muted', 'all tests manual') : null,
       h(Toggle, { on: !!a.marked_human_only, testid: 'human-only', label: `${r.id} human only`, onChange: v => set({ human_only: v }) }))))
@@ -3682,7 +3682,7 @@ function RunView({ project, run }) {
             h(Badge, { status: r.status })),
           h('span', { className: 'text-xs mono text-muted', 'data-testid': 'run-time' }, `Finished in ${elapsed(r.started_at || r.created_at, r.ended_at)}`))),
       h('div', 'grid grid-cols-3 gap-4',
-        ...[['Carried by', r.profile, null], ['Attempts', `${atts.length} of ${r.max_attempts}`, 'attempt-count'], ['Commit', r.commit || 'none', null]]
+        ...[['Assigned profile', r.profile, null], ['Attempts', `${atts.length} of ${r.max_attempts}`, 'attempt-count'], ['Commit', r.commit || 'none', null]]
           .map(([label, value, testid]) => h('div', { key: label, className: 'p-3.5 rounded-[6px] bg-well border border-line' },
             h('div', 'text-xs text-muted mono mb-1', label),
             h('div', { className: 'text-sm font-semibold mono text-fg', 'data-testid': testid || undefined }, value)))),
@@ -3726,7 +3726,7 @@ function RunView({ project, run }) {
           h('h2', 'text-sm font-semibold text-fg', 'Develop until green')),
         h('span', { className: 'text-xs mono text-needs font-medium', 'data-testid': 'run-time' }, `Running ${elapsed(r.started_at || r.created_at)}`))),
     h('div', 'grid grid-cols-3 gap-3 bg-well p-2.5 rounded-[6px] border border-line2 text-xs',
-      h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Carried by'), h('span', 'font-medium mono text-fg', r.profile)),
+      h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Assigned profile'), h('span', 'font-medium mono text-fg', r.profile)),
       h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Attempt'), h('span', { className: 'font-medium mono text-fg', 'data-testid': 'attempt-count' }, `${cur ? cur.n : 0} of ${r.max_attempts}`)),
       h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Budget'), h('span', 'font-medium mono text-fg', budget))),
     h('div', 'flex flex-col gap-2 pt-2 border-t border-line',
@@ -3746,7 +3746,7 @@ function RunView({ project, run }) {
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
       h(Btn, { testid: 'run-back', onClick: toBuild }, 'Back to build'),
-      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Cancel'),
+      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Stop run'),
       h(Btn, { testid: 'open-session', disabled: !r.session, onClick: () => host.navigate(`/${r.session}`) }, 'Open session')))
   return h(Page, { project, sel: spec.id }, body)
 }
@@ -3843,11 +3843,11 @@ function ExecView({ project, test, n }) {
               h('span', { className: 'w-2 h-2 rounded-full bg-needs', style: { animation: 'rung-pulse 2s ease-in-out infinite' } }),
               h('h2', 'text-base font-bold text-fg', `Execution #${x.n}`)),
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-needs/10 text-needs border border-needs/30', `Running ${elapsed(x.started_at)}`)),
-          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Cancel'),
+          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Stop run'),
             h(Btn, { kind: 'small', testid: 'exec-back', onClick: () => returnTo('rung', { rid: test }) }, 'Back to test'))),
       h('div', 'grid grid-cols-4 gap-3 py-1',
         h(Fact, { label: 'Commit', value: x.commit || 'none', mono: true }),
-        h(Fact, { label: 'Carried by', value: x.carried_by || 'engine', mono: true }),
+        h(Fact, { label: 'Assigned profile', value: x.carried_by || 'engine', mono: true }),
         h(Fact, { label: 'Context', value: x.context || '' }),
         h(Fact, { label: 'Timeout', value: `${x.timeout || 120}s`, mono: true })),
       h('div', 'flex flex-col gap-2 pt-2',
@@ -3863,7 +3863,7 @@ function ExecView({ project, test, n }) {
   const pass = x.status === 'pass'
   const facts = big => [
     h(Fact, { key: 'c', big, label: 'Commit', value: x.commit || 'none', mono: true }),
-    h(Fact, { key: 'b', big, label: 'Carried by', value: x.carried_by || 'engine' }),
+    h(Fact, { key: 'b', big, label: 'Assigned profile', value: x.carried_by || 'engine' }),
     h(Fact, { key: 'd', big, label: 'Duration', value: x.duration != null ? dur(x.duration) : '' }),
     h(Fact, { key: 's', big, label: 'Started', value: clock(x.started_at) }),
     h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? 'none' : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : x.exit_code == null ? undefined : 'needs' }),
@@ -4387,7 +4387,7 @@ function ReadOut({ project, need }) {
   const proof = p => [`${p.test} #${p.n}`, 'pass', p.carried_by, `${dayClock(p.at)}`].filter(Boolean).join(' · ')
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'readout' },
     h('div', 'flex items-center justify-between',
-      h(Crumbs, { path: [{ id: n.id }], last: 'Read-out' }),
+      h(Crumbs, { path: [{ id: n.id }], last: 'Results and evidence' }),
       h('div', 'flex items-center gap-2',
         n.retired ? h(Badge, { status: 'retired' }) : h(Badge, { status: n.status }),
         h(Btn, { kind: 'primary', testid: 'export', onClick: exp }, 'Export'),

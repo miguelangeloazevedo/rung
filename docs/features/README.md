@@ -51,7 +51,7 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 | Sample break and repair | The start screen preview; the sample home's Break the sample and Repair the sample | tests/test_sample_break.py, tests/e2e/test_uc40_first_page.py | tested |
 | Needs you decisions | Each Needs you card's outcome, why, what and recommended action; Answer the worker; the empty state's open work | tests/test_needs_you_decisions.py, tests/e2e/test_uc41_needs_you.py | tested |
 | Result first read-out | The read-out's Result section, Try the result in project settings, labelled evidence and the export's obligations | tests/test_result_first.py, tests/e2e/test_uc42_results.py | tested |
-| Allocation labels | Each score part's description on focus and hover, why the top profile fits, excluded profiles with reasons, Independent carrier help | tests/test_allocation_labels.py, tests/e2e/test_uc43_allocation_labels.py | tested |
+| Allocation labels | Each score part's description on focus and hover, why the top profile fits, excluded profiles with reasons, Different profile from the author help | tests/test_allocation_labels.py, tests/e2e/test_uc43_allocation_labels.py | tested |
 | View hierarchy | One h1 and at most one primary action per view at 1280 by 800, in the dock and at 200 percent zoom; truncated text in full on focus | tests/e2e/test_uc44_hierarchy.py | tested |
 | Architecture | The Architecture view: components and contracts, each a draft a person approves, history kept; a contract's affected work; the components a specification or milestone touches | tests/test_system.py, tests/e2e/test_uc45_architecture.py | tested |
 | Dependencies | A specification's System section: Requires, Required by, Waits for; a start refused with the blocked path | tests/test_system.py, tests/e2e/test_uc46_dependencies.py | tested |
@@ -76,7 +76,7 @@ Charters for exploratory testing are in `docs/charters.md`, one or more per row,
 - **build**: `New need`, or a need's build step from the rail.
 - **rung**: any id in the right-hand rail.
 - **exec**, **run**, **attempt**: from a test's execution list, a running row, an attempt's `Details`.
-- **readout**: `Read-out` on a need.
+- **readout**: `Results and evidence` on a need.
 - **retired**: the `Retired` link under the rail.
 - **settings**: `Allocation:` in the rail.
 - **quick-new**, **quick**: `Quick task` in a project home's header.

@@ -53,8 +53,9 @@ def test_run01_run02_run03_run09_develop_until_green(rung, csvtidy, page):
     ex = e.executions("csvtidy", "T-4.1a")
     assert [x["status"] for x in ex] == ["pass", "fail"]
 
-    # 5. Coverage for R-4 is Covered; the tiles updated without a reload.
-    assert "Covered" in page.locator(".rung [data-testid=run-coverage]").inner_text()
+    # 5. Coverage for R-4 is Checks satisfied (amendment B16); the tiles updated without a reload.
+    cov = page.locator(".rung [data-testid=run-coverage]")
+    H.wait_until(lambda: "Checks satisfied" in cov.inner_text(), msg=lambda: cov.inner_text())
     assert e.coverage("csvtidy", "R-4") == "covered"
     H.wait_until(lambda: page.locator(".rung [data-testid=tile-covered-value]").inner_text() == str(covered0 + 1),
                  msg="covered tile")

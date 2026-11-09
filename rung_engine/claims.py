@@ -199,11 +199,11 @@ class ClaimsMixin:
             why = self.exclusion(project, spec_rid, mine["profile"], ignore_claim=mine["pk"])
             wrote = [x for x in why.split("; ") if x.startswith("author of ")]
             if wrote:
-                raise RungError(f"{spec_rid} needs an independent carrier and {mine['profile']} is now the "
+                raise RungError(f"{spec_rid} needs a different profile from the author and {mine['profile']} is now the "
                                 f"{wrote[0]}", code="excluded")
             chk = self.check(project, spec_rid)
             if not chk["ok"]:
-                raise RungError(f"{spec_rid} is not released: " + "; ".join(chk["blockers"]), code="not_released")
+                raise RungError(f"{spec_rid} is not verified: " + "; ".join(chk["blockers"]), code="not_released")
             proof = self._proof(s)
             c.execute("UPDATE claims SET status='reported', closed_at=?, closed_by=?, proof=? WHERE pk=? "
                       "AND status='open'",

@@ -14,7 +14,7 @@ def test_ned05_ned06_readout_and_export(rung, csvtidy, page):
     H.wait_view(page, "home")
     page.locator(".rung [data-testid=rail]").get_by_text("N-1", exact=False).first.click()
     H.wait_view(page, "rung")
-    H.button(page, "Read-out").click()
+    H.button(page, "Results and evidence").click()
     H.wait_view(page, "readout")
     ro = page.locator(".rung [data-testid=readout]")
     ro.wait_for()

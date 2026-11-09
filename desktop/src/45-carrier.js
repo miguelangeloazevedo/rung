@@ -47,13 +47,13 @@ function CarrierSection({ project, r, onErr }) {
     help ? h('span', { className: 'text-fg font-medium', tabIndex: 0, title: help, 'data-help': help, 'aria-label': `${label}: ${help}` }, label) : h('span', 'text-fg font-medium', label), ctl)
   return h('section', { className: 'bg-card border border-line rounded-[6px] p-4 flex flex-col gap-3', 'data-testid': 'carrier' },
     h('div', 'flex items-center justify-between pb-1.5 border-b border-line',
-      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Carrier')),
+      h('h3', 'text-xs font-semibold uppercase tracking-wider text-muted', 'Assigned profile')),
     row('Required tools', h(ChipList, {
       items: tools, testid: 'required-tools', attr: 'data-required-tool', addLabel: `Add a required tool to ${r.id}`,
       onRemove: t => set({ required_tools: tools.filter(x => x !== t) }),
       onAdd: t => set({ required_tools: [...tools, t] })
     })),
-    row('Independent carrier', h(Toggle, { on: !!a.independent, testid: 'independent', label: `${r.id} independent carrier`, onChange: v => set({ independent: v }) }), a.independent_help),
+    row('Different profile from the author', h(Toggle, { on: !!a.independent, testid: 'independent', label: `${r.id} different profile from the author`, onChange: v => set({ independent: v }) }), a.independent_help),
     row('Human only', h('div', 'flex items-center gap-2',
       a.human_only_reason === 'all tests manual' ? h('span', 'text-[11px] text-muted', 'all tests manual') : null,
       h(Toggle, { on: !!a.marked_human_only, testid: 'human-only', label: `${r.id} human only`, onChange: v => set({ human_only: v }) }))))

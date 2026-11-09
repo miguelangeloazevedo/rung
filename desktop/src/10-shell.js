@@ -48,10 +48,10 @@ const BADGE = {
   running: ['Running', 'text-needs border border-needs'],
   drafting: ['Drafting', 'bg-needs/10 text-needs border border-needs/30'],
   drafted: ['Drafted', 'bg-btn text-fg border border-line'],
-  covered: ['Covered', 'bg-pass/10 text-pass border border-pass/30'],
+  covered: ['Checks satisfied', 'bg-pass/10 text-pass border border-pass/30'],
   failing: ['Failing', 'bg-fail/10 text-fail border border-fail/30'],
   open: ['Open', 'bg-btn text-muted border border-line'],
-  released: ['Released', 'bg-pass/10 text-pass border border-pass/30'],
+  released: ['Verified', 'bg-pass/10 text-pass border border-pass/30'],
   cancelled: ['Cancelled', 'bg-btn text-muted border border-line'],
   failed: ['Failed', 'bg-fail/10 text-fail border border-fail/30'],
   passed: ['Passed', 'bg-pass/10 text-pass border border-pass/30'],
@@ -135,7 +135,7 @@ function usePageTitle(project) {
   if (v === 'spec-edit') return nav.spec ? `Edit ${nav.spec}` : 'New specification'
   if (v === 'test-edit') return nav.test ? `Edit ${nav.test}` : 'New test'
   if (v === 'build') return `${STEPS[{ need: 0, reqs: 1, specs: 2, tests: 3, develop: 4 }[nav.step] ?? 1]} · ${nav.need}`
-  if (v === 'readout') return `Read-out · ${nav.need}`
+  if (v === 'readout') return `Results and evidence · ${nav.need}`
   if (v === 'change') return `Change · ${nav.rid}`
   if (v === 'run') return `Run ${nav.run}`
   if (v === 'attempt') return `Run ${nav.run} · attempt ${nav.n}`
@@ -205,11 +205,11 @@ function Tiles({ tiles }) {
   return h('div', 'r-tiles grid grid-cols-4 gap-3',
     all
       ? h('div', { className: 'bg-card border-2 border-pass rounded-[6px] p-3 flex flex-col justify-between', 'data-testid': 'tile-covered' },
-        h('span', 'text-[11px] font-semibold text-pass', 'Covered'),
+        h('span', 'text-[11px] font-semibold text-pass', 'Checks satisfied'),
         h('div', 'flex items-baseline gap-1.5 mt-1',
           h('span', { className: 'text-2xl font-bold text-pass', 'data-testid': 'tile-covered-value' }, String(t.covered)),
           h('span', 'text-xs text-muted', `of ${t.requirements}`)))
-      : h(Tile, { label: 'Requirements covered', value: t.covered, of: t.requirements, testid: 'tile-covered' }),
+      : h(Tile, { label: 'Checks satisfied', value: t.covered, of: t.requirements, testid: 'tile-covered' }),
     h(Tile, { label: 'Stale', value: t.stale, t: t.stale ? 'stale' : null, testid: 'tile-stale' }),
     h(Tile, { label: 'Failing', value: t.failing, t: t.failing ? 'fail' : null, testid: 'tile-failing' }),
     h(Tile, { label: 'Needs you', value: t.needs_you, t: t.needs_you ? 'needs' : null, hot: t.needs_you > 0, testid: 'tile-needs-you' }))
@@ -309,7 +309,7 @@ function TreeNeed({ n, sel, hl }) {
 const PART_HELP_FALLBACK = {}
 function ScoreParts({ parts, help, short, className }) {
   const hp = help || PART_HELP_FALLBACK
-  const names = [['tags', 'tags'], ['load', 'load'], ['reliability', short ? 'rel' : 'reliability'], ['cost', 'cost']]
+  const names = [['tags', 'tags'], ['load', 'load'], ['reliability', 'history'], ['cost', short ? 'cost pref' : 'cost preference']]
   return h('span', { className: cx('mono', className), 'data-testid': 'score-parts' },
     ...names.flatMap(([k, label], i) => [
       i ? h('span', { key: k + '-sep', 'aria-hidden': 'true' }, ' · ') : null,

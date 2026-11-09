@@ -574,7 +574,7 @@ class LifecycleMixin:
         def seen(v):
             return "" if v is None else (" · Seen failing" if v else " · Not seen failing")
 
-        out = [f"# {need['id']} read-out", "", f"Project: {r['project']}", "", "## Intent", "",
+        out = [f"# {need['id']} results and evidence", "", f"Project: {r['project']}", "", "## Intent", "",
                f"{need['text']}", "", f"Version {need['version']}"]
         if need["retired"]:
             out += ["", f"Retired: {need['retired_reason']}"]
@@ -590,7 +590,7 @@ class LifecycleMixin:
         for d in r["delivered"]:
             if d["proven"]:
                 p = d["proof"]
-                out.append(f"- {d['id']} {d['text']}: proven by {p['test']} #{p['n']} pass, carried by "
+                out.append(f"- {d['id']} {d['text']}: proven by {p['test']} #{p['n']} pass, assigned profile "
                            f"{p['carried_by']}, at {_stamp(p['at'])}" + (f", on code {p['basis']}" if p.get("basis") else "")
                            + seen(p['seen_failing']))
             else:

@@ -342,3 +342,10 @@ The same assessment asked for a system-level check over specifications that are 
 | System report (SYS-12) | Deterministic, built from stored verdicts on the current basis; Accepted only when every milestone is verified now; each open item is named. |
 | Budgets (SYS-13) | Attempts, minutes or both, set only by a person. An interrupted run is shown as such and is never counted as passed; resuming starts only unverified work. |
 
+## Round 26: labels, machine load and the demo (9 Nov 2026)
+
+| Topic | Decision |
+| --- | --- |
+| Machine load | While the verification chain runs, video renders from other sessions (ffmpeg, hyperframes, remotion) are reniced to the lowest priority; they keep running. Each chain stage waits for a settled load first. Why: the e2e timing budgets (a 1,040-row Home in two seconds) failed only when other work saturated the machine; the budgets stay as they are. |
+| Demo | The Shortly demo is re-recorded as a longer cut of two to three minutes: the Shortly story plus contracts, the plan with a budget and a milestone journey. Never uploaded. |
+

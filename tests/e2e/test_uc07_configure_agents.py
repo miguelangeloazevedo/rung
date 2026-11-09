@@ -34,9 +34,10 @@ def ranking(page, spec="S-4.1"):
 
 
 def parts(text):
-    # "<name> <score> · tags T · load L · rel R · cost C"
+    # "<name> <score> · tags T · load L · history H · cost pref C" (amendment B16)
     bits = text.split(" · ")
-    return {b.split()[0]: int(b.split()[1]) for b in bits[1:]}
+    word = {"cost pref": "cost", "history": "reliability"}
+    return {word.get(b.rsplit(" ", 1)[0], b.rsplit(" ", 1)[0]): int(b.rsplit(" ", 1)[1]) for b in bits[1:]}
 
 
 def test_agt04_agt05_agt06_configure_agents(rung, csvtidy, page):

@@ -112,7 +112,7 @@ def test_gte07_gte08_cli_demo_reset_doctor_readout(seeded, tmp_path):
     names = [line.split(":")[0].split()[-1] for line in r.stdout.splitlines() if line.startswith(("ok", "FAIL"))]
     assert "python" in names
     r = _cli(store, "--project", "csvtidy", "readout", "N-1")
-    assert r.returncode == 0 and r.stdout.startswith("# N-1 read-out")
+    assert r.returncode == 0 and r.stdout.startswith("# N-1 results and evidence")
     r = _cli(store, "--project", "csvtidy", "retire", "N-1", "--reason", "Replaced")
     assert r.returncode == 0
     r = _cli(store, "--project", "csvtidy", "check", "--all")

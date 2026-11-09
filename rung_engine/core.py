@@ -166,10 +166,15 @@ def _l(s, default=None):
 NAME_RX = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 
+# The words a person sees for a profile field (amendment B16); the stored keys stay.
+_FIELD_WORDS = {"at_once": "concurrent tasks", "max_runs": "attempts per task", "cost": "cost preference"}
+
+
 def _int_field(value, field: str, lo: int, hi: int) -> int:
     """A whole number from lo to hi; text, decimals and true/false are refused on that field."""
     if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
-        raise RungError(f"{field.replace('_', ' ')} must be {lo} to {hi}", code="bad_request", status=400, field=field)
+        name = _FIELD_WORDS.get(field, field.replace("_", " "))
+        raise RungError(f"{name} must be {lo} to {hi}", code="bad_request", status=400, field=field)
     return value
 
 

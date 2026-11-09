@@ -36,7 +36,8 @@ PART_HELP = {
     "cost": "Configured cost preference: the band set for this profile in Settings, 10 for the cheapest band; "
             "not money spent",
 }
-INDEPENDENT_HELP = "Independent carrier: a different profile from the one that wrote the specification or its tests"
+INDEPENDENT_HELP = ("Different profile from the author: a different profile from the one that wrote the specification "
+                    "or its tests")
 
 TAGS_MAX = 40
 LOAD_MAX = 20

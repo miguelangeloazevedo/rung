@@ -13,7 +13,6 @@ items below that cover them are built.
 
 | ID | Open item | Depends on | Done when |
 | --- | --- | --- | --- |
-| B16, U08 | Clearer labels (attempts, concurrency, assigned profile, results and evidence, verified, cost preference) | an approved amendment to the frozen acceptance labels | the visible label, accessible name, docs and tests use the approved vocabulary |
 | B19 | Reusable task patterns and content search | B11 | a bug fix, feature and refactor template; search by id, phrase, failing check or profile |
 | B20 | Team identity, isolated verification and sharing | a threat model; SYS-15 | approvals have a real authority and the verifier a real boundary |
 

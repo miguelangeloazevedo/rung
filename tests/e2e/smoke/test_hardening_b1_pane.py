@@ -24,7 +24,7 @@ def test_r1_pane_settings_labels_and_regenerate(rung, csvtidy, page):
     settings_row(page, "writer").locator("input[name=at_once]").fill("")
     H.button(page, "Save").click()
     err = page.locator(".rung [data-testid=error]")
-    H.wait_until(lambda: err.count() > 0 and "at once" in err.first.inner_text().lower(), msg="an error on At once")
+    H.wait_until(lambda: err.count() > 0 and "concurrent tasks" in err.first.inner_text().lower(), msg="an error on Concurrent tasks")
     assert e.profile("writer") == before
 
     # An approved requirement with no specification reads `open` in the need view and on the rail.

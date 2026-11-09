@@ -37,7 +37,7 @@ PROPOSE = {
 CHECK = {
     "name": "rung_check",
     "description": (
-        "Ask Rung whether a specification is released: approved, nothing upstream stale, and every gating "
+        "Ask Rung whether a specification is verified: approved, nothing upstream stale, and every gating "
         "test has a counting pass. This is the done condition. Pass all=true for every specification."
     ),
     "parameters": {"type": "object", "properties": {
@@ -269,7 +269,7 @@ def slash(raw_args: str = "", **kwargs) -> str:
                     else f"Rung check {res['id']}: FAIL, blocked by " + "; ".join(res["blockers"]))
         t = e.tiles(p)
         lines = [f"Rung {p}: {t['needs_you']} needs you, {t['running']} running, "
-                 f"covered {t['covered']} of {t['requirements']}"]
+                 f"checks satisfied {t['covered']} of {t['requirements']}"]
         for item in e.needs_you(p):
             lines.append(f"- {item['type']}: {item['id']} {item['text']}")
         return "\n".join(lines)

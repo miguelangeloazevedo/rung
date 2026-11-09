@@ -37,7 +37,7 @@ Restart the Desktop, then pick **Rung** in the sidebar and **Try the sample proj
 - **The dock.** Needs you, Running and the current need's ladder in a pane beside the chat.
 - **Allocation.** Rung suggests which profile should carry a specification and lists every excluded
   profile with its reason: a missing required tool, too many runs at once, authorship of the work when
-  the specification needs an independent carrier, or human only.
+  the specification needs a different profile from the author, or human only.
 - **Develop runs.** Send a specification to a profile; Rung runs it in the project folder, attempt by
   attempt, until its tests pass or the attempts run out.
 - **Goal gate.** `hermes rung check S-2.1` exits 0 only when that specification is verified now, so
@@ -78,7 +78,7 @@ ask them to and do the development work.
 
 | Surface | What it is |
 | --- | --- |
-| Desktop pane | Sidebar entry **Rung**: projects, ladder, editors, runs, read-out |
+| Desktop pane | Sidebar entry **Rung**: projects, ladder, editors, runs, results and evidence |
 | Dock | Pane beside the chat (command palette: **Rung dock**) |
 | Agent tools | `rung_status`, `rung_propose`, `rung_check`, `rung_run_tests`, `rung_claim`, `rung_report` |
 | Hook | `pre_tool_call`: the done gate |

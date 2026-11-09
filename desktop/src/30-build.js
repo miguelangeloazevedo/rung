@@ -458,7 +458,7 @@ function StepDevelop({ project, need, flow }) {
     h('div', { className: 'bg-card border border-line rounded-[6px] overflow-x-auto', role: 'region', 'aria-label': 'Specifications to develop', tabIndex: 0 },
     h('div', { className: 'flex flex-col min-w-[560px]', 'data-testid': 'develop-table' },
       h('div', 'grid grid-cols-[2.2fr_1fr_1.8fr_1.4fr_1fr] items-center px-4 py-2.5 bg-well border-b border-line2 text-[11px] font-semibold tracking-wider text-muted uppercase',
-        h('div', null, 'Specification'), h('div', null, 'Tests'), h('div', null, 'Carried by'), h('div', null, 'Budget'), h('div', 'text-right', 'Action')),
+        h('div', null, 'Specification'), h('div', null, 'Tests'), h('div', null, 'Assigned profile'), h('div', null, 'Budget'), h('div', 'text-right', 'Action')),
       h('div', 'flex flex-col', ...specs.map((s, i) => h(DevelopRow, { key: s.id, project, spec: s, last: i === specs.length - 1, timeoutMin: st.settings.run_timeout_min, onErr: setErr }))))),
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-3',

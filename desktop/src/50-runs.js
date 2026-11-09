@@ -80,7 +80,7 @@ function RunView({ project, run }) {
             h(Badge, { status: r.status })),
           h('span', { className: 'text-xs mono text-muted', 'data-testid': 'run-time' }, `Finished in ${elapsed(r.started_at || r.created_at, r.ended_at)}`))),
       h('div', 'grid grid-cols-3 gap-4',
-        ...[['Carried by', r.profile, null], ['Attempts', `${atts.length} of ${r.max_attempts}`, 'attempt-count'], ['Commit', r.commit || 'none', null]]
+        ...[['Assigned profile', r.profile, null], ['Attempts', `${atts.length} of ${r.max_attempts}`, 'attempt-count'], ['Commit', r.commit || 'none', null]]
           .map(([label, value, testid]) => h('div', { key: label, className: 'p-3.5 rounded-[6px] bg-well border border-line' },
             h('div', 'text-xs text-muted mono mb-1', label),
             h('div', { className: 'text-sm font-semibold mono text-fg', 'data-testid': testid || undefined }, value)))),
@@ -124,7 +124,7 @@ function RunView({ project, run }) {
           h('h2', 'text-sm font-semibold text-fg', 'Develop until green')),
         h('span', { className: 'text-xs mono text-needs font-medium', 'data-testid': 'run-time' }, `Running ${elapsed(r.started_at || r.created_at)}`))),
     h('div', 'grid grid-cols-3 gap-3 bg-well p-2.5 rounded-[6px] border border-line2 text-xs',
-      h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Carried by'), h('span', 'font-medium mono text-fg', r.profile)),
+      h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Assigned profile'), h('span', 'font-medium mono text-fg', r.profile)),
       h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Attempt'), h('span', { className: 'font-medium mono text-fg', 'data-testid': 'attempt-count' }, `${cur ? cur.n : 0} of ${r.max_attempts}`)),
       h('div', 'flex flex-col gap-0.5', h('span', 'text-[11px] text-muted', 'Budget'), h('span', 'font-medium mono text-fg', budget))),
     h('div', 'flex flex-col gap-2 pt-2 border-t border-line',
@@ -144,7 +144,7 @@ function RunView({ project, run }) {
     h(ErrorLine, { text: err }),
     h('div', 'flex items-center gap-2 pt-2 border-t border-line',
       h(Btn, { testid: 'run-back', onClick: toBuild }, 'Back to build'),
-      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Cancel'),
+      h('button', { type: 'button', className: 'px-3 py-1.5 rounded-[6px] bg-btn border border-fail text-fail font-medium text-xs', 'data-testid': 'stop', onClick: stop }, 'Stop run'),
       h(Btn, { testid: 'open-session', disabled: !r.session, onClick: () => host.navigate(`/${r.session}`) }, 'Open session')))
   return h(Page, { project, sel: spec.id }, body)
 }
@@ -241,11 +241,11 @@ function ExecView({ project, test, n }) {
               h('span', { className: 'w-2 h-2 rounded-full bg-needs', style: { animation: 'rung-pulse 2s ease-in-out infinite' } }),
               h('h2', 'text-base font-bold text-fg', `Execution #${x.n}`)),
             h('span', 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-needs/10 text-needs border border-needs/30', `Running ${elapsed(x.started_at)}`)),
-          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Cancel'),
+          h('button', { type: 'button', className: 'px-3 py-1 rounded-[6px] border border-fail text-fail text-xs font-medium', 'data-testid': 'cancel', onClick: async () => { const r = await post(`${P(project)}/tests/${test}/executions/${x.n}/cancel`); setErr(r.ok ? '' : r.error) } }, 'Stop run'),
             h(Btn, { kind: 'small', testid: 'exec-back', onClick: () => returnTo('rung', { rid: test }) }, 'Back to test'))),
       h('div', 'grid grid-cols-4 gap-3 py-1',
         h(Fact, { label: 'Commit', value: x.commit || 'none', mono: true }),
-        h(Fact, { label: 'Carried by', value: x.carried_by || 'engine', mono: true }),
+        h(Fact, { label: 'Assigned profile', value: x.carried_by || 'engine', mono: true }),
         h(Fact, { label: 'Context', value: x.context || '' }),
         h(Fact, { label: 'Timeout', value: `${x.timeout || 120}s`, mono: true })),
       h('div', 'flex flex-col gap-2 pt-2',
@@ -261,7 +261,7 @@ function ExecView({ project, test, n }) {
   const pass = x.status === 'pass'
   const facts = big => [
     h(Fact, { key: 'c', big, label: 'Commit', value: x.commit || 'none', mono: true }),
-    h(Fact, { key: 'b', big, label: 'Carried by', value: x.carried_by || 'engine' }),
+    h(Fact, { key: 'b', big, label: 'Assigned profile', value: x.carried_by || 'engine' }),
     h(Fact, { key: 'd', big, label: 'Duration', value: x.duration != null ? dur(x.duration) : '' }),
     h(Fact, { key: 's', big, label: 'Started', value: clock(x.started_at) }),
     h(Fact, { key: 'e', big, label: 'Exit code', value: x.exit_code == null ? 'none' : String(x.exit_code), mono: true, tone: pass ? 'pass' : x.status === 'fail' ? 'fail' : x.exit_code == null ? undefined : 'needs' }),

@@ -39,7 +39,7 @@ def test_agt01_agt02_agt03_pick_agent(rung, csvtidy, page):
             p = w["parts"]
             assert isinstance(w["score"], int)
             assert text.replace("\n", " ") == (f"{name} {w['score']} · tags {p['tags']} · load {p['load']} "
-                                                f"· rel {p['reliability']} · cost {p['cost']}"), text
+                                                f"· history {p['reliability']} · cost pref {p['cost']}"), text
             assert w["score"] == p["tags"] + p["load"] + p["reliability"] + p["cost"]
         scores = [w["score"] for w in want]
         assert scores == sorted(scores, reverse=True)

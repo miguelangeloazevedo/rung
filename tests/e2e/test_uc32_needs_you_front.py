@@ -103,7 +103,7 @@ def _walk(e, page, run):
     idle = page.locator(".rung [data-testid=ny-idle]")
     assert idle.count() == 1 and idle.get_attribute("data-project") == "gamma"
     assert idle.locator("[data-stat=Stale]").inner_text() == "0 stale"
-    assert idle.locator("[data-stat=Covered]").inner_text() == "0 of 1 covered"
+    assert idle.locator("[data-stat='Checks satisfied']").inner_text() == "0 of 1 checks satisfied"
     assert idle.locator("[data-testid=open-project]").get_attribute("aria-label") == "Open project gamma"
     rows = page.locator(".rung [data-testid=project-row]")
     H.wait_until(lambda: rows.count() == 3, msg="three open projects listed")
@@ -111,7 +111,7 @@ def _walk(e, page, run):
         row = rows.nth(i)
         name = row.locator("[data-testid=project-row-name]").inner_text()
         t = e.tiles(name)
-        assert row.locator("[data-stat=Covered]").inner_text() == f"{t['covered']} of {t['requirements']} covered"
+        assert row.locator("[data-stat='Checks satisfied']").inner_text() == f"{t['covered']} of {t['requirements']} checks satisfied"
         assert (row.locator("[data-testid=last-opened]").count() == 1) == (name == "alpha"), name
     assert "Archived 1" in page.locator(".rung [data-testid=project-filter]").inner_text()
     chip = page.locator("[data-testid=rung-status-chip]").first.inner_text()

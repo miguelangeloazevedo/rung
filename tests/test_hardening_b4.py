@@ -92,7 +92,7 @@ def test_r4_an_independent_spec_is_not_reported_by_a_holder_who_wrote_a_test(fai
     restore()
     e.run_test("csvtidy", "T-2.1a", carried_by="writer")
     out = tool("rung_report", {"spec": "S-2.1"}, profile="writer")
-    assert "independent" in out.get("error", "") and "author of" in out["error"]
+    assert "different profile from the author" in out.get("error", "") and "author of" in out["error"]
     assert any(c["status"] == "open" for c in e.claims("csvtidy"))
 
 

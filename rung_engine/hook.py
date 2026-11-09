@@ -1,7 +1,7 @@
 """The done hook: a `pre_tool_call` hook that refuses to let a chat declare a claimed specification done
 while Rung's check for it fails.
 
-Blocked, while a claimed specification of the calling session is not released:
+Blocked, while a claimed specification of the calling session is not verified:
     rung_report for that specification;
     kanban_complete from the session (it holds a failing claim);
     todo_list setting an item to completed whose id or content names that specification, or whose id
@@ -59,7 +59,7 @@ def _session_claims(session_id: str, store: Path | None = None) -> tuple[list[di
 
 def _message(claim: dict) -> str:
     blockers = claim["check"].get("blockers") or []
-    return (f"Blocked by Rung: {claim['spec']} is not released. " + "; ".join(blockers)
+    return (f"Blocked by Rung: {claim['spec']} is not verified. " + "; ".join(blockers)
             + f". Claimed in {claim['project']}; run its tests and check again before declaring it done.")
 
 

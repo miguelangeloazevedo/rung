@@ -10,7 +10,7 @@ does the evidence that a person approved still hold for the code as it is now? O
 | --- | --- | --- |
 | Contract approved | A person approved the specification and the tests that check it. | Approved (neutral) |
 | Execution passed | One run of one test passed, on one state of the code. | `#3 pass` in the history, kept for good |
-| Verification current | Every required test's newest result is a pass on the code as it is now, with the test's files as approved. | Verified (green), Released, Covered |
+| Verification current | Every required test's newest result is a pass on the code as it is now, with the test's files as approved. | Verified (green), Checks satisfied (amendment B16 renamed Released to Verified and Covered to Checks satisfied) |
 | Accepted | A person approved each required manual result. | Waiting for you until then |
 
 A pass in the history stays a pass. It stops counting for verification when the code or the test it ran on has
@@ -181,7 +181,7 @@ The sample home offers `Break the sample`, which changes one line of `wordcount/
 folder (inside Rung's data folder, never another project) and `Repair the sample`, which puts the bundled file
 back. No bot runs. The test that passed is then Out of date (its pass was on other code); checking again fails it;
 after the repair, checking again verifies it. A released specification keeps its Verification section, and its
-headline reads Released only while it is verified now.
+headline reads Verified only while it is verified now.
 
 ## Needs you is a list of decisions
 
@@ -211,7 +211,7 @@ carries; `load` is the develop runs and open claims it carries now; `reliability
 executions that completed with a pass or a fail rather than an error, not a chance of success; `cost` is the
 cost preference band set for it in Settings, not money spent. Each part says this on focus and hover. Every
 suggestion lists the inputs behind it (tags carried, current load, executions counted, cost band) and every
-excluded profile its reason. An independent carrier is a different profile from the one that wrote the
+excluded profile its reason. Different profile from the author (formerly independent carrier) means a profile other than the one that wrote the
 specification or its tests; the person can still pick any eligible profile.
 
 ## Architecture and contracts (SYS-02)
@@ -243,7 +243,7 @@ milestone together, so the integrated system is judged by its milestone, never b
 ## The plan (SYS-04)
 
 The plan lists every approved specification of the in-scope requirements in dependency order, each Ready,
-Blocked (by which prerequisite), Running, Waiting for capacity (every eligible profile at its At once limit),
+Blocked (by which prerequisite), Running, Waiting for capacity (every eligible profile at its Concurrent tasks limit),
 Not ready or Verified. Start ready work starts only the Ready ones, one at a time, rechecking each profile's limit
 before each start. An optional budget counts the attempts of the runs the plan started; once used, the plan
 starts nothing more and says so. Model usage reads unavailable unless a worker reports it.
@@ -291,3 +291,12 @@ writes it.
 A person sets the plan's budget in attempts, minutes or both. Once either is used the plan starts nothing more and
 states which. Verified work is never started again. A run in progress when the runner stopped reads Interrupted,
 never passed; the plan shows it Ready with that reason, and Start ready work resumes only work not verified.
+
+## Labels (amendment B16)
+
+The pane says what each thing is: Attempts per task (was Max runs), Concurrent tasks (At once), Assigned profile
+(Carried by), Different profile from the author (Independent carrier), Results and evidence (Read-out), Verified on
+a specification (Released), Checks satisfied on a requirement (Covered), Stop run on running work (Cancel; Cancel on
+forms and dialogs stays), Cost preference (Cost), and the score text `tags · load · history · cost pref`. Accessible
+names and the CLI text follow. Stored values and keys are unchanged.
+

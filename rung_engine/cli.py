@@ -19,7 +19,7 @@ def setup(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", "-P", help="project name (default: the last opened project)")
     parser.add_argument("--json", action="store_true", help="print JSON")
     subs = parser.add_subparsers(dest="rung_command")
-    c = subs.add_parser("check", help="exit 0 only when a specification is released by its tests")
+    c = subs.add_parser("check", help="exit 0 only when a specification is verified by its tests")
     c.add_argument("spec", nargs="?", help="specification id, for example S-2.1")
     c.add_argument("--all", action="store_true", help="check every approved specification of the project")
     subs.add_parser("status", help="tiles and the Needs you list")
@@ -56,7 +56,7 @@ def setup(parser: argparse.ArgumentParser) -> None:
     rt = subs.add_parser("retire", help="retire a need with a reason")
     rt.add_argument("need")
     rt.add_argument("--reason", required=True)
-    ro = subs.add_parser("readout", help="print a need's read-out as markdown")
+    ro = subs.add_parser("readout", help="print a need's results and evidence as markdown")
     ro.add_argument("need")
     ro.add_argument("--export", action="store_true", help="also write it to Rung's exports folder")
     cl = subs.add_parser("claims", help="list open claims; claims release <SPEC> lets go of one")
@@ -110,7 +110,7 @@ def main(args) -> int:
                     print(json.dumps(res, indent=2))
                 else:
                     for r in res["results"]:
-                        line = f"{r['id']}: {'released' if r['ok'] else 'blocked'}"
+                        line = f"{r['id']}: {'verified' if r['ok'] else 'blocked'}"
                         if not r["ok"]:
                             line += " by " + "; ".join(r["blockers"])
                         print(line)
@@ -123,7 +123,7 @@ def main(args) -> int:
             if args.json:
                 print(json.dumps(res, indent=2))
             elif res["ok"]:
-                print(f"{args.spec}: released, every gating test passes")
+                print(f"{args.spec}: verified, every gating test passes")
             else:
                 print(f"{args.spec}: blocked by " + "; ".join(res["blockers"]))
             return 0 if res["ok"] else 1
@@ -197,7 +197,7 @@ def main(args) -> int:
             for p in rows:
                 s = p["stats"]
                 print(f"{p['name']}: needs you {s['needs_you']}, running {s['running']}, stale {s['stale']}, "
-                      f"covered {s['covered']} of {s['requirements']}")
+                      f"checks satisfied {s['covered']} of {s['requirements']}")
             return 0
         if cmd == "tree":
             project = _project(svc, args)
@@ -274,7 +274,7 @@ def main(args) -> int:
             print(json.dumps({"tiles": t, "needs_you": e.needs_you(project)}, indent=2))
             return 0
         print(f"{project}: needs you {t['needs_you']}, running {t['running']}, stale {t['stale']}, "
-              f"failing {t['failing']}, covered {t['covered']} of {t['requirements']}")
+              f"failing {t['failing']}, checks satisfied {t['covered']} of {t['requirements']}")
         for item in e.needs_you(project):
             print(f"  {item['type']:9} {item['id']:8} {item['text']}")
         return 0

@@ -18,7 +18,7 @@ const FIELD_NAMES = {
   'req-text': 'Requirement', 'req-detail': 'Acceptance', 'spec-text': 'Specification', 'spec-detail': 'Approach',
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',
-  cost: 'Cost', max_runs: 'Max runs', test_timeout: 'Default timeout', output_limit: 'Output limit',
+  cost: 'Cost preference', max_runs: 'Attempts per task', at_once: 'Concurrent tasks', test_timeout: 'Default timeout', output_limit: 'Output limit',
   reason: 'Reason', confirm: 'Project name', search: 'Search projects', paste: 'Text'
 }
 const NATIVE = { button: 1, a: 1, input: 1, select: 1, textarea: 1, label: 1, option: 1 }
@@ -366,8 +366,8 @@ const RESULTS = [
   [/\/specs\/([^/]+)\/allocation$/, m => `Saved the allocation of ${m[1]}`],
   [/\/specs\/([^/]+)\/claims\/release$/, m => `Released ${m[1]}`],
   [/\/tests\/([^/]+)\/run$/, (m, b, d) => `Started ${m[1]}${d && d.n ? ' #' + d.n : ''}`],
-  [/\/tests\/([^/]+)\/executions\/(\d+)\/cancel$/, m => `Cancelled ${m[1]} #${m[2]}`],
-  [/\/runs\/([^/]+)\/cancel$/, m => `Cancelled run ${m[1]}`],
+  [/\/tests\/([^/]+)\/executions\/(\d+)\/cancel$/, m => `Stopped ${m[1]} #${m[2]}`],
+  [/\/runs\/([^/]+)\/cancel$/, m => `Stopped run ${m[1]}`],
 ]
 function resultLine(path, body, data) {
   const p = decodeURIComponent(String(path).split('?')[0])

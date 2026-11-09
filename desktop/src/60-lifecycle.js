@@ -369,7 +369,7 @@ function ReadOut({ project, need }) {
   const proof = p => [`${p.test} #${p.n}`, 'pass', p.carried_by, `${dayClock(p.at)}`].filter(Boolean).join(' · ')
   const body = h(Card, { className: 'p-4 flex flex-col gap-4', testid: 'readout' },
     h('div', 'flex items-center justify-between',
-      h(Crumbs, { path: [{ id: n.id }], last: 'Read-out' }),
+      h(Crumbs, { path: [{ id: n.id }], last: 'Results and evidence' }),
       h('div', 'flex items-center gap-2',
         n.retired ? h(Badge, { status: 'retired' }) : h(Badge, { status: n.status }),
         h(Btn, { kind: 'primary', testid: 'export', onClick: exp }, 'Export'),

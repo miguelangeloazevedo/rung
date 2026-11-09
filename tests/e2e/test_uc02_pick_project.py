@@ -32,7 +32,7 @@ def test_prj03_prj04_pick_project(rung, page):
         assert stat("Needs you") == f"Needs you {t['needs_you']}", name
         assert stat("Running") == f"Running {t['running']}", name
         assert stat("Stale") == f"Stale {t['stale']}", name
-        assert stat("Covered") == f"{t['covered']} of {t['requirements']} covered", name
+        assert stat("Checks satisfied") == f"{t['covered']} of {t['requirements']} checks satisfied", name
         assert _ago_ok(stat("Last activity"), t["last_activity"])
     # 3. notes-sync opens its own home.
     rows.filter(has_text="notes-sync").first.click()

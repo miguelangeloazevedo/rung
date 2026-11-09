@@ -316,7 +316,7 @@ function Projects({ tab }) {
     h('div', 'flex flex-wrap items-center gap-3 text-xs',
       h('span', 'font-semibold text-fg', g.name),
       h('span', { className: 'text-muted', 'data-stat': 'Stale' }, `${g.stats.stale} stale`),
-      h('span', { className: 'text-muted', 'data-stat': 'Covered' }, `${g.stats.covered} of ${g.stats.requirements} covered`)),
+      h('span', { className: 'text-muted', 'data-stat': 'Checks satisfied' }, `${g.stats.covered} of ${g.stats.requirements} checks satisfied`)),
     openBtn(g.name))
   const front = ovQ.error
     ? h('div', 'flex flex-col gap-2', h(ErrorLine, { text: errText(ovQ.error) }), h('div', null, h(Btn, { testid: 'retry', onClick: () => ovQ.refetch() }, 'Retry')))
@@ -351,7 +351,7 @@ function Projects({ tab }) {
         h(StatChip, { label: 'Needs you', n: p.stats.needs_you, t: 'needs' }),
         h(StatChip, { label: 'Running', n: p.stats.running, t: 'running' }),
         h(StatChip, { label: 'Stale', n: p.stats.stale, t: 'stale' }),
-        h(StatChip, { label: 'Covered', n: p.stats.covered, of: p.stats.requirements }),
+        h(StatChip, { label: 'Checks satisfied', n: p.stats.covered, of: p.stats.requirements }),
         h('span', { className: 'text-xs text-muted', 'data-stat': 'Last activity' }, ago(p.stats.last_activity)))))))
   const main = frag(
     h('header', 'flex flex-wrap items-center justify-between gap-3',
@@ -541,10 +541,10 @@ function Settings({ project }) {
             h('tr', null,
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Profile'),
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap', 'Tags'),
-              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Cost'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Cost preference'),
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap min-w-40', 'Tools'),
-              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Max runs'),
-              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'At once'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Attempts per task'),
+              h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24', 'Concurrent tasks'),
               h('th', 'px-3 py-2.5 font-semibold whitespace-nowrap w-24 text-right', 'Enabled'))),
           h('tbody', 'text-xs divide-y divide-line',
             ...draft.profiles.map((p, i) => h('tr', { key: p.name, 'data-profile': p.name },
@@ -568,14 +568,14 @@ function Settings({ project }) {
                       }
                     })
                     : h('button', { type: 'button', className: 'px-1.5 py-0.5 rounded bg-btn border border-line text-muted text-[11px]', 'aria-label': `Add a label to ${p.name}`, 'data-add-label': p.name, onClick: () => setAdding(p.name) }, '+'))),
-              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'cost'), type: 'number', name: 'cost', 'aria-label': `${p.name} cost`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'cost'), type: 'number', name: 'cost', 'aria-label': `${p.name} cost preference`, value: p.cost, onChange: e => setProf(i, { cost: e.target.value }) })),
               h('td', 'px-3 py-2.5', h(ChipList, {
                 items: p.tools || [], testid: 'tools', attr: 'data-tool', addLabel: `Add a tool to ${p.name}`,
                 onRemove: t => setProf(i, { tools: (p.tools || []).filter(x => x !== t) }),
                 onAdd: t => setProf(i, { tools: [...(p.tools || []), t] })
               })),
-              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'max_runs'), type: 'number', name: 'max_runs', 'aria-label': `${p.name} max runs`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
-              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'at_once'), type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} at once`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'max_runs'), type: 'number', name: 'max_runs', 'aria-label': `${p.name} attempts per task`, value: p.max_runs, onChange: e => setProf(i, { max_runs: e.target.value }) })),
+              h('td', 'px-3 py-2.5', h('input', { ...mark(numInp, p.name, 'at_once'), type: 'number', min: 1, max: 10, name: 'at_once', 'aria-label': `${p.name} concurrent tasks`, value: p.at_once, onChange: e => setProf(i, { at_once: e.target.value }) })),
               h('td', 'px-3 py-2.5 text-right', h(Toggle, { on: p.enabled, testid: 'enabled', label: `${p.name} enabled`, onChange: v => setProf(i, { enabled: v }) })))))))),
     project ? h(SettingsExclusions, { project }) : null,
     h('section', 'flex flex-col gap-3',
