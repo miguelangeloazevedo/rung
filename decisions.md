@@ -317,3 +317,16 @@ The same assessment asked for a system-level check over specifications that are 
 | Enforcement is its own fact | `hermes rung enforcement SESSION` reports `enforced` (the session holds claims and the store reads; each claim says whether it is verified now), `unbound` (no session id or no open claim) or `degraded` (the store cannot be read: the hook lets every call through, nothing is verified). The hook stays read only and fail open for unrelated tools. |
 | One verdict per page | A page asks for the same specification from tiles, coverage, tree and lists. The verdict is memoised per specification for one state of the store (SQLite `data_version` plus this connection's changes) and one code basis, so any commit from any process or any file change recomputes it. Found by RES-05: Round 22's evaluator had doubled the large-project Home load (147 to 265 ms in the engine); memoised it is 71 ms. |
 | Unreadable code never verifies | When the project's files cannot be read whole (the folder is missing, or more files than the limit after `.gitignore` and `.rungignore`), the specification is Could not verify with the blocker `basis_unknown` and the next action Repair project folder. A result recorded while the code could not be read counts as Out of date. Before this round both were read as a pass. |
+
+## Round 24: stage 5, the rest of the outside assessment (9 Nov 2026)
+
+
+| Topic | Decision |
+| --- | --- |
+| Scope | Usability first (B11, B14, B18, U02, U04, U12, U13, R11), then SYS-02 to SYS-13 in dependency order (02, 03, 05, 04, 06, 07, 08, 09, 10, 11, 12, 13). SYS-14 to SYS-16 get design notes in `docs/design/`, no code. |
+| Acceptance | `docs/use-cases-5.md`, `docs/acceptance-5.md`, `scripts/acceptance-5.sh`: UC37 to UC56 in that fixed order. `ACCEPTANCE-5 THROUGH` names the unbroken passing run from UC37; a public update ships only use cases inside it. |
+| Allocation (R11) | The frozen score text (`tags · load · rel · cost`, UC06) stays until the amendment; each part gains a plain description on focus and hover, and the suggestion explains fit and exclusions. |
+| First page (U02) | The sample's ladder is frozen by UC13 (four approved rungs, one test). The proof is `Break the sample` and `Repair the sample`: sample-only file swaps that show a pass going Out of date, failing, and verifying again, with no bot. This replaces the brief's two-pass-one-fail sample, which would have changed the frozen sample. |
+| Roadmap | `docs/roadmap.md` holds every brief item not done, with its dependency and criterion; built items move to `docs/verification.md`. |
+| Time box | Stop at Tue 10 Nov 20:00 Brussels; video and dossier refresh start by Tue 14:00 with whatever is left. |
+
