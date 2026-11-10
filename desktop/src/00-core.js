@@ -408,6 +408,14 @@ function refresh() {
   queryClient.invalidateQueries({ queryKey: ['rung'] })
 }
 
+// Open a project: the cached state names it current at once, so the view that follows never shows (or acts on)
+// the previous project while /state refetches.
+async function openProject(name) {
+  const x = await post(`/projects/${encodeURIComponent(name)}/open`)
+  if (x.ok) queryClient.setQueryData(['rung', '/state'], d => d && { ...d, current: name, current_archived: !!(x.data && x.data.archived) })
+  return x
+}
+
 function useApi(path, opts) {
   const q = useQuery({
     queryKey: ['rung', path],

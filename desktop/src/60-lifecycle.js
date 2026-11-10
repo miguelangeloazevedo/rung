@@ -579,7 +579,7 @@ function ArchivedList({ qtext, onClear }) {
   if (q.error) return h(ErrorLine, { text: errText(q.error) })
   const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   const act = async (name, what) => {
-    const x = await post(`/projects/${encodeURIComponent(name)}/${what}`)
+    const x = what === 'open' ? await openProject(name) : await post(`/projects/${encodeURIComponent(name)}/${what}`)
     if (!x.ok) return setErr(x.error)
     setErr('')
     if (what === 'open') navigate('home')

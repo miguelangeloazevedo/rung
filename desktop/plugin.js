@@ -659,6 +659,14 @@ function refresh() {
   queryClient.invalidateQueries({ queryKey: ['rung'] })
 }
 
+// Open a project: the cached state names it current at once, so the view that follows never shows (or acts on)
+// the previous project while /state refetches.
+async function openProject(name) {
+  const x = await post(`/projects/${encodeURIComponent(name)}/open`)
+  if (x.ok) queryClient.setQueryData(['rung', '/state'], d => d && { ...d, current: name, current_archived: !!(x.data && x.data.archived) })
+  return x
+}
+
 function useApi(path, opts) {
   const q = useQuery({
     queryKey: ['rung', path],
@@ -1629,7 +1637,7 @@ function Projects({ tab }) {
   const [err, setErr] = useState('')
   const archived = tab === 'archived'
   const enter = async (name, then) => {
-    const x = await post(`/projects/${encodeURIComponent(name)}/open`)
+    const x = await openProject(name)
     if (!x.ok) return setErr(x.error)
     if (then) then(); else navigate('home')
   }
@@ -3359,7 +3367,7 @@ function PasteDialog({ project, projects, onClose }) {
   const place = () => bot.start(`${P(proj)}/bot/place`, { text })
   const open = async () => {
     if (proj !== project) {
-      const x = await post(`${P(proj)}/open`)
+      const x = await openProject(proj)
       if (!x.ok) return bot.setErr(x.error)
     }
     const view = NEW_VIEW[kind]
@@ -4612,7 +4620,7 @@ function ArchivedList({ qtext, onClear }) {
   if (q.error) return h(ErrorLine, { text: errText(q.error) })
   const rows = (q.data || []).filter(p => !qtext || p.name.toLowerCase().includes(qtext.toLowerCase()))
   const act = async (name, what) => {
-    const x = await post(`/projects/${encodeURIComponent(name)}/${what}`)
+    const x = what === 'open' ? await openProject(name) : await post(`/projects/${encodeURIComponent(name)}/${what}`)
     if (!x.ok) return setErr(x.error)
     setErr('')
     if (what === 'open') navigate('home')

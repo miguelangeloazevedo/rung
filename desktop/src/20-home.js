@@ -288,7 +288,7 @@ function Projects({ tab }) {
   const [err, setErr] = useState('')
   const archived = tab === 'archived'
   const enter = async (name, then) => {
-    const x = await post(`/projects/${encodeURIComponent(name)}/open`)
+    const x = await openProject(name)
     if (!x.ok) return setErr(x.error)
     if (then) then(); else navigate('home')
   }

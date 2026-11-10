@@ -118,7 +118,7 @@ function PasteDialog({ project, projects, onClose }) {
   const place = () => bot.start(`${P(proj)}/bot/place`, { text })
   const open = async () => {
     if (proj !== project) {
-      const x = await post(`${P(proj)}/open`)
+      const x = await openProject(proj)
       if (!x.ok) return bot.setErr(x.error)
     }
     const view = NEW_VIEW[kind]
