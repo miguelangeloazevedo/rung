@@ -40,6 +40,12 @@ function rungLabel(n) {
   return n.status || ''
 }
 
+// The words a person reads for a label (amendment B16): the stored keys stay in data-label.
+const LABEL_TEXT = { released: 'verified', covered: 'checks satisfied' }
+function labelText(label) {
+  return LABEL_TEXT[label] || label
+}
+
 function liveKids(n) {
   return (n.children || []).filter(c => c.status !== 'dismissed' && c.status !== 'proposed')
 }
@@ -160,7 +166,7 @@ function DockTree({ nodes, depth, cur }) {
         h(Dot, { t }),
         h('span', { className: cx('whitespace-nowrap mono dk-tr-id', cur === n.id ? 'text-needs' : t === 'dim' ? 'text-dim' : 'text-fg') }, n.id),
         n.kind !== 'test' && n.text ? h('span', { className: cx('dk-tr-text truncate', t === 'dim' && 'text-dim'), title: n.text }, n.text) : null,
-        label ? h('span', { className: cx('dk-tr-label mono', TONE_TEXT[t] || 'text-muted') }, label) : null),
+        label ? h('span', { className: cx('dk-tr-label mono', TONE_TEXT[t] || 'text-muted') }, labelText(label)) : null),
         kids.length ? h(DockTree, { nodes: kids, depth: (depth || 0) + 1, cur }) : null)
     }))
 }
