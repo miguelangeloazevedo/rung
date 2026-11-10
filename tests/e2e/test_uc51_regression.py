@@ -24,9 +24,14 @@ def test_rgr01_rgr02_regression_baseline(rung, tmp_path, page):
     api.write_text(api.read_text().replace('out = json.dumps(create(body["url"])).encode()',
                                            'out = json.dumps({"link": create(body["url"])}).encode()'))
     msys.rerun(e)
-    page.locator(".rung [data-testid=next-action]").click()  # Run checks: M-1's run too
+    # The edit leaves the specifications out of date (next action: Open S-2.1) until the page sees the rerun.
+    nxt = page.locator(".rung [data-testid=next-action]")
+    H.wait_until(lambda: nxt.inner_text().strip() == "Run checks", msg=lambda: nxt.inner_text())
+    nxt.click()  # Run checks: M-1's run too
     H.wait_until(lambda: "regression_failed" in msys.codes(page), timeout=90, msg=lambda: msys.blockers(page))
     assert state.get_attribute("data-state") == "integration_failed"
     assert f"regression: {m1} fails on this code" in msys.blockers(page)
-    assert e.milestone("linkpair", m2)["checks"][0]["state"] == "satisfied"  # its own check passes
+    # its own check passes (the regression can be reported while it is still running)
+    H.wait_until(lambda: e.milestone("linkpair", m2)["checks"][0]["state"] == "satisfied", timeout=60,
+                 msg=lambda: e.milestone("linkpair", m2)["checks"][0]["state"])
     H.evidence(page, 51)

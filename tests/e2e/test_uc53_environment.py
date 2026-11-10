@@ -18,7 +18,9 @@ def test_env01_env02_env03_environment(rung, tmp_path, page):
     H.wait_until(lambda: sec.locator("[data-probe='python3 --version']").count() == 1, msg=lambda: sec.inner_text())
     page.locator(".rung [data-testid=next-action]").click()  # Approve
     H.wait_until(lambda: state.get_attribute("data-state") != "draft", msg="approved")
-    page.locator(".rung [data-testid=next-action]").click()  # Run checks
+    nxt = page.locator(".rung [data-testid=next-action]")
+    H.wait_until(lambda: nxt.inner_text().strip() == "Run checks", msg=lambda: nxt.inner_text())
+    nxt.click()  # Run checks
     H.wait_until(lambda: "environment_mismatch" in msys.codes(page), timeout=60, msg=lambda: msys.blockers(page))
     assert state.get_attribute("data-state") == "could_not_verify"
     assert "probe python3 --version must print Python 9" in msys.blockers(page)

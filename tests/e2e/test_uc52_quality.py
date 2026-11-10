@@ -25,7 +25,9 @@ def test_qlt01_qlt02_quality_obligation(rung, tmp_path, page):
     H.wait_until(lambda: ob.count() == 1, msg=lambda: page.locator(".rung [data-testid=milestone]").inner_text()[-600:])
     page.locator(".rung [data-testid=next-action]").click()  # Approve
     H.wait_until(lambda: state.get_attribute("data-state") != "draft", msg="approved")
-    page.locator(".rung [data-testid=next-action]").click()  # Run checks
+    nxt = page.locator(".rung [data-testid=next-action]")
+    H.wait_until(lambda: nxt.inner_text().strip() == "Run checks", msg=lambda: nxt.inner_text())
+    nxt.click()  # Run checks
     H.wait_until(lambda: state.get_attribute("data-state") == "obligation_unmet", timeout=60, msg=lambda: msys.blockers(page))
     assert "350 ms against 200 under 100 requests of 10 links" in msys.blockers(page)
     card = page.locator(".rung [data-testid=milestone]").inner_text().lower()
