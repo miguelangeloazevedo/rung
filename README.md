@@ -1,6 +1,6 @@
 # Rung
 
-**Tests, not the model, decide when agent work is done.**
+**Stops an agent from marking its own work done until the tests you approved pass.**
 
 ![A Rung milestone: both specifications are verified on their own, the journey across them fails](docs/media/milestone.png)
 
@@ -62,7 +62,7 @@ Restart the Desktop, then pick **Rung** in the sidebar and **Try the sample proj
                    claim, develop run    command or manual,
                    by a Hermes profile   pass rule, approval
                              │             │
-                             └── Rung check: released only when
+                             └── Rung check: verified only when
                                  every required test's newest
                                  result passed on the current
                                  text and the current code
