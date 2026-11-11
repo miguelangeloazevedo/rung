@@ -258,7 +258,7 @@ class MilestonesMixin:
         if busy:
             raise RungError(f"{m['mid']} cannot run now: {busy}", code="busy")
 
-    def run_milestone(self, project: str, mid: str, carried_by: str = "engine", env=None) -> list[dict]:
+    def run_milestone(self, project: str, mid: str, carried_by: str = "engine") -> list[dict]:
         """Run every command check of an approved milestone, one after another, on the code as it is now. Every
         run is reserved in one write transaction with the busy check, so no develop run or second integration
         starts in between: integration is judged on one state of the folder."""
@@ -268,16 +268,17 @@ class MilestonesMixin:
             raise RungError(f"{m['mid']} is not approved", code="not_approved")
         p = self._project_row(m["project_pk"])
         root = Path(p["folder"]).expanduser()
+        env = self.command_env(p)  # never the environment Rung runs in
         sysd = _l(m["system"], {}) or {}
         base = sysd.get("baseline") or {}
         for b in base.get("milestones", []):  # SYS-08: the earlier journeys run on the same code
             br = self._q1("SELECT * FROM milestones WHERE project_pk=? AND mid=? AND status='approved'",
                           (m["project_pk"], b))
             if br is not None:
-                self.run_milestone(project, b, carried_by=carried_by, env=env)
+                self.run_milestone(project, b, carried_by=carried_by)
         envd = sysd.get("environment")
         if envd and (envd.get("probes") or envd.get("migration")):  # SYS-10: probes and migration first
-            rec = self._run_environment(m, root, envd)
+            rec = self._run_environment(m, root, envd, env)
             sysd["env_run"] = rec
             with self._tx() as c:
                 c.execute("UPDATE milestones SET system=? WHERE pk=?", (_j(sysd), m["pk"]))
@@ -573,19 +574,19 @@ class MilestonesMixin:
     def _setup_key(self, env) -> str:
         return _j(env or {})
 
-    def _run_environment(self, m, root, env) -> dict:
+    def _run_environment(self, m, root, env, cmd_env) -> dict:
         """Probes, then the migration, on the project folder. Records what each printed; nothing else."""
         rec = {"setup": self._setup_key(env), "at": self.clock(), "probes": [], "migration": None, "ok": True,
                "code": ""}
         for pr in env.get("probes", []):
-            res = run_command(pr["command"], root, timeout=60, output_limit=4000)
+            res = run_command(pr["command"], root, timeout=60, output_limit=4000, env=cmd_env)
             out = (res.output or "").strip()
             ok = res.exit_code == 0 and pr["contains"] in out
             rec["probes"].append({**pr, "output": out, "exit_code": res.exit_code, "ok": ok})
             if not ok and rec["ok"]:
                 rec["ok"], rec["code"] = False, "environment_mismatch"
         if rec["ok"] and env.get("migration"):
-            res = run_command(env["migration"], root, timeout=300, output_limit=8000)
+            res = run_command(env["migration"], root, timeout=300, output_limit=8000, env=cmd_env)
             rec["migration"] = {"command": env["migration"], "exit_code": res.exit_code,
                                 "output": (res.output or "")[-4000:], "ok": res.exit_code == 0}
             if res.exit_code != 0:

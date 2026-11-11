@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Columns added after schema 1, applied to older stores by `migrate`. New stores get them from SCHEMA.
 MIGRATIONS = {
@@ -38,6 +38,10 @@ MIGRATIONS = {
         ("attempts", "local_results", "TEXT NOT NULL DEFAULT '[]'"),
         # The plan (SYS-04): its attempt budget and the runs it started.
         ("projects", "plan", "TEXT NOT NULL DEFAULT '{}'"),
+    ],
+    # The variables a person passes to the project's commands by name; nothing else is inherited.
+    6: [
+        ("projects", "env_vars", "TEXT NOT NULL DEFAULT '[]'"),
     ],
 }
 

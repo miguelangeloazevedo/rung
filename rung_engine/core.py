@@ -21,7 +21,7 @@ from typing import Callable
 from pathlib import Path
 
 from . import allocation, db, evidence
-from .execute import context_line, git_commit, run_command
+from .execute import ENV_NAME, command_env, context_line, git_commit, run_command
 from .claims import ClaimsMixin, _canon
 from .lifecycle import LifecycleMixin
 from .bot import BotMixin
@@ -218,6 +218,22 @@ def _profile_list(values) -> list[str]:
     if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
         raise RungError("profiles is a list of profile names", code="bad_request", status=400, field="profiles")
     return [v for v in dict.fromkeys(x.strip() for x in values) if v]
+
+
+def _env_var_list(values) -> list[str]:
+    """The variables a project's commands receive by name: a list (or text split on spaces and commas) of
+    names, without duplicates. Only names are stored; the values are read when a command starts."""
+    if isinstance(values, str):
+        values = re.split(r"[\s,]+", values)
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        raise RungError("environment variables is a list of names", code="bad_request", status=400, field="env_vars")
+    names = [v for v in dict.fromkeys(x.strip() for x in values) if v]
+    bad = [v for v in names if not ENV_NAME.match(v)]
+    if bad:
+        raise RungError(f"not a variable name: {bad[0][:40]}", code="bad_request", status=400, field="env_vars")
+    if len(names) > 50:
+        raise RungError("up to 50 variables", code="bad_request", status=400, field="env_vars")
+    return names
 
 
 def _clean_names(values, what: str, field: str | None = None) -> list[str]:
@@ -517,13 +533,24 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin,
             raise NotFound(f"no project {name_or_pk}")
         return r
 
+    @staticmethod
+    def _env_vars(r) -> list[str]:
+        return _l(r["env_vars"], []) if "env_vars" in r.keys() else []
+
+    def command_env(self, project_row) -> dict:
+        """The environment every project command runs with (tests, contract and milestone checks, probes,
+        migrations): PATH, HOME, LANG, LC_*, TMPDIR, the project's own virtual environment and the variables a
+        person named in the project's settings. Never the environment Rung itself runs in."""
+        return command_env(Path(project_row["folder"]).expanduser(), self._env_vars(project_row))
+
     def project(self, name: str) -> dict:
         r = self._project_row(name)
         return {"name": r["name"], "folder": r["folder"], "test_command": r["test_command"],
                 "profiles": _l(r["profiles"], []), "created_at": r["created_at"],
                 "last_activity": r["last_activity"], "archived": r["archived_at"] is not None,
                 "archived_at": r["archived_at"], "sample": self._is_sample(r),
-                "run_mode": (r["run_mode"] if "run_mode" in r.keys() else "shared") or "shared"}
+                "run_mode": (r["run_mode"] if "run_mode" in r.keys() else "shared") or "shared",
+                "env_vars": self._env_vars(r)}
 
     def projects(self, archived: bool = False) -> list[dict]:
         """The picker: active projects, or with `archived` the archived ones."""
@@ -1520,7 +1547,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin,
             self._touch_project(c, t["project_pk"])
         return n
 
-    def perform_execution(self, project: str, test_rid: str, n: int, should_cancel=None, env=None) -> dict:
+    def perform_execution(self, project: str, test_rid: str, n: int, should_cancel=None) -> dict:
         t = self._rung_row(project, test_rid)
         data = _l(t["data"], {})
         p = self._project_row(t["project_pk"])
@@ -1552,7 +1579,7 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin,
             # person sees what the changed test says. Its result proves nothing until they accept the files.
             res = run_command(data.get("command", ""), folder, timeout=data.get("timeout", 120),
                               output_limit=data.get("output_limit", 64000), on_output=push,
-                              should_cancel=cancelled, env=env)
+                              should_cancel=cancelled, env=self.command_env(p))
             res_exit, res_out = res.exit_code, res.output
             if res.cancelled:
                 status = "cancelled"
@@ -1599,10 +1626,9 @@ class Engine(LifecycleMixin, ClaimsMixin, BotMixin, MilestonesMixin, QuickMixin,
             return exit_code == 0 and str(rule.get("value", "")) in (output or "")
         return False
 
-    def run_test(self, project: str, test_rid: str, carried_by: str = "engine", run_pk=None, attempt=None,
-                 env=None) -> dict:
+    def run_test(self, project: str, test_rid: str, carried_by: str = "engine", run_pk=None, attempt=None) -> dict:
         n = self.begin_execution(project, test_rid, carried_by, run_pk, attempt)
-        return self.perform_execution(project, test_rid, n, env=env)
+        return self.perform_execution(project, test_rid, n)
 
     def cancel_execution(self, project: str, test_rid: str, n: int) -> None:
         t = self._rung_row(project, test_rid)

@@ -7,6 +7,7 @@ import difflib
 import hashlib
 import os
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -39,11 +40,52 @@ def git_commit(folder: str | Path) -> str:
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], cwd=str(folder), capture_output=True,
-            text=True, timeout=5,
+            text=True, timeout=5, env=command_env(),  # git reads the project's config: no inherited keys either
         )
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:
         return ""
+
+
+# A command a person approved runs code from the project being edited, so it gets only what a shell needs, never
+# the environment Rung runs in (that holds every Hermes provider key). A project passes more by name only: the
+# variables a person lists in its settings.
+BASE_ENV = ("PATH", "HOME", "LANG", "TMPDIR")
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+
+
+def project_venv(folder) -> Path | None:
+    """The project's own virtual environment: VIRTUAL_ENV when it lies inside the project, else .venv or venv."""
+    if folder is None:
+        return None
+    root = Path(folder).expanduser()
+    try:
+        root_r = root.resolve()
+        active = os.environ.get("VIRTUAL_ENV")
+        if active and Path(active).resolve().is_relative_to(root_r) and (Path(active) / "pyvenv.cfg").is_file():
+            return Path(active)
+        for name in (".venv", "venv"):
+            if (root / name / "pyvenv.cfg").is_file():
+                return root / name
+    except OSError:
+        return None
+    return None
+
+
+def command_env(folder=None, allow=()) -> dict:
+    """The whole environment of a project command: PATH, HOME, LANG, LC_*, TMPDIR, the project's own virtual
+    environment, and the variables named in `allow`. Nothing else is inherited."""
+    src = os.environ
+    env = {k: src[k] for k in BASE_ENV if k in src}
+    env.update({k: v for k, v in src.items() if k.startswith("LC_")})
+    venv = project_venv(folder)
+    if venv is not None:
+        env["VIRTUAL_ENV"] = str(venv)
+        env["PATH"] = str(venv / "bin") + (os.pathsep + env["PATH"] if env.get("PATH") else "")
+    for k in allow or ():
+        if isinstance(k, str) and ENV_NAME.match(k) and k in src:
+            env[k] = src[k]
+    return env
 
 
 def run_command(
@@ -57,7 +99,7 @@ def run_command(
 ) -> CommandResult:
     """Run one shell command, stream its combined output, cap it, honour timeout and cancel."""
     started = time.time()
-    run_env = dict(os.environ if env is None else env)
+    run_env = dict(command_env() if env is None else env)  # never the inherited environment
     run_env.setdefault("PYTHONUNBUFFERED", "1")
     # Workers can rewrite a file twice in one second with the same size; never trust cached bytecode.
     run_env.setdefault("PYTHONDONTWRITEBYTECODE", "1")

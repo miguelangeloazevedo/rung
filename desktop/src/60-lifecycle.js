@@ -504,10 +504,11 @@ function ProjectSettings({ project }) {
   const [tr, setTr] = useState(null)
   useEffect(() => { if (!tr && tq.data) setTr(tq.data) }, [!!tq.data])
   useEffect(() => {
-    if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles })
+    if (!f && proj) setF({ name: proj.name, folder: proj.folder, test_command: proj.test_command, profiles: proj.profiles, env_vars: (proj.env_vars || []).join(' ') })
   }, [proj && proj.name])
   const tryDirty = !!(tr && tq.data && (tr.instruction !== tq.data.instruction || tr.command !== tq.data.command))
-  useDirty(tryDirty || (f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort()]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort()])))
+  const envList = s => (s || '').split(/[\s,]+/).filter(Boolean)
+  useDirty(tryDirty || (f && proj && JSON.stringify([f.name, f.folder, f.test_command, [...f.profiles].sort(), envList(f.env_vars)]) !== JSON.stringify([proj.name, proj.folder, proj.test_command, [...proj.profiles].sort(), proj.env_vars || []])))
   useExit(() => goBack('home'), true)
   if (stQ.error) return h(Missing, { project, text: errText(stQ.error) })
   if (!st) return h(Frame, { main: h(Loading) })
@@ -517,9 +518,9 @@ function ProjectSettings({ project }) {
   const all = (st.profiles || []).map(p => p.name)
   const set = k => e => setF({ ...f, [k]: e.target.value })
   const save = async () => {
-    const x = await post(`/projects/${encodeURIComponent(project)}/update`, f)
+    const x = await post(`/projects/${encodeURIComponent(project)}/update`, { ...f, env_vars: envList(f.env_vars) })
     if (!x.ok) { setErrs(x.fields || (x.field ? { [x.field]: x.error } : {})); if (x.field) focusInvalid(); return setErr(x.field ? '' : x.error) }
-    setErrs({}); setErr('')
+    setErrs({}); setErr(''); setF(v => ({ ...v, env_vars: (x.data.env_vars || []).join(' ') }))
     if (x.data.name !== project) navigate('project-settings', { k: Date.now() }, { force: true, replace: true })
   }
   const archive = async () => {
@@ -536,6 +537,7 @@ function ProjectSettings({ project }) {
       h(Field, { label: 'Folder', error: errs.folder, name: 'folder' }, h(FolderInput, { className: INPUT, value: f.folder, invalid: !!errs.folder,
         onChange: v => setF(x => ({ ...x, folder: v })), onPicked: p => setF(x => ({ ...x, folder: p })) })),
       h(Field, { label: 'Test command', optional: true, aside: h(AboutTestCommand), error: errs.test_command, name: 'test_command' }, h('input', { 'aria-invalid': errs.test_command ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'test_command', value: f.test_command, onChange: set('test_command') })),
+      h(Field, { label: 'Environment variables', optional: true, error: errs.env_vars, name: 'env_vars' }, h('input', { 'aria-invalid': errs.env_vars ? 'true' : undefined, className: cx(INPUT, 'font-mono'), type: 'text', name: 'env_vars', value: f.env_vars, onChange: set('env_vars') })),
       h(Field, { label: 'Profiles', error: errs.profiles },
         h('div', 'flex flex-col gap-2 pt-1',
           ...all.map(p => h('label', { key: p, className: 'flex items-center gap-2.5 text-xs text-fg cursor-pointer' },

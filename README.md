@@ -97,6 +97,10 @@ Agents can propose and report; only a person approves text, tests and manual res
 - **Shell commands.** A command test, contract check, milestone check, environment probe or migration
   runs the command a person approved, in the project folder, with a timeout and an output limit. An
   isolated run copies the project files to a workspace in the store and works there.
+- **Command environment.** Those commands run code from the project being edited, so they never inherit
+  the environment Hermes and Rung run in (and with it every provider key). Each gets `PATH`, `HOME`,
+  `LANG`, `LC_*`, `TMPDIR`, the project's own virtual environment (`.venv` or `venv` in the project
+  folder) and only the variables you name under Environment variables in Project settings.
 - **Hermes child runs.** A develop run, and drafting by a profile when you choose it, start
   `hermes -p <profile> chat -Q -q` in the project folder. That chat uses the profile's own model, tools
   and credentials, under Hermes's approval rules for single-query sessions (`approvals.single_query_mode`,
@@ -125,6 +129,9 @@ Agents can propose and report; only a person approves text, tests and manual res
 
 ## Changelog
 
+- **1.2.1.** Project commands (tests, contract and milestone checks, the regression baseline, environment
+  probes, migrations) no longer inherit the environment Hermes runs in: they get `PATH`, `HOME`, `LANG`,
+  `LC_*`, `TMPDIR`, the project's own virtual environment and the variables named in Project settings.
 - **1.2.0.** Quick task, need completeness, the dock bound to the focused chat, a sample that shows
   verification move, Needs you as decisions, a result-first read-out, allocation labels that say what
   they count. Architecture and contracts, dependencies, isolated runs, the plan with budgets and

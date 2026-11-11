@@ -62,7 +62,8 @@ class LifecycleMixin:
     # ------------------------------------------------------------------ projects
 
     def update_project(self, name: str, new_name: str | None = None, folder: str | None = None,
-                       test_command: str | None = None, profiles: list[str] | None = None, actor=None) -> dict:
+                       test_command: str | None = None, profiles: list[str] | None = None, env_vars=None,
+                       actor=None) -> dict:
         from .core import HUMAN, RungError
         actor = actor or HUMAN
         if not actor.is_human:
@@ -70,8 +71,8 @@ class LifecycleMixin:
         self._check_writable(name)
         p = self._project_row(name)
         before = {"name": p["name"], "folder": p["folder"], "test_command": p["test_command"],
-                  "profiles": json.loads(p["profiles"] or "[]")}
-        from .core import FieldErrors, _profile_list, _text_field
+                  "profiles": json.loads(p["profiles"] or "[]"), "env_vars": self._env_vars(p)}
+        from .core import FieldErrors, _env_var_list, _profile_list, _text_field
         after = dict(before)
         errs = FieldErrors()
         if new_name is not None:
@@ -87,6 +88,8 @@ class LifecycleMixin:
             after["profiles"] = errs.check(_profile_list, profiles) or []
             if not after["profiles"] and "profiles" not in errs.errors:
                 errs.errors.setdefault("profiles", "tick at least one profile")
+        if env_vars is not None:
+            after["env_vars"] = errs.check(_env_var_list, env_vars)
         errs.raise_any()
         changed = {k: {"before": before[k], "after": after[k]} for k in before if before[k] != after[k]}
         if not changed:
@@ -102,9 +105,9 @@ class LifecycleMixin:
             if held is not None:
                 raise RungError(f"{held['profile']} holds the claim on {held['rid']}; release it first",
                                 field="profiles")
-            c.execute("UPDATE projects SET name=?, folder=?, test_command=?, profiles=?, last_activity=? WHERE pk=?",
-                      (after["name"], after["folder"], after["test_command"], _j(after["profiles"]), self.clock(),
-                       p["pk"]))
+            c.execute("UPDATE projects SET name=?, folder=?, test_command=?, profiles=?, env_vars=?, last_activity=? "
+                      "WHERE pk=?", (after["name"], after["folder"], after["test_command"], _j(after["profiles"]),
+                                     _j(after["env_vars"]), self.clock(), p["pk"]))
             self._log(c, p["pk"], "project_changed", changed, actor.name)
             if self.get_setting("last_project") == name:
                 c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_project', ?)", (_j(after["name"]),))

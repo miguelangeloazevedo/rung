@@ -14,7 +14,7 @@ const VIEWS = {}
 
 // Accessible names for form fields, by their name attribute (fields carry no visible <label for>).
 const FIELD_NAMES = {
-  name: 'Name', folder: 'Folder', test_command: 'Test command', profile: 'Profile', 'need-text': 'Need', need: 'Need',
+  name: 'Name', folder: 'Folder', test_command: 'Test command', env_vars: 'Environment variables', profile: 'Profile', 'need-text': 'Need', need: 'Need',
   'req-text': 'Requirement', 'req-detail': 'Acceptance', 'spec-text': 'Specification', 'spec-detail': 'Approach',
   steps: 'Steps', command: 'Command', rule: 'Pass rule', value: 'Pass rule value', timeout: 'Timeout',
   limit: 'Output limit', text: 'Judge question', evidence: 'Evidence', 'defect-title': 'Title', category: 'Category',

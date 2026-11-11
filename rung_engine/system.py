@@ -505,7 +505,7 @@ class SystemMixin:
             c.execute("UPDATE runs SET workspace=? WHERE pk=?", (_j(ws), r["pk"]))
         return dest
 
-    def run_local(self, project: str, test_rid: str, root: Path, should_cancel=None, env=None) -> dict:
+    def run_local(self, project: str, test_rid: str, root: Path, should_cancel=None) -> dict:
         """Run an approved command test in a run's workspace. The result is local: returned, never stored as an
         execution, so it cannot count for the project."""
         from .core import RungError
@@ -521,7 +521,8 @@ class SystemMixin:
             return {"test": t["rid"], "status": "error", "exit_code": None, "output": f"folder not found: {folder}",
                     "command": data.get("command", ""), "local": True}
         res = run_command(data.get("command", ""), folder, timeout=data.get("timeout", 120),
-                          output_limit=data.get("output_limit", 64000), should_cancel=should_cancel, env=env)
+                          output_limit=data.get("output_limit", 64000), should_cancel=should_cancel,
+                          env=self.command_env(self._project_row(t["project_pk"])))
         if res.cancelled:
             status = "cancelled"
         elif res.timed_out or res.launch_error or res.exit_code in (126, 127):
@@ -860,7 +861,7 @@ class SystemMixin:
         return {"contract": row["name"], "version": version, "checks": checks, "state": state,
                 "basis": evidence.short(cur)}
 
-    def run_contract_checks(self, project: str, contract: str, carried_by: str = "engine", env=None) -> dict:
+    def run_contract_checks(self, project: str, contract: str, carried_by: str = "engine") -> dict:
         """Run every approved check of a contract on the project folder, recording version and basis."""
         from .core import RungError
         from .execute import run_command
@@ -878,7 +879,8 @@ class SystemMixin:
             if not root.is_dir():
                 status, code, output = "error", None, f"folder not found: {root}"
             else:
-                res = run_command(ch["command"], root, timeout=ch["timeout"], output_limit=64000, env=env)
+                res = run_command(ch["command"], root, timeout=ch["timeout"], output_limit=64000,
+                                  env=self.command_env(p))
                 code, output = res.exit_code, res.output
                 status = ("error" if res.timed_out or res.launch_error or res.exit_code in (126, 127)
                           else "pass" if res.exit_code == 0 else "fail")

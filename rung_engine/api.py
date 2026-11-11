@@ -156,7 +156,7 @@ def _update_project(svc, human, body, project):
     _known_profiles(svc, body.get("profiles"))
     return svc.engine.update_project(project, new_name=body.get("name"), folder=body.get("folder"),
                                      test_command=body.get("test_command"),
-                                     profiles=body.get("profiles"), actor=human)
+                                     profiles=body.get("profiles"), env_vars=body.get("env_vars"), actor=human)
 
 
 @route("POST", "/projects/{project}/archive")
